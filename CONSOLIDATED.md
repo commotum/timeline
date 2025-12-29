@@ -3028,3 +3028,105 @@
 [36-23]: https://arxiv.org/pdf/2310.04454.pdf "Spherical Position Encoding (2023) — arXiv"
 [36-24]: https://arxiv.org/pdf/2311.16502.pdf "MMMU (2023) — arXiv"
 [36-25]: https://arxiv.org/pdf/2312.11805.pdf "Gemini (2023) — arXiv"
+
+- **Taming Transformers for High-Resolution Image Synthesis** (2020)
+  **Improves On:** pixel-space autoregressive image Transformers.
+  **Adaptation:** learn a discrete image codebook (VQ-style) then model code sequences with a Transformer for high-res synthesis. ([arXiv][37-1])
+- **Generative Pretraining from Pixels** (2020)
+  **Improves On:** 1D autoregressive Transformers for text.
+  **Adaptation:** serialize 2D images into long 1D pixel sequences for causal Transformer pretraining. ([OpenAI][37-2])
+- **ConViT: Improving Vision Transformers with Soft Convolutional Inductive Biases** (2021)
+  **Improves On:** pure ViT attention with weak locality priors.
+  **Adaptation:** add soft convolutional inductive biases inside attention to inject locality while keeping Transformer flexibility. ([arXiv][37-3])
+- **Is Space-Time Attention All You Need for Video Understanding? (TimeSformer)** (2021)
+  **Improves On:** Vision Transformers for static images.
+  **Adaptation:** extend patch tokens across time with factorized spatial–temporal attention for video understanding. ([arXiv][37-4])
+- **Scaling Up Vision-Language Learning With Noisy Text Supervision (ALIGN)** (2021)
+  **Contribution Type:** vision-language pretraining recipe.
+  **Reason:** scale image–text contrastive learning using large noisy web supervision to learn strong aligned representations. ([arXiv][37-5])
+- **Learning Transferable Visual Models From Natural Language Supervision (CLIP)** (2021)
+  **Contribution Type:** vision-language pretraining objective.
+  **Reason:** contrastive pretraining on image–text pairs to produce transferable zero-shot representations. ([arXiv][37-6])
+- **Zero-Shot Text-to-Image Generation** (2021)
+  **Improves On:** separate text-only or image-only sequence modeling.
+  **Adaptation:** jointly model text + discrete image tokens to generate images from text prompts (zero-shot). ([arXiv][37-7])
+- **Pyramid Vision Transformer: A Versatile Backbone for Dense Prediction without Convolutions** (2021)
+  **Improves On:** single-scale ViT backbones for dense prediction.
+  **Adaptation:** multi-stage pyramid token hierarchies to support detection/segmentation-style features. ([arXiv][37-8])
+- **Swin Transformer** (2021)
+  **Improves On:** global-attention ViTs that scale poorly at high resolution.
+  **Adaptation:** shifted window attention for efficient hierarchical vision backbones. ([arXiv][37-9])
+- **CrossViT: Cross-Attention Multi-Scale Vision Transformer for Image Classification** (2021)
+  **Improves On:** single-patch-scale ViT classification.
+  **Adaptation:** dual (multi) patch scales with cross-attention fusion between token streams. ([arXiv][37-10])
+- **CvT: Introducing Convolutions to Vision Transformers** (2021)
+  **Improves On:** pure ViT patch embedding + attention blocks.
+  **Adaptation:** convolutional token embedding/projection to inject locality while keeping attention central. ([arXiv][37-11])
+- **Transformer in Transformer** (2021)
+  **Improves On:** standard ViT tokenization and global attention.
+  **Adaptation:** inner Transformers within local regions plus an outer Transformer across regions (hierarchical). ([arXiv][37-12])
+- **RoFormer: Enhanced Transformer with Rotary Position Embedding (RoPE)** (2021)
+  **Critique:** absolute positional embeddings and their weak relative-position behavior.
+  **Improvement:** rotary position embedding to encode relative position through rotation in attention. ([arXiv][37-13])
+- **Twins: Revisiting the Design of Spatial Attention in Vision Transformers** (2021)
+  **Improves On:** full global attention cost at high resolution.
+  **Adaptation:** mix local window attention with global (subsampled) attention for scalable 2D backbones. ([arXiv][37-14])
+- **SegFormer: Simple and Efficient Design for Semantic Segmentation with Transformers** (2021)
+  **Improves On:** heavyweight segmentation decoders and non-unified pipelines.
+  **Adaptation:** Transformer encoder with a lightweight MLP decode head for efficient dense prediction. ([arXiv][37-15])
+- **VATT: Transformers for Multimodal Self-Supervised Learning** (2021)
+  **Contribution Type:** multimodal self-supervised pretraining framework.
+  **Reason:** learn general audio-visual-text representations with Transformer-based multimodal SSL at scale. ([arXiv][37-16])
+- **BEiT: BERT Pre-Training of Image Transformers** (2021)
+  **Contribution Type:** self-supervised pretraining objective.
+  **Reason:** adapt BERT-style masked prediction to image tokens to improve ViT representations. ([arXiv][37-17])
+- **CoAtNet: Marrying Convolution and Attention for All Data Sizes** (2021)
+  **Improves On:** purely conv or purely attention vision stacks.
+  **Adaptation:** stage-wise hybrid backbone combining conv layers with attention layers for strong scaling. ([arXiv][37-18])
+- **ViLT: Vision-and-Language Transformer Without Convolution or Region Supervision** (2021)
+  **Contribution Type:** simplified VLM architecture.
+  **Reason:** operate directly on visual patches + text tokens with a single Transformer, avoiding region detectors and heavy visual backbones. ([arXiv][37-19])
+- **VideoCLIP: Contrastive Pretraining for Zero-Shot Video-Text Understanding** (2021)
+  **Contribution Type:** video-language pretraining method.
+  **Reason:** contrastive pretraining on video–text pairs to enable zero-shot video-text retrieval and understanding. ([arXiv][37-20])
+- **ALBEF: Align Before Fuse** (2021)
+  **Contribution Type:** vision-language pretraining method.
+  **Reason:** align image-text representations before fusion to improve cross-modal grounding and downstream VQA/retrieval. ([arXiv][37-21])
+- **CSWin Transformer: A General Vision Transformer Backbone with Cross-Shaped Windows** (2021)
+  **Improves On:** window attention with limited long-range mixing.
+  **Adaptation:** cross-shaped attention windows to expand receptive field efficiently on 2D grids. ([arXiv][37-22])
+- **Train Short, Test Long: Attention with Linear Biases (ALiBi)** (2021)
+  **Critique:** positional encodings often extrapolate poorly to longer contexts.
+  **Improvement:** linear attention bias that enables better length extrapolation without learned position embeddings. ([arXiv][37-23])
+- **LAION-400M: Open Dataset for CLIP Training** (2021)
+  **Target Domain:** large-scale vision–language pretraining for CLIP-style models.
+  **Resource:** LAION-400M dataset of image–text pairs to support open CLIP training and evaluation. ([arXiv][37-24])
+- **Masked Autoencoders Are Scalable Vision Learners (MAE)** (2021)
+  **Contribution Type:** self-supervised vision pretraining method.
+  **Reason:** masked image modeling with an encoder–decoder to learn scalable, transferable ViT representations efficiently. ([arXiv][37-25])
+
+[37-1]: https://arxiv.org/pdf/2012.09841.pdf "Taming Transformers (2020) — arXiv"
+[37-2]: https://cdn.openai.com/papers/Generative_Pretraining_from_Pixels_V2.pdf "Generative Pretraining from Pixels (2020) — OpenAI"
+[37-3]: https://arxiv.org/pdf/2103.10697.pdf "ConViT (2021) — arXiv"
+[37-4]: https://arxiv.org/pdf/2102.05095.pdf "TimeSformer (2021) — arXiv"
+[37-5]: https://arxiv.org/pdf/2102.05918.pdf "ALIGN (2021) — arXiv"
+[37-6]: https://arxiv.org/pdf/2103.00020.pdf "CLIP (2021) — arXiv"
+[37-7]: https://arxiv.org/pdf/2102.12092.pdf "Zero-Shot Text-to-Image Generation (2021) — arXiv"
+[37-8]: https://arxiv.org/pdf/2102.12122.pdf "PVT (2021) — arXiv"
+[37-9]: https://arxiv.org/pdf/2103.14030.pdf "Swin Transformer (2021) — arXiv"
+[37-10]: https://arxiv.org/pdf/2103.14899.pdf "CrossViT (2021) — arXiv"
+[37-11]: https://arxiv.org/pdf/2103.15808.pdf "CvT (2021) — arXiv"
+[37-12]: https://arxiv.org/pdf/2103.00112.pdf "Transformer in Transformer (2021) — arXiv"
+[37-13]: https://arxiv.org/pdf/2104.09864.pdf "RoFormer (2021) — arXiv"
+[37-14]: https://arxiv.org/pdf/2104.13840.pdf "Twins (2021) — arXiv"
+[37-15]: https://arxiv.org/pdf/2105.15203.pdf "SegFormer (2021) — arXiv"
+[37-16]: https://arxiv.org/pdf/2104.11178.pdf "VATT (2021) — arXiv"
+[37-17]: https://arxiv.org/pdf/2106.08254.pdf "BEiT (2021) — arXiv"
+[37-18]: https://arxiv.org/pdf/2106.04803.pdf "CoAtNet (2021) — arXiv"
+[37-19]: https://arxiv.org/pdf/2102.03334.pdf "ViLT (2021) — arXiv"
+[37-20]: https://arxiv.org/pdf/2109.14084.pdf "VideoCLIP (2021) — arXiv"
+[37-21]: https://arxiv.org/pdf/2107.07651.pdf "ALBEF (2021) — arXiv"
+[37-22]: https://arxiv.org/pdf/2107.00652.pdf "CSWin Transformer (2021) — arXiv"
+[37-23]: https://arxiv.org/pdf/2108.12409.pdf "ALiBi (2021) — arXiv"
+[37-24]: https://arxiv.org/pdf/2111.02114.pdf "LAION-400M (2021) — arXiv"
+[37-25]: https://arxiv.org/pdf/2111.06377.pdf "MAE (2021) — arXiv"
