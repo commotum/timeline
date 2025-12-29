@@ -190,12 +190,17 @@ def resolve_source_path(source_arg, target_folder):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Run Codex QA prompt over a single chunked CSV file.",
+        description="Run Codex QA prompt over one or more chunked CSV files.",
     )
     parser.add_argument("--target-folder", default=TARGET_FOLDER)
     parser.add_argument("--prompt-path", default=PROMPT_PATH)
     parser.add_argument("--glossary-path", default=GLOSSARY_PATH)
     parser.add_argument("--source", default=None)
+    parser.add_argument(
+        "--batch",
+        action="store_true",
+        help="Process all CSV files in the target folder.",
+    )
     parser.add_argument("--sort-mode", default=SORT_MODE)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--codex-cmd", default=CODEX_CLI_CMD)
@@ -238,48 +243,50 @@ def main():
         print(f"Failed to prepare glossary file: {glossary_path}")
         return 1
 
+    sources = []
     source_path = resolve_source_path(args.source, target_folder)
-    if source_path is None:
+    if source_path is not None:
+        sources = [source_path]
+    else:
         sources = sort_queue(list_csv_files(target_folder), args.sort_mode, log_path)
         if not sources:
             print("No CSV files found.")
             log_event(log_path, "no_csv_found")
             log_event(log_path, "run_end")
             return 0
-        if len(sources) > 1:
-            print("Multiple CSV files found; pass --source to select one.")
+        if not args.batch and len(sources) > 1:
+            print("Multiple CSV files found; pass --source or --batch.")
             log_event(log_path, "multiple_csv_found")
             log_event(log_path, "run_end")
             return 1
-        source_path = sources[0]
 
-    source_path = os.path.abspath(source_path)
-    if not os.path.exists(source_path):
-        print(f"Source CSV not found: {source_path}")
-        log_event(log_path, f"source_missing path={source_path}")
-        log_event(log_path, "run_end")
-        return 1
+    total = len(sources)
+    for index, source_path in enumerate(sources, start=1):
+        source_path = os.path.abspath(source_path)
+        if not os.path.exists(source_path):
+            print(f"[{index}/{total}] missing {source_path}")
+            log_event(log_path, f"source_missing path={source_path}")
+            continue
 
-    prompt = build_prompt(prompt_path, source_path, glossary_path)
-    log_event(log_path, f"file_start source={source_path}")
-    print(os.path.basename(source_path))
-    if dry_run:
-        log_event(log_path, f"dry_run_skip source={source_path}")
-        log_event(log_path, "run_end")
-        return 0
+        prompt = build_prompt(prompt_path, source_path, glossary_path)
+        log_event(log_path, f"file_start source={source_path}")
+        print(f"[{index}/{total}] {os.path.basename(source_path)}")
+        if dry_run:
+            log_event(log_path, f"dry_run_skip source={source_path}")
+            continue
 
-    success, error = run_codex_exec(
-        args.codex_cmd,
-        prompt,
-        codex_cwd,
-        add_dir,
-        skip_git_check,
-        log_path,
-    )
-    if success:
-        log_event(log_path, f"file_success source={source_path}")
-    else:
-        log_event(log_path, f"file_failure source={source_path} error={error}")
+        success, error = run_codex_exec(
+            args.codex_cmd,
+            prompt,
+            codex_cwd,
+            add_dir,
+            skip_git_check,
+            log_path,
+        )
+        if success:
+            log_event(log_path, f"file_success source={source_path}")
+        else:
+            log_event(log_path, f"file_failure source={source_path} error={error}")
 
     log_event(log_path, "run_end")
     return 0
