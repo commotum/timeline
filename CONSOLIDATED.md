@@ -2926,3 +2926,105 @@
 [35-23]: https://arxiv.org/pdf/2411.08706.pdf "Searching Latent Program Spaces (2024) — arXiv"
 [35-24]: https://ekinakyurek.github.io/papers/ttt.pdf "Test-Time Training for Few-Shot Learning (2024) — Project Page"
 [35-25]: https://arxiv.org/pdf/2411.17708.pdf "Neurally-Guided Program Induction for ARC-AGI (2024) — arXiv"
+
+- **Swin Transformer V2: Scaling Up Capacity and Resolution** (2021)
+  **Improves On:** Swin-style windowed Transformers at larger scales and resolutions.
+  **Adaptation:** refinements to stabilize and scale window-based attention for high-resolution vision backbones. ([arXiv][36-1])
+- **BLIP: Bootstrapping Language-Image Pre-training** (2022)
+  **Contribution Type:** vision-language pretraining method.
+  **Reason:** bootstrap captioning and understanding with a unified VLP framework for stronger VLM training. ([arXiv][36-2])
+- **Transformer Language Models without Positional Encodings Still Learn Positional Information** (2022)
+  **Contribution Type:** theory/analysis of positional information.
+  **Reason:** show how transformers can recover positional signals even when explicit positional encodings are removed. ([arXiv][36-3])
+- **CoCa: Contrastive Captioners** (2022)
+  **Contribution Type:** vision-language training objective/method.
+  **Reason:** unify contrastive learning with captioning to improve image-text representation and generation. ([arXiv][36-4])
+- **Flamingo: a Visual Language Model for Few-Shot Learning** (2022)
+  **Contribution Type:** multimodal model architecture.
+  **Reason:** enable strong few-shot visual-language learning via cross-attention over visual inputs with a large LM. ([arXiv][36-5])
+- **MaxViT: Multi-Axis Vision Transformer** (2022)
+  **Improves On:** either local-window-only or global-only attention patterns.
+  **Adaptation:** combine local window attention with multi-axis global mixing for scalable vision backbones. ([arXiv][36-6])
+- **Winoground: Probing Vision-Language Models for Compositionality** (2022)
+  **Target Domain:** compositional vision-language understanding.
+  **Resource:** diagnostic benchmark to measure compositional reasoning failures in VLMs. ([arXiv][36-7])
+- **Image as a Foreign Language: BEiT Pretraining for All Vision and Vision-Language Tasks** (2022)
+  **Contribution Type:** unified pretraining recipe.
+  **Reason:** extend BEiT-style masked modeling to support transfer across vision and vision-language tasks. ([arXiv][36-8])
+- **LAION-5B: An Open Large-Scale Dataset for Training Next Generation Image-Text Models** (2022)
+  **Target Domain:** large-scale vision–language pretraining.
+  **Resource:** LAION-5B, a massive web-scale image–text dataset for training VLMs and text-to-image models. ([arXiv][36-9])
+- **ScienceQA: Benchmark for Multimodal Reasoning** (2022)
+  **Target Domain:** multimodal science question answering and reasoning.
+  **Resource:** ScienceQA benchmark with multimodal context and explanation-focused evaluation. ([arXiv][36-10])
+- **BLIP-2: Bootstrapping Language-Image Pre-training with Frozen Models** (2023)
+  **Contribution Type:** parameter-efficient multimodal training method.
+  **Reason:** connect frozen vision and language models via a lightweight bridge for strong VLM performance. ([arXiv][36-11])
+- **GPT-4 Technical Report** (2023)
+  **Contribution Type:** system/reporting and evaluation.
+  **Reason:** describe capabilities, evaluations, and safety considerations for GPT-4 as a large-scale model system. ([arXiv][36-12])
+- **Kosmos-1: Language Is Not All You Need** (2023)
+  **Contribution Type:** multimodal foundation model.
+  **Reason:** train a generalist model over text and other modalities to extend beyond language-only competence. ([arXiv][36-13])
+- **PaLM-E: An Embodied Multimodal Language Model** (2023)
+  **Contribution Type:** embodied multimodal model.
+  **Reason:** integrate vision and robotics/embodiment signals with a large LM for embodied reasoning and control. ([arXiv][36-14])
+- **LLaVA: Large Language-and-Vision Assistant** (2023)
+  **Contribution Type:** instruction-tuned vision-language assistant.
+  **Reason:** align an LLM with visual features to enable conversational, instruction-following VQA and grounding. ([arXiv][36-15])
+- **MiniGPT-4** (2023)
+  **Contribution Type:** lightweight vision-language alignment method.
+  **Reason:** align a frozen vision encoder to an LLM to obtain strong VLM/chat behavior with modest training. ([arXiv][36-16])
+- **Segment Anything** (2023)
+  **Target Domain:** promptable, general-purpose image segmentation.
+  **Resource:** large-scale segmentation dataset + prompt-conditioned model enabling broad zero-shot segmentation. ([arXiv][36-17])
+- **ConceptARC** (2023)
+  **Target Domain:** concept-based abstract reasoning on ARC-style tasks.
+  **Resource:** benchmark/dataset variant to probe concept generalization and systematicity in ARC-like settings. ([arXiv][36-18])
+- **MMBench: Evaluating Multimodal LLMs** (2023)
+  **Target Domain:** evaluation of multimodal LLM capabilities.
+  **Resource:** benchmark suite for standardized assessment of multimodal LLM performance. ([arXiv][36-19])
+- **A Length-Extrapolatable Transformer (XPOS / LeX)** (2023)
+  **Critique:** standard positional encodings generalize poorly to longer-than-trained contexts.
+  **Improvement:** length-extrapolatable positional strategy (e.g., XPOS) to improve long-context generalization. ([ACL Anthology][36-20])
+- **Average-Hard Attention Transformers Are Threshold Circuits** (2023)
+  **Contribution Type:** theoretical characterization.
+  **Reason:** analyze computational class/limits of specific attention mechanisms via circuit complexity framing. ([arXiv][36-21])
+- **YaRN: Efficient Context Window Extension of Large Language Models** (2023)
+  **Critique:** RoPE-based models extrapolate poorly to longer contexts without adjustment.
+  **Improvement:** RoPE interpolation + scaling tricks to extend context windows efficiently. ([arXiv][36-22])
+- **Spherical Position Encoding for Transformers** (2023)
+  **Critique:** common positional encodings can be geometry-mismatched for directional/angle-like structure.
+  **Improvement:** spherical positional encoding to represent position/direction with spherical geometry. ([arXiv][36-23])
+- **MMMU: A Massive Multidiscipline Multimodal Benchmark** (2023)
+  **Target Domain:** broad multidisciplinary multimodal understanding.
+  **Resource:** benchmark spanning many subjects to evaluate multimodal reasoning and knowledge. ([arXiv][36-24])
+- **Gemini: A Family of Highly Capable Multimodal Models** (2023)
+  **Contribution Type:** multimodal foundation model family.
+  **Reason:** describe a suite of highly capable multimodal models and their evaluation across tasks. ([arXiv][36-25])
+
+[36-1]: https://arxiv.org/pdf/2111.09883.pdf "Swin Transformer V2 (2021) — arXiv"
+[36-2]: https://arxiv.org/pdf/2201.12086.pdf "BLIP (2022) — arXiv"
+[36-3]: https://arxiv.org/pdf/2203.16634.pdf "Transformers without PEs still learn position (2022) — arXiv"
+[36-4]: https://arxiv.org/pdf/2205.01917.pdf "CoCa (2022) — arXiv"
+[36-5]: https://arxiv.org/pdf/2204.14198.pdf "Flamingo (2022) — arXiv"
+[36-6]: https://arxiv.org/pdf/2204.01697.pdf "MaxViT (2022) — arXiv"
+[36-7]: https://arxiv.org/pdf/2204.03162.pdf "Winoground (2022) — arXiv"
+[36-8]: https://arxiv.org/pdf/2208.10442.pdf "Image as a Foreign Language (2022) — arXiv"
+[36-9]: https://arxiv.org/pdf/2210.08402.pdf "LAION-5B (2022) — arXiv"
+[36-10]: https://arxiv.org/pdf/2209.09513.pdf "ScienceQA (2022) — arXiv"
+[36-11]: https://arxiv.org/pdf/2301.12597.pdf "BLIP-2 (2023) — arXiv"
+[36-12]: https://arxiv.org/pdf/2303.08774.pdf "GPT-4 Technical Report (2023) — arXiv"
+[36-13]: https://arxiv.org/pdf/2302.14045.pdf "Kosmos-1 (2023) — arXiv"
+[36-14]: https://arxiv.org/pdf/2303.03378.pdf "PaLM-E (2023) — arXiv"
+[36-15]: https://arxiv.org/pdf/2304.08485.pdf "LLaVA (2023) — arXiv"
+[36-16]: https://arxiv.org/pdf/2304.10592.pdf "MiniGPT-4 (2023) — arXiv"
+[36-17]: https://arxiv.org/pdf/2304.02643.pdf "Segment Anything (2023) — arXiv"
+[36-18]: https://arxiv.org/pdf/2305.07141.pdf "ConceptARC (2023) — arXiv"
+[36-19]: https://arxiv.org/pdf/2307.06281.pdf "MMBench (2023) — arXiv"
+[36-20]: https://aclanthology.org/2023.acl-long.816.pdf "XPOS / LeX (2023) — ACL Anthology"
+[36-21]: https://arxiv.org/pdf/2308.03212.pdf "Average-Hard Attention as Threshold Circuits (2023) — arXiv"
+[36-22]: https://arxiv.org/pdf/2309.00071.pdf "YaRN (2023) — arXiv"
+[36-23]: https://arxiv.org/pdf/2310.04454.pdf "Spherical Position Encoding (2023) — arXiv"
+[36-24]: https://arxiv.org/pdf/2311.16502.pdf "MMMU (2023) — arXiv"
+[36-25]: https://arxiv.org/pdf/2312.11805.pdf "Gemini (2023) — arXiv"
