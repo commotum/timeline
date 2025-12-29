@@ -1,7 +1,22 @@
-## arXiv CSV Contents
+## arXiv CSV Pipeline
 
-- arXiv-1.csv: All rows moved from `CHUNKED/CHUNK-*.csv` whose `url` matched `arxiv.org/pdf/<id>.pdf`; duplicates retained.
-- arXiv-2.csv: De-duplicated `arXiv-1.csv` by full row (`year,title,url`), adds `duplicate_count`, and URL fields cleaned to keep only the URL.
-- arXiv-3.csv: De-duplicated `arXiv-2.csv` by the first three columns only, with `duplicate_count` summed across duplicates; sorted by title.
-- arXiv-4.csv: Rows from `arXiv-3.csv` where the `url` is duplicated across multiple entries; moved out of `arXiv-3.csv` and sorted by URL.
-- arXiv-5.csv: Present but not processed yet (no filter/derivation recorded).
+### Step 1 — Destination: `arXiv-1.csv`
+- Source: `CHUNKED/CHUNK-*.csv`
+- Transform: move rows where `url` matches `arxiv.org/pdf/<id>.pdf`
+- Notes: duplicates retained
+
+### Step 2 — Destination: `arXiv-2.csv`
+- Source: `arXiv-1.csv`
+- Transform: de-duplicate by full row (`year,title,url`); add `duplicate_count`; clean URL field to keep only the URL
+
+### Step 3 — Destination: `arXiv-3.csv`
+- Source: `arXiv-2.csv`
+- Transform: de-duplicate by first three columns only; sum `duplicate_count`; sort by title
+
+### Step 4 — Destination: `arXiv-4.csv`
+- Source: `arXiv-3.csv`
+- Transform: move rows where `url` is duplicated across multiple entries; sort by URL
+- Notes: moved out of `arXiv-3.csv`
+
+### Step 5 — Destination: `arXiv-5.csv`
+- Notes: present but not processed yet
