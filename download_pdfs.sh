@@ -1,97 +1,151 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-table_path="${1:-/home/jake/Developer/4D/Notes/Vision/Table-2.md}"
-out_dir="${2:-/home/jake/Developer/4D/Notes/Vision/pdfs-3}"
+csv_path="${1:-/home/jake/Developer/timeline/BIBLIOTHEQUE.csv}"
+out_dir="${2:-/home/jake/Developer/timeline/BIBLIOTHEQUE}"
 
-if [[ ! -f "$table_path" ]]; then
-  echo "Table not found: $table_path" >&2
+if [[ ! -f "$csv_path" ]]; then
+  echo "CSV not found: $csv_path" >&2
   exit 1
 fi
 
 mkdir -p "$out_dir"
 
-declare -A used_names=()
+declare -a renamed=()
 declare -a downloaded=()
 declare -a failed=()
-declare -a skipped_local=()
+declare -a skipped=()
 line_num=0
 
-while IFS= read -r line; do
+get_ext_from_path() {
+  local path="$1"
+  local clean="${path%%\?*}"
+  clean="${clean%%\#*}"
+  local base="${clean##*/}"
+  if [[ "$base" == *.* ]]; then
+    printf '.%s' "${base##*.}"
+  fi
+}
+
+csv_rows() {
+  python3 - "$csv_path" <<'PY'
+import csv
+import sys
+
+path = sys.argv[1]
+with open(path, newline="") as handle:
+    reader = csv.DictReader(handle)
+    for row in reader:
+        row_id = (row.get("id") or "").strip()
+        year = (row.get("year") or "").strip()
+        url = (row.get("url") or "").strip()
+        if not (row_id or year or url):
+            continue
+        def clean(value: str) -> str:
+            return value.replace("\t", " ").replace("\n", " ").replace("\r", " ")
+        print(clean(row_id), clean(year), clean(url), sep="\t")
+PY
+}
+
+while IFS=$'\t' read -r row_id year url; do
   line_num=$((line_num + 1))
 
-  [[ "$line" =~ ^\|[[:space:]]*--- ]] && continue
+  if [[ -z "$row_id" || -z "$year" ]]; then
+    failed+=("line $line_num | missing id/year")
+    echo "Skipping line $line_num: missing id/year" >&2
+    continue
+  fi
+  if [[ -z "$url" ]]; then
+    failed+=("line $line_num | missing url")
+    echo "Skipping line $line_num: missing url" >&2
+    continue
+  fi
 
-  title=$(printf '%s' "$line" | awk -F'|' '{print $2}' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g; s/\*\*//g')
-  pdf_cell=$(printf '%s' "$line" | awk -F'|' '{print $5}' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+  row_id=$(printf '%s' "$row_id" | tr '[:upper:]' '[:lower:]')
+  name="${row_id}-${year}"
 
-  if printf '%s' "$pdf_cell" | grep -qi 'local copy'; then
-    if [[ -z "$title" ]]; then
-      title="paper_${line_num}"
+  if [[ "$url" =~ ^https?:// ]]; then
+    ext="$(get_ext_from_path "$url")"
+    if [[ -z "$ext" ]]; then
+      ext=".pdf"
     fi
-    skipped_local+=("$title")
-    echo "Skipping local copy: $title"
-    continue
-  fi
 
-  [[ "$pdf_cell" == *"http"* ]] || continue
+    dest="${out_dir}/${name}${ext}"
+    if [[ -s "$dest" ]]; then
+      skipped+=("$name")
+      echo "Skipping existing file: $dest"
+      continue
+    fi
 
-  url=$(printf '%s' "$pdf_cell" | sed -nE 's/.*\[[Pp][Dd][Ff]\]\((https?:\/\/[^)]+)\).*/\1/p')
-  if [[ -z "$url" ]]; then
-    url=$(printf '%s' "$pdf_cell" | sed -nE 's/.*(https?:\/\/[^ )`|]+).*/\1/p')
-  fi
-
-  if [[ -z "$url" ]]; then
-    echo "Skipping line $line_num: no public PDF url found" >&2
-    continue
-  fi
-
-  if [[ -z "$title" ]]; then
-    title="paper_${line_num}"
-  fi
-
-  slug=$(printf '%s' "$title" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/_/g; s/^_+|_+$//g')
-  if [[ -z "$slug" ]]; then
-    slug="paper_${line_num}"
-  fi
-
-  filename="${slug}.pdf"
-  if [[ -n "${used_names[$filename]+x}" ]]; then
-    i=2
-    while [[ -n "${used_names[${slug}_${i}.pdf]+x}" ]]; do
-      i=$((i + 1))
-    done
-    filename="${slug}_${i}.pdf"
-  fi
-  used_names["$filename"]=1
-
-  dest="${out_dir}/${filename}"
-  if [[ -s "$dest" ]]; then
-    echo "Skipping existing file: $dest"
-    continue
-  fi
-
-  echo "Downloading: $title"
-  if curl -L --fail --retry 3 --retry-delay 1 -o "$dest" "$url"; then
-    downloaded+=("$title")
-    echo "Downloaded: $title"
+    tmp="$(mktemp "${out_dir}/.tmp.${name}.XXXXXX")"
+    if curl -L --fail --retry 3 --retry-delay 1 -o "$tmp" "$url"; then
+      mv "$tmp" "$dest"
+      downloaded+=("$name")
+      echo "Downloaded: $name"
+    else
+      rm -f "$tmp"
+      failed+=("$name | $url")
+      echo "Failed download: $name" >&2
+    fi
   else
-    failed+=("$title | $url")
-    echo "Failed download: $title" >&2
+    if [[ "$url" == file://* ]]; then
+      url="${url#file://}"
+    fi
+    if [[ "$url" != /* ]]; then
+      url="$(dirname "$csv_path")/$url"
+    fi
+    if [[ ! -e "$url" ]]; then
+      failed+=("$name | missing local file: $url")
+      echo "Missing local file: $url" >&2
+      continue
+    fi
+
+    ext="$(get_ext_from_path "$url")"
+    if [[ -z "$ext" ]]; then
+      ext=".pdf"
+    fi
+
+    dest="${out_dir}/${name}${ext}"
+    if [[ "$url" == "$dest" ]]; then
+      skipped+=("$name")
+      echo "Already named: $dest"
+      continue
+    fi
+    if [[ -e "$dest" ]]; then
+      failed+=("$name | target exists: $dest")
+      echo "Target exists, skipping: $dest" >&2
+      continue
+    fi
+
+    mv "$url" "$dest"
+    renamed+=("$name")
+    echo "Renamed: $name"
   fi
-done < "$table_path"
+done < <(csv_rows)
 
 echo "Done. Files saved in: $out_dir"
 echo "Report:"
+echo "Renamed local files (${#renamed[@]}):"
+if ((${#renamed[@]})); then
+  printf '  - %s\n' "${renamed[@]}"
+else
+  echo "  - none"
+fi
+echo "Downloaded files (${#downloaded[@]}):"
+if ((${#downloaded[@]})); then
+  printf '  - %s\n' "${downloaded[@]}"
+else
+  echo "  - none"
+fi
 if ((${#failed[@]})); then
-  echo "Failed downloads (${#failed[@]}):"
+  echo "Failed entries (${#failed[@]}):"
   printf '  - %s\n' "${failed[@]}"
 else
-  echo "Failed downloads (0)"
+  echo "Failed entries (0)"
 fi
-if ((${#skipped_local[@]})); then
-  echo "Skipped local copies (${#skipped_local[@]}):"
-  printf '  - %s\n' "${skipped_local[@]}"
+if ((${#skipped[@]})); then
+  echo "Skipped entries (${#skipped[@]}):"
+  printf '  - %s\n' "${skipped[@]}"
 else
-  echo "Skipped local copies (0)"
+  echo "Skipped entries (0)"
 fi
