@@ -12,7 +12,7 @@ Deep learning’s modern arc is a loop between **compression** (what generalizes
 
 * [The First Law of Complexodynamics](1_The_First_Law_of_Complexodynamics.pdf)
 * [Machine Super Intelligence](2_Machine_Super_Intelligence.pdf)
-* [Quantifying the Rise and Fall of Complexity in Closed Systems- The Coffee Automaton](3_Quantifying_the_Rise_and_Fall_of_Complexity_in_Closed_Systems_The_Coffee_Automaton.pdf)
+* [Quantifying the Rise and Fall of Complexity in Closed Systems: The Coffee Automaton](3_Quantifying_the_Rise_and_Fall_of_Complexity_in_Closed_Systems_The_Coffee_Automaton.pdf)
 
 ### 1. Compression, MDL, and generalization
 
@@ -27,7 +27,7 @@ Deep learning’s modern arc is a loop between **compression** (what generalizes
 
 *Connecting thread:* Inductive bias + optimization tricks + scale turns neural nets into reliable workhorses.
 
-* [Stanford CS231n Convolutional Neural Networks for Visual Recognition](8_Stanford_CS231n_Convolutional_Neural_Networks_for_Visual_Recognition.pdf)
+* [Stanford CS231n - Convolutional Neural Networks for Visual Recognition](8_Stanford_CS231n_Convolutional_Neural_Networks_for_Visual_Recognition.pdf)
 * [ImageNet Classification with Deep Convolutional Neural Networks](9_ImageNet_Classification_with_Deep_Convolutional_Neural_Networks.pdf)
 * [Deep Residual Learning for Image Recognition](10_Deep_Residual_Learning_for_Image_Recognition.pdf)
 * [Identity Mappings in Deep Residual Networks](11_Identity_Mappings_in_Deep_Residual_Networks.pdf)
@@ -40,7 +40,7 @@ Deep learning’s modern arc is a loop between **compression** (what generalizes
 * [The Unreasonable Effectiveness of Recurrent Neural Networks](13_The_Unreasonable_Effectiveness_of_Recurrent_Neural_Networks.pdf)
 * [Understanding LSTM Networks](14_Understanding_LSTM_Networks.pdf)
 * [Recurrent Neural Network Regularization](15_Recurrent_Neural_Network_Regularization.pdf)
-* [Deep Speech 2- End-to-End Speech Recognition in English and Mandarin](16_Deep_Speech_2_End_to_End_Speech_Recognition_in_English_and_Mandarin.pdf)
+* [Deep Speech 2: End-to-End Speech Recognition in English and Mandarin](16_Deep_Speech_2_End_to_End_Speech_Recognition_in_English_and_Mandarin.pdf)
 
 ### 4. Attention becomes the architecture
 
@@ -64,7 +64,7 @@ Deep learning’s modern arc is a loop between **compression** (what generalizes
 
 *Connecting thread:* Once optimization is stable, the frontier shifts to compute, data, and infrastructure.
 
-* [GPipe- Easy Scaling with Micro-Batch Pipeline Parallelism](25_GPipe_Easy_Scaling_with_Micro_Batch_Pipeline_Parallelism.pdf)
+* [GPipe: Easy Scaling with Micro-Batch Pipeline Parallelism](25_GPipe_Easy_Scaling_with_Micro_Batch_Pipeline_Parallelism.pdf)
 * [Scaling Laws for Neural Language Models](26_Scaling_Laws_for_Neural_Language_Models.pdf)
 * [Better & Faster Large Language Models via Multi-token Prediction](27_Better_&_Faster_Large_Language_Models_via_Multi_token_Prediction.pdf)
 
@@ -75,8 +75,8 @@ Deep learning’s modern arc is a loop between **compression** (what generalizes
 * [Dense Passage Retrieval for Open-Domain Question Answering](28_Dense_Passage_Retrieval_for_Open_Domain_Question_Answering.pdf)
 * [Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks](29_Retrieval_Augmented_Generation_for_Knowledge_Intensive_NLP_Tasks.pdf)
 * [Precise Zero-Shot Dense Retrieval without Relevance Labels](30_Precise_Zero_Shot_Dense_Retrieval_without_Relevance_Labels.pdf)
-* [Lost in the Middle- How Language Models Use Long Contexts](31_Lost_in_the_Middle_How_Language_Models_Use_Long_Contexts.pdf)
-* [ALCUNA- Large Language Models Meet New Knowledge](32_ALCUNA_Large_Language_Models_Meet_New_Knowledge.pdf)
+* [Lost in the Middle: How Language Models Use Long Contexts](31_Lost_in_the_Middle_How_Language_Models_Use_Long_Contexts.pdf)
+* [ALCUNA: Large Language Models Meet New Knowledge](32_ALCUNA_Large_Language_Models_Meet_New_Knowledge.pdf)
 * [The Perils & Promises of Fact-checking with Large Language Models](33_The_Perils_&_Promises_of_Fact_checking_with_Large_Language_Models.pdf)
 
 ### 8. Alignment as a training recipe
