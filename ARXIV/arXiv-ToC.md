@@ -37,3 +37,9 @@
 - Transforms:
   - move rows where the `(year, url)` pair is duplicated
 - Notes: duplicates retained in `arXiv-5.csv`; remaining rows in `arXiv-4.csv` have unique `(year, url)` pairs
+
+### Step 6
+- Source: `arXiv-5.csv`
+- Destination: `arXiv-5.csv`
+- Transforms:
+  - normalize titles in place to the most complete/accurate title for each duplicate `(year, url)` group
