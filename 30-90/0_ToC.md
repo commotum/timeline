@@ -21,7 +21,7 @@ Deep learning’s modern arc is a loop between **compression** (what generalizes
 * [Kolmogorov Complexity and Algorithmic Randomness](4_Kolmogorov_Complexity_and_Algorithmic_Randomness.pdf)
 * [A Tutorial Introduction to the Minimum Description Length Principle](5_A_Tutorial_Introduction_to_the_Minimum_Description_Length_Principle.pdf)
 * [Keeping Neural Networks Simple by Minimizing the Description Length of the Weights](6_Keeping_Neural_Networks_Simple_by_Minimizing_the_Description_Length_of_the_Weights.pdf)
-* [VARIATIONAL LOSSY AUTOENCODER](7_VARIATIONAL_LOSSY_AUTOENCODER.pdf)
+* [Variational Lossy Autoencoder](7_Variational_Lossy_Autoencoder.pdf)
 
 ### 2. Vision and the rise of deep learning in practice
 
@@ -31,7 +31,7 @@ Deep learning’s modern arc is a loop between **compression** (what generalizes
 * [ImageNet Classification with Deep Convolutional Neural Networks](9_ImageNet_Classification_with_Deep_Convolutional_Neural_Networks.pdf)
 * [Deep Residual Learning for Image Recognition](10_Deep_Residual_Learning_for_Image_Recognition.pdf)
 * [Identity Mappings in Deep Residual Networks](11_Identity_Mappings_in_Deep_Residual_Networks.pdf)
-* [MULTI-SCALE CONTEXT AGGREGATION BY DILATED CONVOLUTIONS](12_MULTI_SCALE_CONTEXT_AGGREGATION_BY_DILATED_CONVOLUTIONS.pdf)
+* [Multi-Scale Context Aggregation by Dilated Convolutions](12_Multi_Scale_Context_Aggregation_by_Dilated_Convolutions.pdf)
 
 ### 3. Sequence modeling before Transformers
 
@@ -39,16 +39,16 @@ Deep learning’s modern arc is a loop between **compression** (what generalizes
 
 * [The Unreasonable Effectiveness of Recurrent Neural Networks](13_The_Unreasonable_Effectiveness_of_Recurrent_Neural_Networks.pdf)
 * [Understanding LSTM Networks](14_Understanding_LSTM_Networks.pdf)
-* [RECURRENT NEURAL NETWORK REGULARIZATION](15_RECURRENT_NEURAL_NETWORK_REGULARIZATION.pdf)
+* [Recurrent Neural Network Regularization](15_Recurrent_Neural_Network_Regularization.pdf)
 * [Deep Speech 2- End-to-End Speech Recognition in English and Mandarin](16_Deep_Speech_2_End_to_End_Speech_Recognition_in_English_and_Mandarin.pdf)
 
 ### 4. Attention becomes the architecture
 
 *Connecting thread:* Attention starts as alignment, becomes a pointer, then becomes the whole model.
 
-* [NEURAL MACHINE TRANSLATION BY JOINTLY LEARNING TO ALIGN AND TRANSLATE](17_NEURAL_MACHINE_TRANSLATION_BY_JOINTLY_LEARNING_TO_ALIGN_AND_TRANSLATE.pdf)
+* [Neural Machine Translation by Jointly Learning to Align and Translate](17_Neural_Machine_Translation_by_Jointly_Learning_to_Align_and_Translate.pdf)
 * [Pointer Networks](18_Pointer_Networks.pdf)
-* [ORDER MATTERS- SEQUENCE TO SEQUENCE FOR SETS](19_ORDER_MATTERS_SEQUENCE_TO_SEQUENCE_FOR_SETS.pdf)
+* [Order Matters - Sequence to Sequence for Sets](19_Order_Matters_Sequence_to_Sequence_for_Sets.pdf)
 * [Attention Is All You Need](20_Attention_Is_All_You_Need.pdf)
 
 ### 5. Memory, reasoning, and graphs
@@ -83,4 +83,4 @@ Deep learning’s modern arc is a loop between **compression** (what generalizes
 
 *Connecting thread:* Turning raw capability into behavior you can deploy and steer.
 
-* [ZEPHYR- DIRECT DISTILLATION OF LM ALIGNMENT](34_ZEPHYR_DIRECT_DISTILLATION_OF_LM_ALIGNMENT.pdf)
+* [Zephyr - Direct Distillation of LM Alignment](34_Zephyr_Direct_Distillation_of_LM_Alignment.pdf)
