@@ -57,3 +57,31 @@
 - Destination: `arXiv-7.csv`
 - Transforms:
   - append rows from `arXiv-6.csv` to `arXiv-4.csv`
+
+### Step 9
+- Source: `arXiv-7.csv`
+- Destination: `arXiv-7.csv`
+- Transforms:
+  - correct `year` from URL `YYMM` prefix
+  - sort by URL
+
+### Step 10
+- Source: `arXiv-7.csv`
+- Destination: `arXiv-8.csv`
+- Transforms:
+  - move rows where the `(year, url)` pair is duplicated
+- Notes: duplicates retained in `arXiv-8.csv`; remaining rows in `arXiv-7.csv` have unique `(year, url)` pairs
+
+### Step 11
+- Source: `arXiv-8.csv`
+- Destination: `arXiv-8.csv`
+- Transforms:
+  - normalize titles in place to the most complete/accurate title for each duplicate `(year, url)` group
+
+### Step 12
+- Source: `arXiv-7.csv` and `arXiv-8.csv`
+- Destination: `arXiv-9.csv`
+- Transforms:
+  - de-duplicate `arXiv-8.csv` by full row (`year,title,url`)
+  - sum `duplicate_count` for duplicates
+  - append deduplicated `arXiv-8.csv` rows to `arXiv-7.csv`
