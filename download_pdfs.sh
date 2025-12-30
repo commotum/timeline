@@ -94,18 +94,22 @@ while IFS=$'\t' read -r row_id year url; do
     if [[ "$url" != /* ]]; then
       url="$(dirname "$csv_path")/$url"
     fi
-    if [[ ! -e "$url" ]]; then
-      failed+=("$name | missing local file: $url")
-      echo "Missing local file: $url" >&2
-      continue
-    fi
-
     ext="$(get_ext_from_path "$url")"
     if [[ -z "$ext" ]]; then
       ext=".pdf"
     fi
 
     dest="${out_dir}/${name}${ext}"
+    if [[ ! -e "$url" ]]; then
+      if [[ -e "$dest" ]]; then
+        skipped+=("$name")
+        echo "Already renamed: $dest"
+        continue
+      fi
+      failed+=("$name | missing local file: $url")
+      echo "Missing local file: $url" >&2
+      continue
+    fi
     if [[ "$url" == "$dest" ]]; then
       skipped+=("$name")
       echo "Already named: $dest"
