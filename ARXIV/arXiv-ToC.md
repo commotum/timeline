@@ -32,5 +32,8 @@
 - Notes: moved out of `arXiv-3.csv`
 
 ### Step 5
+- Source: `arXiv-4.csv`
 - Destination: `arXiv-5.csv`
-- Notes: present but not processed yet
+- Transforms:
+  - move rows where the `(year, url)` pair is duplicated
+- Notes: duplicates retained in `arXiv-5.csv`; remaining rows in `arXiv-4.csv` have unique `(year, url)` pairs
