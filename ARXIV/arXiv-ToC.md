@@ -43,3 +43,17 @@
 - Destination: `arXiv-5.csv`
 - Transforms:
   - normalize titles in place to the most complete/accurate title for each duplicate `(year, url)` group
+
+### Step 7
+- Source: `arXiv-5.csv`
+- Destination: `arXiv-6.csv`
+- Transforms:
+  - de-duplicate by full row (`year,title,url`)
+  - sum `duplicate_count` for duplicates
+- Notes: total `duplicate_count` preserved
+
+### Step 8
+- Source: `arXiv-4.csv` and `arXiv-6.csv`
+- Destination: `arXiv-7.csv`
+- Transforms:
+  - append rows from `arXiv-6.csv` to `arXiv-4.csv`
