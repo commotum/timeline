@@ -1,3 +1,5 @@
+Ilya Sutskever shared a private reading list of 30 papers with John Carmack and said, “If you really learn all of these, you’ll know 90% of what matters today.” This is that list.
+
 1 - The First Law of Complexodynamics.pdf
 10 - Deep Residual Learning for Image Recognition.pdf
 11 - MULTI-SCALE CONTEXT AGGREGATION BY DILATED CONVOLUTIONS.pdf
