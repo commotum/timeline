@@ -10,8 +10,8 @@ Deep learning’s modern arc is a loop between **compression** (what generalizes
 
 *Connecting thread:* Why learning looks like compression, and why “intelligence” is measurable (at least in principle).
 
-* [Machine Super Intelligence](1_Machine_Super_Intelligence.pdf)
-* [The First Law of Complexodynamics](2_The_First_Law_of_Complexodynamics.pdf)
+* [The First Law of Complexodynamics](1_The_First_Law_of_Complexodynamics.pdf)
+* [Machine Super Intelligence](2_Machine_Super_Intelligence.pdf)
 * [Quantifying the Rise and Fall of Complexity in Closed Systems- The Coffee Automaton](3_Quantifying_the_Rise_and_Fall_of_Complexity_in_Closed_Systems_The_Coffee_Automaton.pdf)
 
 ### 1. Compression, MDL, and generalization
