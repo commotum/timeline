@@ -4,3 +4,8 @@
 4. Identify Entities (Groups of entries likely about the same artifact)
 5. ????Determine whether that artifact will likely have a PDF of some form
 6. If not, (repo)
+
+
+
+Start consolidated
+remove exact duplicates, count +=1
