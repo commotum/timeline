@@ -1,0 +1,742 @@
+                                           This CVPRpaperisthe Open Access version, provided by the Computer Vision Foundation.
+                                                           Except for this watermark, it is identical to the accepted version;
+                                                     the final published version of the proceedings is available on IEEE Xplore.
+                                                  Zero-Shot 4D Lidar Panoptic Segmentation
+                                                          1,2*          ˇ     ˇ   1                            ´1                          1
+                                      Yushan Zhang               Aljosa Osep            Laura Leal-Taixe              TimMeinhardt
+                                                             1                       2       ¨
+                                                               NVIDIA                 Linkoping University
+                                         3DInstances                        4DInstances
+                        Semantics                         Semantics
+                         Prior work: Zero-Shot (3D)          This work: Zero-Shot 4D                Text prompts:                     Text prompts:
+                        Lidar Panoptic Segmentation        Lidar Panoptic Segmentation       {advertising stand}                         {car}
+                 Figure 1. Learning to Segment Anything in Lidar–4D: Prior methods (left) for zero-shot Lidar panoptic segmentation process individual
+                 (3D)pointcloudsinisolation. In contrast, our data-driven approach (right) operates directly on sequences of point clouds, jointly perform-
+                 ing object segmentation, tracking, and zero-shot recognition based on text prompts specified at test time. Our method localizes and tracks
+                 any object and provides a temporally coherent semantic interpretation of dynamic scenes. We can correctly segment canonical objects,
+                 suchascar,andobjectsbeyondthevocabulariesofstandardLidardatasets,suchasadvertising stand. Bestseenincolor,zoomed.
+                                             Abstract                                       spatio-temporal scene understanding is directly relevant for
+                                                                                            embodied navigation [91], semantic mapping [6, 7, 92], lo-
+                 Zero-shot 4Dsegmentationandrecognitionofarbitraryob-                       calization [33, 39] and neural rendering [63].
+                 jects in Lidar is crucial for embodied navigation, with ap-                Status quo.        In applications that demand precise spa-
+                 plications ranging from streaming perception to semantic                   tial and dynamic situational scene understanding, e.g., au-
+                 mapping and localization. However, the primary challenge                   tonomous driving [91], perception stacks rely on Lidar-
+                 inadvancingresearchanddevelopinggeneralized,versatile                      based object detection [53, 104, 113] and multi-object
+                 methods for spatio-temporal scene understanding in Lidar                   tracking [20, 35, 93, 106] methods to localize objects, with
+                 lies in the scarcity of datasets that provide the necessary                recent trends moving towards holistic scene understanding
+                 diversity and scale of annotations. To overcome these chal-                via 4D Lidar Panoptic Segmentation (4D-LPS) [4]. The
+                 lenges, we propose SAL-4D (Segment Anything in Lidar–                      progress in these areas has largely been fueled by data-
+                 4D), a method that utilizes multi-modal robotic sensor se-                 driven methods [16, 73, 74, 90] that rely on manually la-
+                 tups as a bridge to distill recent developments in Video Ob-               beled datasets [7, 24, 86], limiting these methods to lo-
+                 ject Segmentation (VOS) in conjunction with off-the-shelf                  calizing instances of predefined object classes.            On the
+                 Vision-Language foundation models to Lidar. We utilize                     other hand, recent developments in single-scan Lidar-based
+                 VOS models to pseudo-label tracklets in short video se-                    perception are moving towards utilizing vision foundation
+                 quences, annotate these tracklets with sequence-level CLIP                 models for pre-training [71, 72, 82] and zero-shot segmen-
+                 tokens, and lift them to the 4D Lidar space using calibrated               tation [62, 67, 99]. However, state-of-the-art methods can
+                 multi-modal sensory setups to distill them to our SAL-4D                   only detect [61] and segment [62, 99] objects in individual
+                 model. Due to temporal consistent predictions, we outper-                  scans. In contrast, embodied agents must continuously in-
+                 form prior art in 3D Zero-Shot Lidar Panoptic Segmenta-                    terpret sensory data and localize objects in a 4D continuum
+                 tion (LPS) over 5 PQ, and unlock Zero-Shot 4D-LPS.                         to understand the present and predict the future.
+                                                                                            Towards 4D pseudo-labeling. Can we perform 4D Lidar
+                 1. Introduction                                                            Panoptic Segmentation by distilling video-foundation mod-
+                 We tackle segmentation, tracking, and zero-shot recogni-                   els to Lidar? Recent advances [78] suggest that Video Ob-
+                 tion of any object in Lidar sequences. Such open-ended 4D                  ject Segmentation (VOS) [70] generalize well to arbitrary
+                                                                                            objects. However, empirically, long-term segmentation sta-
+                     *Workdoneduringaninternship at NVIDIA.                                 bility remains a challenge [21, 110], while data recorded
+                                                                                      24506
+                from moving platforms presents unique challenges, such as              This formulation limits types of classes that can be rec-
+                rapid (ego) motion, objects commonly entering and exiting           ognized or segmented as individual instances. As labeled
+                sensing areas, and frequent occlusions.                             Lidar data is scarce, [67, 99] lift image features to 3D for
+                   To train our SAL-4D for Zero-Shot 4D Lidar Panoptic              zero-shot semantic [67] and panoptic [99] segmentation.
+                Segmentation, we present a pseudo-labeling engine that is           Different from [61, 62], these are limited to segmenting Li-
+                built on the insight that we can reliably prompt state-of-the-      dar points that are co-visible in cameras. [61] addresses
+                art VOS models over short temporal horizons in videos and           zero-shotobjectdetectionfortrafficparticipants, a subset of
+                generate their corresponding sequence-level CLIP features           thing classes, and SAL [62] distills vision foundation mod-
+                to facilitate zero-shot recognition. To account for inherently      els to Lidar to segment and recognize instances of thing and
+                noisy localization and possible tracking errors, we lift these      stuff classes. However, all aforementioned can only seg-
+                masklets, localized in the video, to Lidar, where we lever-         ment individual scans, whereas temporal interpretation of
+                age accurate spatial Lidar localization to associate masklets       sensory data is pivotal in embodied perception.
+                across windows and continually localize individual object           Object tracking. Multi-object tracking (MOT) is a long-
+                instances as they enter and leave the sensing area. There-          standing problem commonly used for spatio-temporal un-
+                fore, our pseudo-labeling engine provides precisely the su-         derstanding of Radar [81], image [19, 45, 109], and Li-
+                pervisorysignalfor4DLidarsegmentationmodels[4,105].                 dar [68] data. It is commonly addressed via tracking-by-
+                Even though our pseudo-labeling approach is still prone to          detection, where an object detector is first trained for a pre-
+                noise and errors, we empirically observe that they are suf-         defined set of object classes [43, 53, 104, 106, 113], that
+                ficiently de-correlated, enabling us to distill a noisy super-      localize objects in individual frames, followed by cross-
+                visory signal into a strong, end-to-end trainable Lidar seg-        frame association. Image-based methods rely on learning
+                mentation model that can segment, track, and recognize ob-          robust appearance models [19, 84], whereas Lidar-based
+                jects anywhere in Lidar in the absence of image features.           trackers leverage accurate 3D localization in Lidar and rely
+                Keyfindings. Ourmethodsignificantly improves the zero-              on motion and geometry [20, 35, 93, 106]. Unlike our pur-
+                shot recognition capabilities compared to the single-scan           suit of joint zero-shot segmentation and tracking of any
+                state-of-the-art Lidar Panoptic Segmentation [62] due to            object, prior Lidar-based tracking methods focus on the
+                temporal coherence, and, more importantly, SAL-4D un-               cross-detection association to track instances of pre-defined
+                locks new capabilities in Lidar perception.      For the first      classes as bounding boxes.
+                time, we can segment objects beyond the predefined ob-                 Related to our work is class-agnostic multi-object track-
+                ject classes of typical 4D-LPS benchmarks in a temporally           ing in videos [18, 49, 52, 65, 66], recently addressed in
+                coherent manner and open the door for future progress in            conjunction with zero-shot recognition [17, 50]. Like ours,
+                learning to segment anything in Lidar sequences.                    these methods must track and, optionally, classify objects
+                Maincontributions. Wepresentthe(i)firststudyonZero-                 as they enter and exit the sensing area. In contrast to ours,
+                Shot 4D Lidar Panoptic Segmentation, and discuss multiple           these rely on (at least some) labeled data available in the
+                possible approaches for this task. Our analysis (ii) paves          image domain and focus on tracking thing classes. These
+                the road for a strong baseline, SAL-4D, that utilizes vision        are also related to methods for single object tracking based
+                foundation models to construct temporal consistent anno-            on spatial prompts (Visual Object Tracking [32, 41, 42, 97]
+                tations, that, when distilled to Lidar, allow us to segment,        andVideoObjectSegmentation[69,103]),whichweutilize
+                track, and recognize arbitrary objects. We (iii) thoroughly         [78] in our pseudo-labeling pipeline (Sec. 3.2).
+                ablate our design decisions and analyze the remaining gap
+                to supervised models on standard benchmarks.                        4D Lidar panoptic segmentation.           4D Lidar Panoptic
+                                                                                    Segmentation [4] addresses holistic, spatio-temporal under-
+                2. Related Work                                                     standing of (4D) Lidar data. Contemporary methods ap-
+                This section discusses recent developments in segmenta-             proach this task by segmenting short spatio-temporal (4D)
+                tion, tracking, and zero-shot recognition in Lidar.                 volumes [3, 4, 13, 30, 40, 96, 105, 115], followed by
+                                                                                    cross-volume fusion, or follow the tracking-by-detection
+                Lidar panoptic segmentation.        Thanks to the advent of         paradigm, established in MOT [1, 34, 54, 56]. The afore-
+                manually labeled Lidar-based datasets [7, 24, 44] we have           mentioned methods utilize manual supervision in the form
+                made rapid progress in single-scan semantic [1, 2, 16, 48,          of semantic spatio-temporal instance labels and are con-
+                57, 80, 88, 94, 95, 100, 116] and panoptic segmentation [8,         fined to pre-defined class vocabularies. Exceptions are early
+                25, 29, 47, 79, 114] via supervised learning. In this setting,      efforts, such as [28, 38, 59, 60, 64, 89], that utilize heuristic
+                the task is to learn to classify points into a set of pre-defined   bottom-up grouping methods to segment arbitrary objects
+                semantic classes that follow class vocabulary defined prior         in individual Lidar scans, followed by tracking, and, op-
+                to the data annotation process.                                     tionally, semantic recognition of tracked objects (for which
+                                                                              24507
+                semantic annotations are available). Our approach follows             between thing and stuff classes cannot be specified prior to
+                the same principle and performs class-agnostic segmenta-              the model training, we drop this distinction.
+                tion and tracking of any object in Lidar. However, we learn           Method overview.        Our SAL-4D consists of two core
+                via self-supervision to track, segment, and recognize any             components: (i) The pseudo-label engine (Fig. 2) con-
+                object that occurs in the training data.                              structs a proxy dataset D     , that consists of Lidar data and
+                                                                                                                proxy
+                Zero-shot learning. Zero-shot learning (ZSL) [98] meth-               self-generated pseudo-labels that localize individual spatio-
+                ods must recognize object classes for which labeled train-            temporal instances and their semantic features.       (ii) The
+                ing data may not be available.         Inductive methods as-          model fθ (Fig. 3) learns to segment individual instances in
+                sume no available information about the target classes,               fixed-size 4D volumes by minimizing empirical risk on our
+                whereas transductive setting only restricts access to la-             proxy dataset D      . Our model and proxy dataset are con-
+                                                                                                       proxy
+                bels.   We address 4D Lidar segmentation in transduc-                 structed such that our model learns to segment and recog-
+                tive setting, as usual in tasks beyond image recognition              nize a super-set of all objects labeled in existing datasets.
+                (e.g., object detection [5, 58, 76], semantic/panoptic seg-           3.2. SAL-4D Pseudo-label Engine
+                mentation [10, 22, 101]), where imposing restrictions on
+                the presence of semantic classes in images would be im-               Our pseudo-label engine (Fig. 2) operates with a multi-
+                practical.  Similarly to contemporary image-based meth-               modal sensory setup. We assume an input Lidar sequence
+                ods [26, 27, 46, 51, 77, 102, 107, 108, 111, 112], we rely                      T                                             c C
+                                                                                      P ={Pt}        alongwithC unlabeledvideosV = {V }             ,
+                                                                                                t=1                                             c=1
+                onCLIP[75]forzero-shotrecognition of objects, however,                                     c        c T                          c
+                                                                                      where each video V      = {I }       consists of images I    ∈
+                                                                                                                   t  t=1                        t
+                we distill CLIP features directly to point cloud sequences.           RH×W×3 of spatial dimensions H × W, captured by
+                Our work is related to open-set recognition [83] and open-            camera c at time t.     For each point cloud Pt, we pro-
+                world [9] learning, which recognize classes not shown as                                                                         Mt
+                                                                                      duce pseudo-labels, comprising of tuples {m˜      , id , f }  ,
+                                                                                                                                     i,t   i  i i=1
+                                                                                                            N
+                labeled instances during the model training.                          where m˜     ∈ {0,1} t represents the binary segmentation
+                                                                                               i,t
+                                                                                      mask for instance i at time t in the point cloud Pt, and
+                3. Zero-Shot 4D Lidar Panoptic Segmentation                           id ∈ N is the unique object identifier for spatio-temporal
+                                                                                        i
+                                                                                      instance i. Finally, fi ∈ Rd represents instance semantic
+                Inthissection, weformallystatethe4DLidarPanopticSeg-                  features aggregated over time.
+                mentation (4D-LPS) task and discuss its generalization to
+                zero-shot setting (Sec. 3.1) for joint segmentation, tracking         3.2.1. Track–Lift–Flatten
+                and recognition of any object in Lidar. In Sec. 3.3, we de-           Weproceed by sliding a temporal window of size K with
+                scribe our concrete instantiation of this approach, SAL-4D.           a stride S over the sequence of length T. We first pseudo-
+                3.1. Problem Statement                                                label each temporal window (see Figure 2a), and then per-
+                                                                                      form cross-window association (see Figure 2b) to obtain
+                4D Lidar panoptic segmentation. Let P = {P }T                be       pseudo-labels for sequences of arbitrary length. In a nut-
+                                                                      t t=1           shell, for each temporal window, we track objects in video
+                                                                       N ×4
+                a sequence of T point clouds, where each P ∈ R t              is
+                                                                 t                    (track), lift masks to 4D Lidar sequences (lift), and, finally,
+                a point cloud observed at time t containing Nt points that            “flatten” overlapping masklets in the 4D volume. Our tem-
+                consist of spatial coordinates and an intensity value. For            poral windows w = {(P ,I ) | t ∈ T } consist of Lidar
+                each point p, 4D-LPS methods estimate a semantic class                                  k         t  t          k
+                c ∈ {1,...,L} with L predefined classes, and an instance              point clouds and images over specific time frames. Here,
+                                                                                      T ={t ,t +1,...,t +K−1}isthesetoftimeindices
+                id ∈ Nforthingclasses, or ∅ for stuff classes. To this end, a          k      k   k           k
+                function f , representing the segmentation model with pa-             for window wk. We drop the camera index c unless needed.
+                           θ                                                          Track.     For each video, we use a segmentation foun-
+                rameters θ, is usually trained on manually-labeled dataset
+                D     byminimizing an appropriate loss function.                      dation model [37] to perform grid-prompting in the first
+                  train                                                               video frame of the window I      to localize objects as masks
+                                                                                                                    t
+                Zero-shot 4D Lidar panoptic segmentation. We address                                                 k
+                                                                                              Mtk                   H×W
+                                                                                      {m } ,m ∈{0,1}                      , where M      denotes the
+                                                                                         i,t          i,t                             t
+                4D-LPSinazero-shotsetting,intendingtolocalizeandrec-                       k i=1        k                             k
+                                                                                      number of discovered instances in I . We then propagate
+                                                                                                                             t
+                ognizeanyobjectsin4DLidarpointcloudsequences. Sim-                                                           k
+                                                                                      masks through the entire window {I | t ∈ T } using [78]
+                ilarly, we assign each points p ∈ P an instance identity                                                     t        k
+                                                                                                                          Mtk
+                                                                                      to obtain masklets {m     | t ∈ T }      for all instances dis-
+                id ∈ N; however, we do not assume predefined semantic                                        i,t        k i=1
+                                                                                      covered in I . This results in M     overlapping masklets in
+                                                                                                  t                      t
+                class vocabulary and (accordingly) labeled training set at                         k                     k
+                train time. Instead, we assume a semantic vocabulary Ctest            a3DvideovolumeofdimensionsH×W×K,representing
+                                                                                      objects visible in I  across the window w .
+                is optionally specified at test-time as a list of free-form de-                          tk                        k
+                                                                                                                              Mtk
+                scriptions of semantic classes. When specified, we assign                Given masklets {mi,t | t ∈ Tk}            and correspond-
+                                                                                                                              i=1
+                points also to semantic classes c ∈ C      . As the separation        ing images {I | t ∈ T }, we compute semantic features
+                                                       test                                          t          k
+                                                                               24508
+                             (a) Track–Lift–Flatten.                                            (b) Cross-window association.
+                Figure2. SAL-4Dpseudo-labelengine. Wefirstindependentlypseudo-labeloverlappingslidingwindows(Fig.2a). Wetrackandsegment
+                objects in the video using [78], generate their semantic features using CLIP, and lift labels from images to 4D Lidar space. Finally, we
+                “flatten” masklets to obtain a unique non-overlapping set of masklets in Lidar for each temporal window. We associate masklets across
+                windowsvialinear assignment (LA) to obtain pseudo-labels for full sequences and average their semantic features (Fig. 2b).
+                f   for each mask m       using relative mask attention in the       and ensure unique point-to-instance assignments (via IoM-
+                 i,t                   i,t
+                CLIP [75] feature space and obtain masklets paired with              based suppression) in the 4D space-time volume. However,
+                their CLIP features {(m      , id  , f  ) | t ∈ T } for each         weobtain pseudo-labels only for objects visible in the first
+                                           i,t  i,k  i,t           k
+                instance i, where id     is a local instance identifier within       video frame I    of each window w .
+                                      i,k                                                           t                     k
+                                                                                                    k
+                windowwk. Fordetails, we refer to Appendix A.1.                      3.2.2. Labeling Arbitrary-Length Sequences
+                Lift.  We associate 3D points {P | t ∈ T } with image                After labeling each temporal window, we obtain pseudo-
+                                                     t         k
+                masks mi,t via Lidar-to-camera transformation and projec-            labels for point clouds within overlapping windows of size
+                tion. We refine our lifted Lidar masklets to address sen-            K,withlocal instance identifiers id     . To produce pseudo-
+                                                                                                                           i,k
+                sormisalignmenterrorsusingdensity-basedclustering[23].               labels for the full sequence of length T and account for new
+                WecreateanensembleofDBSCANclustersbyvaryingthe                       objects entering the scene, we associate instances across
+                density parameter and replacing all lifted masks with DB-            windows in a near-online fashion (with stride S), resulting
+                SCANmaskswith sufficient intersection-over-union (IoU)               our final pseudo-labels {(m˜    , id , f ) | t ∈ T} (Fig. 4).
+                                                                                                                   i,t  i  i
+                overlap [62]. We obtained the best results by performing                For each pair of overlapping windows (w           , w ), we
+                this on a single-scan basis (Appendix C.1).                                                                           k−1    k
+                                                                                     perform association via linear assignment. We derive asso-
+                                         c     c    c                                ciation costs from temporal instance overlaps (measured by
+                   We obtain sets {(m˜     , id  , f  ) | t ∈ T } indepen-
+                                         i,t   i,k  i,t           k                  3D-IoU) in the overlapping frames T         ∩T :
+                dently for each camera c, and fuse instances with sufficient                                                k−1      k
+                IoU overlap across cameras. We fuse their semantic fea-                            c   =1−IoU (m˜             , m˜  ),           (1)
+                tures fi,t via mask-area-based weighted average to obtain                           ij            3D    i,k−1    j,k
+                a set of tuples {(m˜   , id  , f  ) | t ∈ T }, that represent
+                                     i,t  i,k   i,t         k                        where m˜        and m˜    are the aggregated Lidar masks of
+                spatio-temporal instances localized in window w .                              i,k−1        j,k
+                                                                    k                instances i and j. After association, we update the global
+                                                                                     instance identifiers id for matched instances and aggregate
+                Flatten. The resulting set contains overlapping masklets in                                 i
+                                                                                     their semantic features f . As a final post-processing step,
+                4Dspace-time volume. To ensure each point is assigned to                                       i
+                at most one instance, we perform spatio-temporal flattening          weremoveinstances that are shorter than a threshold τ.
+                as follows. We compute the spatio-temporal volume Vi of              3.3. SAL-4D Model
+                                ˜
+                each masklet M = {m˜         | t ∈ T } by summing the num-
+                                 i       i,t        k    P
+                ber of points across all frames: V =             |m˜  |, where       Overview.        We follow tracking-before-detection de-
+                                                    i       t∈Tk    i,t
+                |m˜  | denotes the number of points in mask m˜       . We sort       sign [59, 65, 89] and segment and track objects in a class-
+                   i,t                                             i,t
+                the masklets in descending order based on their volumes              agnostic fashion. Once localized and tracked, objects can
+                Vi, and incrementally suppress masklets with intersection-           be recognized. To operationalize this, we employ a Trans-
+                over-minimum larger than empirically determined thresh-              former decoder-based architecture [12]. In a nutshell, our
+                old.  With this flattening operation, we favor larger and            network (Fig. 3) consists of a point cloud encoder-decoder
+                temporallyconsistentinstances(i.e., prefer larger volumes),          network that encodes sequences of point clouds, followed
+                                                                               24509
+                                                                                     A.2.) As our model directly processes superimposed point
+                                                                                     clouds within windows of size K, we perform near-online
+                                                                                     inference [15] by associating Lidar masklets across time
+                                                                                     based on 3D-IoU overlap via bi-partite matching (as de-
+                                                                                     scribed in Sec. 3.2.2). For zero-shot prompting, we follow
+                                                                                     [62] and first encode prompts specified in the semantic class
+                                                                                     vocabulary using a CLIP language encoder. Then, we per-
+                                                                                     form argmax over scores, computed as a dot product be-
+                                                                                     tween encoded queries and predicted CLIP features.
+                Figure 3. SAL-4D model segments individual spatio-temporal in-       4. Experimental Validation
+                stances in 4D Lidar sequences and predicts per-track CLIP tokens
+                that foster test-time zero-shot recognition via text prompts.        This section first discusses datasets and evaluation protocol
+                by a Transformer-based object instance decoder that local-           and metrics (Sec. 4.1). In Sec. 4.2, we ablate our pseudo-
+                izes objects in the 4D Lidar space (cf., [55, 105]).                 label engine and model and justify our design decisions. In
+                                                                                     Sec. 4.3, we compare our SAL-4D with several zero-shot
+                Model.      Our model (Fig. 3) operates on point clouds              and supervised baselines on multiple benchmarks for 3D
+                P        ∈ RN×4, N = N +...+N                       , superim-       and 4D Lidar Panoptic Segmentation.
+                  super                      t              t +K−1
+                                              k             k
+                posed over fixed-size temporal windows wk. As in [62],               4.1. Experiments
+                we encode superimposed sequences using Minkowski U-
+                Net [16] backbone to learn a multi-resolution representa-            Datasets. For evaluation, we utilize two datasets that pro-
+                tion of our input using sparse 3D convolutions. For spatio-          vide semantic and spatio-temporal instance labels for Lidar,
+                temporalreasoning,weaugmentvoxelfeatureswithFourier                  SemanticKITTI [7] and Panoptic nuScenes [11, 24].
+                positional embeddings [87, 105] that encode 3D spatial and
+                temporal coordinates.                                                SemanticKITTI was recorded in Karlsruhe, Germany, us-
+                   Our segmentation decoder follows the design of [12,               ing a 64-beam Velodyne Lidar sensor at 10Hz and provides
+                14, 55].    Inputs to the decoder are a set of M learn-              Lidar and front RGB camera, which we use for pseudo-
+                able queries that interact with voxel features, i.e., our (4D)       labeling (14%ofallLidarpointsarevisibleincamera). The
+                spatio-temporal representation of the input sequence. For            dataset provides instance-level spatiotemporal labels for 8
+                each query, we estimate a spatio-temporal mask , an ob-              thing and 11 stuff classes.
+                jectness score indicating how likely a query represents an           Panoptic nuScenes was recorded in Boston and Singapore
+                object and a d-dimensional CLIP token capturing object se-           using 32-beam Velodyne. It provides five cameras with
+                mantics. For details, we refer to Appendix A.2.                      360◦ coverage (covering 48% of all points) at 2Hz. Spatio-
+                Training. Ournetworkpredictsasetofspatio-temporalin-                 temporal labels are available for 8 thing and 8 stuff classes.
+                stances, parametrized via segmentation masks over the su-            Evaluation metrics.       We follow prior work in 4D Li-
+                                                          N
+                perimposed point cloud: mˆ       ∈ {0,1} , j = 1,...,M,
+                                              j                                      dar Panoptic Segmentation [4] and adopt LSTQ as the
+                obtained by sigmoid activating and thresholding the spatio-          core metric for evaluation.       In a nutshell, LSTQ =
+                temporal mask M. To train the network, we establish cor-             √
+                respondences between predictions mˆ        and pseudo-labels           Sassoc ×Scls is defined as the geometric mean of two
+                                                         j                           terms,associationtermSassoc assessesspatio-temporalseg-
+                m˜  via bi-partite matching (following the standard prac-
+                  i                                                                  mentation quality, independently of semantics, whereas
+                tice [12, 55, 105]) and evaluate the following loss:                 classification S   assesses semanticrecognitionqualityand
+                                                                                                     cls
+                            L           =L +L +L                  ,         (2)      establishes whether points were correctly classified. This
+                              SAL−4D        obj      seg     token                   separation between spatio-temporal segmentation and se-
+                with a cross-entropy loss L       indicating whether a mask          mantic recognition makes LSTQ uniquely suitable for
+                                              obj
+                localizes an object, a segmentation loss L      (binary cross-       studying ZS-4D-LPS. For per-scan evaluation, we adopt
+                                                            seg
+                entropy and a dice loss following [55]), and a CLIP token            Panoptic Quality [36], which consists of Segmentation
+                loss (cosine distance) L       . As all three terms are eval-        Score(SQ)andRecognitionScore(RQ):PQ = SQ×RQ.
+                                          token
+                uated on a sequence rather than individual frame level, our          Frustumandstuffevaluation. As our pseudo-labels only
+                networkimplicitlylearnstosegmentandassociateinstances                cover part of the point cloud co-visible in RGB cameras
+                over time, encouraging temporal semantic coherence.                  (“frustum”), we focus our ablations to camera view frus-
+                Inference. We first decode masks by multiplying object-              tumsandonlyreportbenchmarkresultsonfullpointclouds.
+                ness scores with the spatio-temporal masks M ∈ RM×N,                 Furthermore, since our approach no longer distinguishes
+                followed by argmax over each point (details in Appendix              thing and stuff classes but treats both in a unified manner,
+                                                                               24510
+                                                                                           SAL-4D    #frame   Ego.   LSTQ    Sassoc  S      IoUst   IoU
+                   #frames     Cross    LSTQ     S         S      IoU       IoU                                                        cls             th
+                                                  assoc     cls       st        th                            Comp
+                              window
+                      8                  49.2     70.0     34.6    36.0      36.9          Labels      8              51.1    70.3    37.2   37.4    41.5
+                      2         ✓        50.6     67.4     37.9    37.3      43.5                               Ego-motion compensation
+                      4         ✓        51.4     69.5     37.9    38.1      42.4          Model       8      None    43.7    61.3    31.2   44.3    17.1
+                      8         ✓        51.1     70.3     37.2    37.4      41.5          Model       8      Rand    50.7    74.2    34.7   48.5    19.9
+                     16         ✓        50.5     69.6     36.7    38.0      39.5          Model       8      Mix     53.2    77.2    36.6   47.9    25.6
+                                                                                                                     Windowsize
+                 Table 1. Pseudo-label ablations on temporal window size and               Model       2      Mix     52.3    74.8    36.6   47.7    21.3
+                 cross-window association: We ablate our approach on temporal              Model       4      Mix     52.7    76.2    36.4   47.8    25.3
+                                                                                           Model       8      Mix     53.2    77.2    36.6   47.9    25.6
+                 window sizes of size K = {2,4,8,16} with stride K on Se-
+                                                                         2
+                 manticKITTI validation set. We average CLIP features for each           Table2. SAL-4Dtraining. Top: Todistillourpseudo-labelsintoa
+                 instance across time. We observe association score (S        ) im-
+                                                                         assoc           stronger model, it is important to transform point clouds to a com-
+                 prove up to 8 frames, while zero-shot recognition (Scls) saturates      mon coordinate frame during train- and test-time. Interestingly,
+                 at 4 frames. Without the cross-window association (Sec. 3.2.2),         our model benefits from randomly not performing motion com-
+                 the LSTQdropsby1.9percentagepoints.                                     pensation during training by 10%. Bottom: Processing larger tem-
+                 wefollow[62]andutilize zero-shot classification labels for              poral sequencesdirectly benefits our model. Overall, we distill our
+                 merginginstanceswiththesamestuff classestoevaluateon                    pseudo-labels (51.1 LSTQ) to a stronger model (53.2 LSTQ).
+                 respective dataset class vocabularies.                                  windows should be preferable. However, errors that arise
+                                                                                         duringvideo-instancepropagationoverlargerhorizonsmay
+                 4.2. Ablations                                                          degrade the performance. Our analysis confirms this intu-
+                 Weablate design decisions behind our pseudo-label engine                ition: we generate pseudo-labels with varying window sizes
+                                                                                         (K ={2,4,8,16})withafixed stride of K, and report our
+                 (Sec. 4.2.1) and model (Sec. 4.2.2). We focus this discus-                                                             2
+                 sion on temporal window size for tracking, point cloud su-              findings in Tab. 1. Our results improve with increasing win-
+                 perposition strategies, and the impact of our cross-window              dowsize, but performance plateaus after K = 8. We obtain
+                 association, and report additional ablations in the appendix.           the overall highest LSTQ with K = 4 (51.4); however, with
+                                                                                         K = 8, we observe larger gains in terms of segmentation
+                 4.2.1. Pseudo-label Engine                                              and tracking (Sassoc: 70.3 vs. 69.5). In Fig. 4, we confirm
+                 Labeling temporal windows vs. full sequences.                 Our       this visually by contrasting ground-truth labels with single-
+                 SAL-4D model operates on superimposed point clouds,                     scan labels, and our labels, obtained with K = {2,8}.
+                 which only require temporal consistent 4D labels within                 Gains are most significant in terms of Sassoc, as these re-
+                 temporal windows.        This begs the question, is pseudo-             sults are reported after cross-window association. The ap-
+                 labeling only short sequences sufficient? We first gener-               pendix reports a similar analysis conducted before cross-
+                 ate pseudo-labels with consistent IDs only within fixed-size            windowassociation. For the remainder, we fix K = 8.
+                 temporal windows (Sec. 3.2.1) and train our model by re-                Comparison with single-scan pseudo-labels.                Do our
+                 moving points that are not pseudo-labeled. However, this                spatio-temporal pseudo-labels improve quality on a single-
+                 methoddoesnotfullyleveragetemporalandsemanticinfor-                     scan basis? In Tab. 3, we compare our SAL-4D pseudo-
+                 mation across the whole sequence and account for objects                labels with single-scan labels (SAL [62]), and report zero-
+                 that appear after the first frame of the window. As can be              shot and class-agnostic segmentation results.         As can be
+                 seen in Tab. 1, this version leads to 49.2 LSTQ (1st entry).            seen, our temporally consistent pseudo-labels perform bet-
+                 Byadditionally associating the fixed-size temporal window               ter than our single-scan counterparts, especially in terms
+                 (Sec.3.2.2), weobserveanimprovementof+1.9andobtain                      of semantics (a relative 15% improvement w.r.t. PQ and
+                 51.1 LSTQ (4th entry). We observe improvements in as-                   20% improvement w.r.t. mIoU). Our spatio-temporal la-
+                 sociation and, in particular, for zero-shot recognition (37.2           belsproducefewerinstancesperscan,whichimpliesspatio-
+                 S    vs. 34.6, +2.6), as averaging CLIP features over longer            temporal labels improve precision due to temporal coher-
+                   cls                                                                   ence. We conclude that our approach not only unlocks the
+                 temporal horizons (enabled by our cross-window associa-                 training of models for ZS-4D-LPSbutalsosubstantiallyim-
+                 tion) provides a more consistent semantic signal.                       proves pseudo-labels for training ZS-LPS methods [62].
+                 Temporal window size.           As discussed in Sec. 3.2, we            4.2.2. Model and Training
+                 first label fixed-size temporal windows, followed by cross-
+                 window association.       By labeling sequences of arbitrary            To train the 4D segmentation model, we superimpose
+                 length, we obtain temporally-stable semantic features and               point clouds within fixed-size temporal windows and train
+                 correctly handle outgoing/incoming objects. What is the                 our model to directly segment superimposed point clouds
+                 optimal temporal window size? Intuitively, longer temporal              within these short 4D volumes. For a comparison with our
+                                                                                   24511
+                                                                                                                   Method           frustum      #inst       PQ     SQ     PQ      PQ
+                            Method                PQ       SQ      PQth     PQst     mIoU                                                                                     th      st
+                                                                                                                                      eval    total / mean
+                                       Class-agnostic (Semantic Oracle) LPS                                        DS-Net[29]         ×            -        57.7    77.6   61.8    54.8
+                            SAL[62]labels         55.3    79.9     66.0     47.5      62.1                         PolarSeg [114]     ×            -        59.1    78.3   65.7    54.3
+                            SAL-4Dlabels          55.4    80.0     66.4     47.4      62.0                         GP-S3Net[79]       ×            -        63.3    81.4   70.2    58.3
+                                                    Zero-Shot LPS                                              SupervisedMaskPLS[55]  ×            -        59.8    76.3     -      -
+                                                                                                                   SAL[62]            ✓        62k / 15.2   33.1    71.3   21.5    41.5
+                            SAL[62]labels         29.9    74.8     35.2     26.0      31.9                         SAL-4D             ✓        61k / 15.1   38.2    78.1   30.9    43.5
+                            SAL-4Dlabels          34.5    70.5     40.7     29.9      39.1                     Zero-shotSAL[62]       ×        25k / 49.0   25.3    63.8   18.3    30.3
+                                                                                                                   SAL-4D             ×        18k / 44.0   30.8    76.9   25.5    34.6
+                    Table 3.      Single-scan pseudo-label evaluation: We compare                          Table 4. 3D-LPS evaluation. Training our SAL-4D model on the
+                    our SAL-4D pseudo-labels to its single-scan counterpart on Se-                         temporal consistent 4D pseudo-labels yields superior 3D (single-
+                    manticKITTI validation set. Following [62], we also report both                        scan) performance compared to 3D baselines. We evaluate on the
+                    zero-shot and semantic-oracle Lidar Panoptic Segmentation (LPS)                        SemanticKITTI validation set. SAL-4D evaluated not only in the
+                    results. Our SAL-4D pseudo-label engine produces a smaller set                         frustum was trained with the FrankenFrustum [62] augmentation.
+                    of higher-quality labels when evaluated on a per-scan basis, with
+                    an improvement of over 15% in recognition score (PQ) and over
+                    20%insegmentation quality (mIoU).
+                    pseudo-labels, we ablate the model “in-frustum” and inves-
+                    tigate two aspects of point cloud superposition.                                               (a) Ground Truth (GT).                  (b) 3D Pseudo-Labels.
+                    Temporal window size:                Refers to the number of scans
+                    used to construct a superimposed point cloud. As can be
+                    seen in Tab. 2, results are consistent with conclusions for a
+                    pseudo-label generation. We obtain the overall best results
+                    withawindowsizeof8(53.2LSTQ).Largertemporalwin-                                           (c) 4D Pseudo-Labels (2 frames).       (d) 4D Pseudo-Labels (8 frames).
+                    dowsizesareespeciallybeneficialintermsofsegmentation.                                  Figure 4. Qualitative results. We compare our 4D pseudo-labels
+                    Ego-motion: In4Dspace,wecanutilizeego-posetoalign                                      (obtained over windows of 2&8 frames) to GT labels, and single-
+                    pointcloudstoacommoncoordinateframe. Weablatethree                                     scan labels. By contrast to GT, our automatically-generated labels
+                    options: (i) no ego-motion compensation (None), (ii) se-                               cover both thing and stuff classes. As can be seen, the temporal
+                    lect a random (Rand) scan as the reference scan, and (iii)                             coherence of labels improves over larger window sizes.
+                    a mixed (Mix) version of 90% random reference scan +                                   tation [62], that helps our model, trained on pseudo-labels
+                    10% no ego-motion compensation (% determined via line                                  generated on 14% of full point cloud, to generalize to the
+                    search). Results reported in Tab. 2 suggest that ego-motion                            full 360◦ point clouds. As can be seen in Tab. 4, SAL-4D
+                    compensation has a positive impact. We obtain 74.2 Sassoc                              consistently outperforms SAL baseline: we obtain 38.2 PQ
+                    whenaligning point clouds, compared to 61.3 Sassoc with-                               within-frustum (+5.1 w.r.t. SAL), and 30.8 PQ on the full
+                    out. Intuitively, this compensation simplifies tracking at in-                         point cloud (+5.5 w.r.t. SAL), and overall reduces the gap
+                    ference, but this is not necessarily desirable during the train-                       to supervised baselines. Improvements are especially no-
+                    ing. To ensure that our model learns associations among                                table for thing classes (18.3 vs. 25.5 PQ                  ). We attribute
+                    non-aligned regions, we drop ego-compensation in 10% of                                                                                         th
+                    cases, yielding the best overall results (77.2 S                      ). With          these gains to temporal coherence imposed during pseudo-
+                                                                                   assoc                   labeling and model training.
+                    this approach, we distill our pseudo-labels (51.1 LSTQ) to
+                    a stronger model (53.2 LSTQ) that segments point clouds                                4.3.2. 4D Lidar Panoptic Segmentation
+                    in the absence of image features.                                                      We compare SAL-4D to several zero-shot baselines and
+                    4.3. Benchmarks                                                                        state-of-the-art 4D-LPS methods trained with ground-truth
+                                                                                                           labels provided on SemanticKITTI and Panoptic nuScenes
+                    4.3.1. Lidar Panoptic Segmentation                                                     datasets.      In contrast, all zero-shot approaches rely only
+                    In Tab. 4, we compare our SAL-4D to several supervised                                 on single-scan 3D [62] or our 4D pseudo-labels. To com-
+                    methods [29, 55, 79, 85, 114], and single-scan zero-shot                               pare SAL-4D to baselines that operate on full (360◦) point
+                    baseline, SAL [62].1             We compare two variants of our                        clouds, we train our model on temporal windows of size 2,
+                    method: our top-performing model, trained on the temporal                              with FrankenFrustum augmentation [62], which helps our
+                    windowofsize8,andavariantofourmodel,trainedonthe                                       model to generalize beyond view frustum.
+                    temporal window of size 2, with FrankenFrustum augmen-                                 ZS-4D-LPS baselines.                 We construct several baselines
+                        1Results we report for the baseline are slightly higher than those re-             that associate single-scan 3D SAL [62] predictions in time
+                    ported in [62]. We refer to the supplementary for further details.                     (see Appendix B for further details) and require no tempo-
+                                                                                                    24512
+                               Method                LSTQ    Sassoc    S      IoUst   IoU                        GT                Pseudo-labels              SAL-4D
+                                                                        cls               th
+                               4D-PLS[4]              62.7     65.1    60.5    65.4    61.3
+                               4D-StOP[40]            67.0     74.4    60.3    65.3    60.9
+                               4D-DS-Net[30]          68.0     71.3    64.8    64.5    65.3
+                               Eq-4D-PLS[115]         65.0     67.7    62.3    66.4    64.6
+                               Eq-4D-StOP[115]        70.1     77.6    63.4    66.4    67.1
+                            SupervisedMask4Former[105]70.5     74.3    66.9    67.1    66.6
+                               Mask4D[56]             71.4     75.4    67.5    65.8    69.9
+                               SAL-4D                 69.1     70.1    68.0    65.7    71.2
+                       SemanticKITTISAL+MinVIS        24.7     22.2    27.5    40.9    12.5
+                               SAL+MOT                30.9     34.4    27.7    41.0    12.9          Figure 5.     Qualitative results on SemanticKITTI. We show
+                               SAL+SW                 32.7     38.5    27.7    41.0    12.9          ground-truth (GT) labels (first column), our pseudo-labels (mid-
+                            Zero-shotSAL-4D           42.2     51.1    34.9    45.1    20.8
+                               4D-PLS[4]              56.1     51.4     -       -        -           dle column), and SAL-4D results (right column). We show se-
+                            Sup.PanopticTrackNet [34] 43.4     32.3     -       -        -           mantic predictions (first row) and instances (second row). As can
+                               EfficientLPS [85]+KF   62.0     58.6     -       -        -           be seen, our pseudo-labels cover only the camera-visible portion
+                       nuScenesSAL+SW                 30.3     26.9    34.3    43.0    29.9          of the sequence (middle). By contrast to GT labels, our pseudo-
+                               SAL+MOT                32.8     31.5    34.3    43.0    29.9          label instances are not limited to a subset of thing classes (GT, left
+                       aniptic SAL+MinVIS             33.2     32.4    34.1    42.8    29.7
+                       P    Zero-shotSAL-4D           45.0     48.8    41.5    45.9    37.0          column). Our trained SAL-4D thus learns to densely segment all
+                                                                                                     classes in space and time (right column). Importantly, pseudo-
+                   Table 5.    Zero-Shot 4D Lidar Panoptic Segmentation bench-                       labels do not provide semantic labels, only CLIP tokens. For visu-
+                   mark: We compare SAL-4D to several supervised baselines for                       alization, we prompt individual instances with prompts that con-
+                   4D Panoptic Lidar Segmentation and zero-shot baselines. While                     form to the SemanticKITTI class vocabulary. Best seen zoomed.
+                   there is still a gap between supervised methods and zero-shot                     EfficientLPS+KF. Due to the different ratio between static
+                   approaches, SAL-4D significantly narrows down this gap. On                        and moving objects on nuScenes, MOT baseline (32.8
+                   SemanticKITTI, our model SAL-4D reaches 59% of the top-                           LSTQ) outperforms SW (30.3 LSTQ), as expected. Min-
+                   performingsupervisedmodel,andonnuScenes,72%,eventhough
+                   it is not trained using any labeled data.                                         VISperformsfavorablycomparedtobothandachieves33.2
+                                                                                                     LSTQ. This is likely because this data-driven method ben-
+                   ral GT supervision. As SemanticKITTI [7] is dominated                             efits from a larger Panoptic nuScenes dataset. Improve-
+                   by static objects, we propose a minimal viable Station-                           ments over baselines are most notable in terms of associ-
+                   ary World (SW) baseline that propagates single-scan masks                         ation (Sassoc: 48.8 SAL-4D vs. 32.4 MinVIS).
+                   solely via ego-motion. Furthermore, we adopt a strong Li-
+                   darMulti-ObjectTracking(MOT)approach[93],whichuti-                                5. Conclusions
+                   lizes Kalman filters in conjunction with a linear assignment                      Weintroduced SAL-4D for zero-shot segmentation, track-
+                   association. As a data-driven and model-centric baseline,
+                   theVideoinstancesegmentation(VIS)baselinefollows[31]                              ing, and recognition of arbitrary objects in Lidar.                   Our
+                   and directly associates objects by matching decoder object                        core component, the pseudo-label engine, distills recent ad-
+                   queries of the 3D SAL [62] model in the embedding space.                          vancements in image-based video object segmentation to
+                   SemanticKITTI. As can be seen in Tab. 5 (top), super-                             Lidar. This enables us to improve significantly over prior
+                   vised models are top-performers on this challenging bench-                        single-scanmethodsandunlockZero-Shot4DLidarPanop-
+                   mark, specifically, Mask4Former [105] (70.5 LSTQ) and                             tic Segmentation. However, as evidencedinTab.5, aperfor-
+                   Mask4D [56] (71.4 LSTQ). Our SAL-4D (42.2 LSTQ)                                   mancegappersists compared to fully-supervised methods.
+                   outperforms all zero-shot baselines and obtains 59.9% of                          Challenges.       We observe semantic recognition is the pri-
+                   Mask4Former, similarly trained on temporal windows of                             mary source of this gap, with zero-shot recognition Scls
+                                                 nd                                                  (34.9) trailing supervised methods (68.0). Second, segmen-
+                   size 2. Interestingly, 2          among zero-shot methods is the                  tation consistency degrades over extended temporal hori-
+                   SWbaseline(32.7LSTQ).Weassumethisbaselineoutper-                                  zons, reflecting challenges in maintaining coherence across
+                   forms the MOT baseline as SemanticKITTI is dominantly                             superimposed point clouds. Third, segmentation quality is
+                   static. Both geometry-based baselines (SW, MOT) outper-                           notably lower for thing classes compared to stuff classes,
+                   form the MinVIS baseline, which mainly relies on data-                            mostlikelyduetotheinherentimbalance,mitigatedbyaug-
+                   driven features for the association.             We note that SAL-                mentation strategies in supervised methods.
+                   4Doutperforms zero-shot baselines in terms of association
+                   (Sassoc: 51.1 SAL-4D vs. 38.5 SW), as well as zero-shot                           Future work. To bridge these gaps, we will focus on (i)
+                   recognition (Scls: 34.9 SAL-4D vs. 27.7 SW and MOT).                              refining the data labeling engine to enhance temporal con-
+                   Weprovidequalitative results in Fig. 5 and the appendix.                          sistency, (ii) expanding the volume of pseudo-labeled data,
+                   Panoptic nuScenes. We report similar findings on Panop-                           and (iii) curating high-quality labels for fine-tuning. These
+                   tic nuScenes dataset in Tab. 5. Our SAL-4D (45.0 LSTQ)                            steps aim to narrow the divide with supervised methods
+                   consistently outperforms baselines and reaches 72.6% of                           while preserving SAL-4D ’s zero-shot scalability.
+                                                                                              24513
+                References                                                             [16] Christopher Choy, JunYoung Gwak, and Silvio Savarese.
+                   [1] AbhinavAgarwalla,XuhuaHuang,JasonZiglar,Francesco                     4D spatio-temporal convnets: Minkowski convolutional
+                       Ferroni, Laura Leal-Taixe, James Hays, Aljosa Osep, and               neural networks.   In IEEE Conf. Comput. Vis. Pattern
+                       Deva Ramanan. Lidar panoptic segmentation and tracking                Recog., 2019. 1, 2, 5
+                       without bells and whistles. In Int. Conf. Intel. Rob. Sys.,     [17] Wen-Hsuan Chu, Adam W Harley, Pavel Tokmakov, Achal
+                       2023. 2                                                               Dave, Leonidas Guibas, and Katerina Fragkiadaki. Zero-
+                   [2] Eren Erdal Aksoy, Saimir Baci, and Selcuk Cavdar. Sal-                shot open-vocabulary tracking with large pre-trained mod-
+                       sanet: Fast road and vehicle segmentation in lidar point              els. In Int. Conf. Rob. Automat., 2024. 2
+                       clouds for autonomous driving. In Intel. Veh. Symp., 2020.      [18] Achal Dave, Pavel Tokmakov, and Deva Ramanan. To-
+                       2                                                                     wards segmenting anything that moves. In ICCV Work-
+                   [3] Ali Athar, Enxu Li, Sergio Casas, and Raquel Urtasun. 4d-             shops, 2019. 2
+                                                                                                                     ˇ    ˇ
+                       former: Multimodal 4d panoptic segmentation. In Conf.           [19] Patrick Dendorfer, Aljosa Osep, Anton Milan, Konrad
+                       Rob. Learn., 2023. 2                                                  Schindler, Daniel Cremers, Ian Reid, Stefan Roth, and
+                                                                                                            ´
+                                    ¨       ˇ   ˇ                                            Laura Leal-Taixe. Motchallenge: A benchmark for single-
+                   [4] Mehmet Aygun, Aljosa Osep, Mark Weber, Maxim Maxi-                    camera multiple target tracking. Int. J. Comput. Vis., 2020.
+                                                                              ´
+                       mov, Cyrill Stachniss, Jens Behley, and Laura Leal-Taixe.             2
+                       4dpanopticlidarsegmentation. InIEEEConf.Comput.Vis.             [20] Shuxiao Ding, Eike Rehder, Lukas Schneider, Marius
+                       Pattern Recog., 2021. 1, 2, 5, 8                                      Cordts, and Juergen Gall. 3dmotformer: Graph transformer
+                   [5] Ankan Bansal, Karan Sikka, Gaurav Sharma, Rama Chel-                  for online 3d multi-object tracking. In Int. Conf. Comput.
+                       lappa, and Ajay Divakaran. Zero-shot object detection. In             Vis., 2023. 1, 2
+                       Eur. Conf. Comput. Vis., 2018. 3                                [21] Shuangrui Ding, Rui Qian, Xiaoyi Dong, Pan Zhang,
+                   [6] Jens Behley and Cyrill Stachniss. Efficient Surfel-Based              YuhangZang,YuhangCao,YuweiGuo,DahuaLin,andJi-
+                       SLAMusing3DLaserRangeDatainUrbanEnvironments.                         aqi Wang. Sam2long: Enhancing sam 2 for long video seg-
+                       In Rob. Sci. Sys., 2018. 1                                            mentation with a training-free memory tree. arXiv preprint
+                   [7] Jens Behley, Martin Garbade, Andres Milioto, Jan Quen-                arXiv:2410.16268, 2024. 1
+                       zel, Sven Behnke, Cyrill Stachniss, and Juergen Gall. Se-       [22] Zheng Ding, Jieke Wang, and Zhuowen Tu.             Open-
+                       manticKITTI: A Dataset for Semantic Scene Understand-                 vocabularyuniversalimagesegmentationwithmaskclip. In
+                       ing of LiDAR Sequences. In ICCV, 2019. 1, 2, 5, 8                     Int. Conf. Mach. Learn., 2023. 3
+                   [8] Jens Behley, Andres Milioto, and Cyrill Stachniss.     A                                               ¨
+                                                                                       [23] MartinEster,Hans-PeterKriegel,JorgSander,XiaoweiXu,
+                       BenchmarkforLiDAR-basedPanopticSegmentationbased                      et al. A density-based algorithm for discovering clusters in
+                       onKITTI. In Int. Conf. Rob. Automat., 2021. 2                         large spatial databases with noise. In Rob. Sci. Sys., 1996.
+                   [9] Abhijit Bendale and Terrance Boult. Towards open world                4
+                       recognition. In IEEE Conf. Comput. Vis. Pattern Recog.,         [24] WhyeKitFong,RohitMohan,JuanaValeriaHurtado,Lub-
+                       2015. 3                                                               ingZhou,HolgerCaesar,OscarBeijbom,andAbhinavVal-
+                 [10] Maxime Bucher, Tuan-Hung Vu, Matthieu Cord, and                        ada. Panoptic nuscenes: A large-scale benchmark for lidar
+                                ´
+                       Patrick Perez. Zero-shot semantic segmentation. Adv. Neu-             panoptic segmentation and tracking. RAL, 2021. 1, 2, 5
+                       ral Inform. Process. Syst., 2019. 3                             [25] Stefano Gasperini, Mohammad-Ali Nikouei Mahani, Al-
+                 [11] HolgerCaesar,VarunBankiti,AlexH.Lang,SourabhVora,                      varo Marcos-Ramiro, Nassir Navab, and Federico Tombari.
+                       Venice Erin Liong, Qiang Xu, Anush Krishnan, Yu Pan,                  Panoster: End-to-end panoptic segmentation of lidar point
+                       Giancarlo Baldan, and Oscar Beijbom. nuScenes: A multi-               clouds. IEEE Rob. Automat. Letters, 2021. 2
+                       modaldatasetforautonomousdriving. InIEEEConf.Com-               [26] GolnazGhiasi,XiuyeGu,YinCui,andTsung-YiLin. Scal-
+                       put. Vis. Pattern Recog., 2020. 5                                     ing open-vocabulary image segmentation with image-level
+                 [12] Nicolas Carion, Francisco Massa, Gabriel Synnaeve, Nico-               labels. In Eur. Conf. Comput. Vis., 2022. 3
+                       las Usunier, Alexander Kirillov, and Sergey Zagoruyko.          [27] Xiuye Gu, Tsung-Yi Lin, Weicheng Kuo, and Yin Cui.
+                       End-to-end object detection with transformers.    In Eur.             Open-vocabulary object detection via vision and language
+                       Conf. Comput. Vis., 2020. 4, 5                                        knowledge distillation. Int. Conf. Learn. Represent., 2022.
+                 [13] Xuechao Chen, Shuangjie Xu, Xiaoyi Zou, Tongyi Cao,                    3
+                       Dit-Yan Yeung, and Lu Fang.       Svqnet: Sparse voxel-         [28] David Held, Devin Guillory, Brice Rebsamen, Sebastian
+                       adjacent query network for 4d spatio-temporal lidar seman-            Thrun, and Silvio Savarese. A probabilistic framework for
+                       tic segmentation. In Int. Conf. Comput. Vis., 2023. 2                 real-time 3d segmentation using spatial, temporal, and se-
+                 [14] BowenCheng,IshanMisra,AlexanderGSchwing,Alexan-                        mantic cues. In Rob. Sci. Sys., 2016. 2
+                       der Kirillov, and Rohit Girdhar.  Masked-attention mask         [29] Fangzhou Hong, Hui Zhou, Xinge Zhu, Hongsheng Li,
+                       transformer for universal image segmentation.    In IEEE              and Ziwei Liu. Lidar-based panoptic segmentation via dy-
+                       Conf. Comput. Vis. Pattern Recog., 2022. 5                            namicshiftingnetwork. InIEEEConf.Comput.Vis.Pattern
+                 [15] Wongun Choi. Near-online multi-target tracking with ag-                Recog., 2021. 2, 7
+                       gregated local flow descriptor. In Int. Conf. Comput. Vis.,     [30] Fangzhou Hong, Lingdong Kong, Hui Zhou, Xinge Zhu,
+                       2015. 5                                                               Hongsheng Li, and Ziwei Liu. Unified 3d and 4d panoptic
+                                                                                24514
+                         segmentation via dynamic shifting networks. IEEE Trans.                      Anopen-worldpanoptic segmentation and tracking robotic
+                         Pattern Anal. Mach. Intell., 2024. 2, 8                                      dataset in crowded human environments. In IEEE Conf.
+                   [31] De-An Huang, Zhiding Yu, and Anima Anandkumar. Min-                           Comput. Vis. Pattern Recog., 2024. 2
+                         vis: A minimal video instance segmentation framework                   [45] Bastian Leibe, Konrad Schindler, Nico Cornelis, and
+                         without video-based training. In Adv. Neural Inform. Pro-                    LucVanGool. Coupledobject detection and tracking from
+                         cess. Syst., 2022. 8                                                         static cameras and moving vehicles. IEEE Trans. Pattern
+                   [32] Lianghua Huang, Xin Zhao, and Kaiqi Huang. Got-10k: A                         Anal. Mach. Intell., 2008. 2
+                         large high-diversity benchmark for generic object tracking             [46] Boyi Li, Kilian Q Weinberger, Serge Belongie, Vladlen
+                         in the wild. IEEE Trans. Pattern Anal. Mach. Intell., 2019.                  Koltun, and Rene Ranftl. Language-driven semantic seg-
+                         2                                                                            mentation. In Int. Conf. Learn. Represent., 2022. 3
+                   [33] Yuming Huang, Yi Gu, Chengzhong Xu, and Hui Kong.                       [47] Jinke Li, Yang Wen Xiao He, Yuan Gao, Xiaoqiang Cheng,
+                         Whysemanticsmatters: Adeepstudyonsemanticparticle-                           and Dan Zhang. Panoptic-phnet: Towards real-time and
+                         filtering localization in a lidar semantic pole-map. IEEE                    high-precision lidar panoptic segmentation via clustering
+                         Transactions on Field Robotics, 2024. 1                                      pseudo heatmap.       In IEEE Conf. Comput. Vis. Pattern
+                   [34] Juana Valeria Hurtado, Rohit Mohan, and Abhinav Val-                          Recog., 2022. 2
+                         ada. Mopt: Multi-object panoptic tracking. arXiv preprint              [48] Shijie Li, Xieyuanli Chen, Yun Liu, Dengxin Dai, Cyrill
+                         arXiv:2004.08189, 2020. 2, 8                                                 Stachniss, and Juergen Gall.      Multi-scale interaction for
+                                                           ´      ˇ     ˇ                             real-time lidar data segmentation on an embedded platform.
+                   [35] Aleksandr Kim, Guillem Braso, Aljosa Osep, and Laura
+                                    ´                                                                 IEEERob.Automat.Letters, 2021. 2
+                         Leal-Taixe. Polarmot: Howfarcangeometricrelationstake
+                         us in 3d multi-object tracking? In Eur. Conf. Comput. Vis.,            [49] Siyuan Li, Martin Danelljan, Henghui Ding, Thomas E
+                         2022. 1, 2                                                                   Huang, and Fisher Yu. Tracking every thing in the wild.
+                   [36] Alexander Kirillov, Kaiming He, Ross Girshick, Carsten                        In Eur. Conf. Comput. Vis., 2022. 2
+                                                 ´
+                         Rother, and Piotr Dollar. Panoptic segmentation. In IEEE               [50] Siyuan Li, Tobias Fischer, Lei Ke, Henghui Ding, Martin
+                         Conf. Comput. Vis. Pattern Recog., 2019. 5                                   Danelljan, and Fisher Yu. Ovtrack: Open-vocabulary mul-
+                   [37] Alexander Kirillov, Eric Mintun, Nikhila Ravi, Hanzi                          tiple object tracking. In IEEE Conf. Comput. Vis. Pattern
+                         Mao, Chloe Rolland, Laura Gustafson, Tete Xiao, Spencer                      Recog., 2023. 2
+                         Whitehead,AlexanderCBerg,Wan-YenLo,etal. Segment                       [51] Feng Liang, Bichen Wu, Xiaoliang Dai, Kunpeng Li, Yi-
+                         anything. In Int. Conf. Comput. Vis., 2023. 3                                nan Zhao, Hang Zhang, Peizhao Zhang, Peter Vajda, and
+                                                   ˇ   ˇ     ¨      ¨                                 Diana Marculescu. Open-vocabulary semantic segmenta-
+                   [38] Deyvid Kochanov, Aljosa Osep, Jorg Stuckler, and Bastian
+                         Leibe. Scene flow propagation for semantic mapping and                       tion with mask-adapted clip. In IEEE Conf. Comput. Vis.
+                         object discovery in dynamic street scenes. In Int. Conf. In-                 Pattern Recog., 2023. 3
+                         tel. Rob. Sys., 2016. 2                                                [52] Yang Liu, Idil Esen Zulfikar, Jonathon Luiten, Achal Dave,
+                                                                                                                                               ˇ    ˇ
+                                                                  ˇ    ˇ                              Deva Ramanan, Bastian Leibe, Aljosa Osep, and Laura
+                   [39] Manuel Kolmet, Qunjie Zhou, Aljosa Osep, and Laura
+                                                                                                                 ´
+                                    ´                                                                 Leal-Taixe. Openingupopenworldtracking. InIEEEConf.
+                         Leal-Taixe. Text2pos: Text-to-point-cloud cross-modal lo-
+                         calization.   In IEEE Conf. Comput. Vis. Pattern Recog.,                     Comput. Vis. Pattern Recog., 2022. 2
+                         2022. 1                                                                [53] Ze Liu, Zheng Zhang, Yue Cao, Han Hu, and Xin Tong.
+                   [40] Lars Kreuzberg, Idil Esen Zulfikar, Sabarinath Mahadevan,                     Group-free 3d object detection via transformers.        In Int.
+                         Francis Engelmann, and Bastian Leibe. 4d-stop: Panop-                        Conf. Comput. Vis., 2021. 1, 2
+                         tic segmentation of 4d lidar using spatio-temporal object              [54] RodrigoMarcuzzi,LucasNunes,LouisWiesmann,Ignacio
+                         proposal generation and aggregation. In ECCV AVVision                        Vizzo, Jens Behley, and Cyrill Stachniss. Contrastive in-
+                         Workshop, 2022. 2, 8                                                         stance association for 4d panoptic segmentation using se-
+                   [41] Matej Kristan, Jiri Matas, Ales Leonardis, Michael Fels-                      quences of 3d lidar scans.      IEEE Rob. Automat. Letters,
+                         berg, LukaCehovin,GustavoFernandez,TomasVojir,Gus-                           2022. 2
+                         tav Hager, Georg Nebehay, Roman Pflugfelder, et al. The                [55] Rodrigo Marcuzzi, Lucas Nunes, Louis Wiesmann, Jens
+                         visual object tracking vot2015 challenge results.       In Int.              Behley, and Cyrill Stachniss. Mask-based panoptic lidar
+                         Conf. Comput. Vis. Workshops, 2015. 2                                        segmentation for autonomous driving. IEEE Rob. Automat.
+                                                         ˇ                 ´ˇ    ´ˇ                   Letters, 2023. 5, 7
+                   [42] MatejKristan,JiriMatas,AlesLeonardis,TomasVojır,Ro-
+                         manPflugfelder,GustavoFernandez,GeorgNebehay,Fatih                     [56] Rodrigo Marcuzzi, Lucas Nunes, Louis Wiesmann, Elias
+                                            ˇ
+                         Porikli, and LukaCehovin. Anovelperformanceevaluation                        Marks, Jens Behley, and Cyrill Stachniss. Mask4d: End-
+                         methodologyforsingle-targettrackers. IEEETrans.Pattern                       to-end mask-based 4d panoptic segmentation for lidar se-
+                         Anal. Mach. Intell., 2016. 2                                                 quences. IEEE Rob. Automat. Letters, 2023. 2, 8
+                   [43] Alex H Lang, Sourabh Vora, Holger Caesar, Lubing Zhou,                  [57] Andres Milioto, Ignacio Vizzo, Jens Behley, and Cyrill
+                         JiongYang,andOscarBeijbom. Pointpillars: Fastencoders                        Stachniss. RangeNet++: Fast and Accurate LiDARSeman-
+                         for object detection from point clouds. In IEEE Conf. Com-                   tic Segmentation. In Int. Conf. Intel. Rob. Sys., 2019. 2
+                         put. Vis. Pattern Recog., 2019. 2                                      [58] DimityMiller,LachlanNicholson,FerasDayoub,andNiko
+                                                                                                        ¨
+                   [44] DuyThoLe,ChenhuiGou,StavyaDatta,HengcanShi,Ian                                Sunderhauf. Dropout sampling for robust object detection
+                         Reid, Jianfei Cai, and Hamid Rezatofighi. Jrdb-panotrack:                    in open-set conditions. In Int. Conf. Rob. Automat., 2018. 3
+                                                                                        24515
+                  [59] Dennis Mitzel and Bastian Leibe. Taking mobile multi-                [73] Charles R. Qi, Hao Su, Kaichun Mo, and Leonidas J.
+                        object tracking to the next level: People, unknown objects,               Guibas. Pointnet: Deep learning on point sets for 3d clas-
+                        and carried items. In Eur. Conf. Comput. Vis., 2012. 2, 4                 sification and segmentation. In IEEE Conf. Comput. Vis.
+                  [60] Frank Moosmann and Christoph Stiller.             Joint self-              Pattern Recog., 2017. 1
+                        localizationandtrackingofgenericobjectsin3drangedata.               [74] Charles R Qi, Li Yi, Hao Su, and Leonidas J Guibas. Point-
+                        In Int. Conf. Rob. Automat., 2013. 2                                      net++: Deep hierarchical feature learning on point sets in a
+                  [61] Mahyar Najibi, Jingwei Ji, Yin Zhou, Charles R Qi,                         metric space. Adv. Neural Inform. Process. Syst., 2017. 1
+                        Xinchen Yan, Scott Ettinger, and Dragomir Anguelov. Un-             [75] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya
+                        supervised 3d perception with 2d vision-language distilla-                Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry,
+                        tion for autonomous driving. In Int. Conf. Comput. Vis.,                  AmandaAskell, Pamela Mishkin, Jack Clark, et al. Learn-
+                        2023. 1, 2                                                                ing transferable visual models from natural language super-
+                  [62] Aljosa Osep, Tim Meinhardt, Francesco Ferroni, Neehar                      vision. In Int. Conf. Mach. Learn., 2021. 3, 4
+                        Peri, Deva Ramanan, and Laura Leal-Taixe. Better call sal:          [76] Shafin Rahman, Salman Hameed Khan, and Fatih Porikli.
+                        Towardslearningtosegmentanythinginlidar. InEur.Conf.                      Zero-shotobjectdetection: Learningtosimultaneouslyrec-
+                        Comput. Vis., 2024. 1, 2, 4, 5, 6, 7, 8                                   ognize and localize novel concepts. Asian Conf. Comput.
+                  [63] Julian Ost, Fahim Mannan, Nils Thuerey, Julian Knodt, and                  Vis., 2018. 3
+                        Felix Heide. Neural scene graphs for dynamic scenes. In             [77] Yongming Rao, Wenliang Zhao, Guangyi Chen, Yansong
+                        IEEEConf.Comput.Vis. Pattern Recog., 2021. 1                              Tang, Zheng Zhu, Guan Huang, Jie Zhou, and Jiwen
+                             ˇ    ˇ                                                               Lu.  Denseclip: Language-guided dense prediction with
+                  [64] Aljosa Osep, Alexander Hermans, Francis Engelmann,                         context-aware prompting. In IEEE Conf. Comput. Vis. Pat-
+                        Dirk Klostermann, Markus Mathias, and Bastian Leibe.                      tern Recog., 2022. 3
+                        Multi-scale object candidates for generic object tracking in        [78] Nikhila Ravi, Valentin Gabeur, Yuan-Ting Hu, Ronghang
+                        street scenes. In Int. Conf. Rob. Automat., 2016. 2                       Hu, Chaitanya Ryali, Tengyu Ma, Haitham Khedr, Ro-
+                             ˇ    ˇ
+                  [65] Aljosa Osep, Wolfgang Mehner, Paul Voigtlaender, and                              ¨
+                        Bastian Leibe.     Track, then decide: Category-agnostic                  man Radle, Chloe Rolland, Laura Gustafson, et al. Sam
+                        vision-based multi-object tracking. In Int. Conf. Rob. Au-                2: Segment anything in images and videos. arXiv preprint
+                        tomat., 2018. 2, 4                                                        arXiv:2408.00714, 2024. 1, 2, 3, 4
+                             ˇ    ˇ                                                         [79] Ryan Razani, Ran Cheng, Enxu Li, Ehsan Taghavi, Yuan
+                  [66] Aljosa Osep, Paul Voigtlaender, Mark Weber, Jonathon                       Ren, and Liu Bingbing. Gp-s3net: Graph-based panop-
+                        Luiten, and Bastian Leibe. 4d generic video object pro-                   tic sparse semantic segmentation network. In IEEE Conf.
+                        posals. In Int. Conf. Rob. Automat., 2020. 2                              Comput. Vis. Pattern Recog., 2021. 2, 7
+                  [67] Songyou Peng, Kyle Genova, Chiyu Jiang, Andrea                       [80] Ryan Razani, Ran Cheng, Ehsan Taghavi, and Liu Bing-
+                        Tagliasacchi, Marc Pollefeys, and Thomas Funkhouser.                      bing. Lite-hdseg: Lidar semantic segmentation using lite
+                        Openscene: 3d scene understanding with open vocabular-                    harmonic dense convolutions. In Int. Conf. Rob. Automat.,
+                        ies. In IEEE Conf. Comput. Vis. Pattern Recog., 2023. 1,                  2021. 2
+                        2                                                                   [81] Donald B Reid. An algorithm for tracking multiple targets.
+                  [68] Anna Petrovskaya and Sebastian Thrun. Model based ve-                      Tran. Automat. Contr., 1979. 2
+                        hicle detection and tracking for autonomous urban driving.          [82] Corentin Sautier, Gilles Puy, Spyros Gidaris, Alexandre
+                        Aut. Rob., 2009. 2                                                        Boulch, Andrei Bursuc, and Renaud Marlet. Image-to-lidar
+                  [69] Jordi Pont-Tuset, Federico Perazzi, Sergi Caelles, Pablo                   self-supervised distillation for autonomous driving data. In
+                              ´
+                        Arbelaez, Alex Sorkine-Hornung, and Luc Van Gool. A                       IEEEConf.Comput.Vis. Pattern Recog., 2022. 1
+                        benchmark dataset and evaluation methodology for video              [83] Walter J Scheirer, Anderson de Rezende Rocha, Archana
+                        object segmentation. In IEEE Conf. Comput. Vis. Pattern                   Sapkota, and Terrance E Boult. Toward open set recogni-
+                        Recog., 2016. 2                                                           tion. IEEE transactions on pattern analysis and machine
+                  [70] JordiPont-Tuset,FedericoPerazzi,SergiCaelles,PabloAr-                      intelligence, 35(7):1757–1772, 2012. 3
+                           ´
+                        belaez, Alex Sorkine-Hornung, and Luc Van Gool. The                                                             ´
+                                                                                            [84] Jenny Seidenschwarz, Guillem Braso, Victor Castro Ser-
+                        2017DAVISchallengeonvideoobjectsegmentation. arXiv                                                                ´
+                                                                                                  rano, Ismail Elezi, and Laura Leal-Taixe. Simple cues lead
+                        preprint arXiv:1704.00675, 2017. 1                                        to a strong multi-object tracker. In IEEE Conf. Comput. Vis.
+                  [71] Gilles Puy, Spyros Gidaris, Alexandre Boulch, Oriane                       Pattern Recog., 2023. 2
+                            ´                                  ´
+                        Simeoni, Corentin Sautier, Patrick Perez, Andrei Bursuc,                                                        ¨
+                                                                                            [85] KshitijSirohi, RohitMohan,DanielBuscher,WolframBur-
+                        and Renaud Marlet. Revisiting the distillation of image                   gard, and Abhinav Valada.      Efficientlps: Efficient lidar
+                        representations into point clouds for autonomous driving.                 panoptic segmentation.    IEEE Transactions on Robotics,
+                        arXiv preprint arXiv:2310.17504, 2023. 1                                  2021. 7, 8
+                  [72] Gilles Puy, Spyros Gidaris, Alexandre Boulch, Oriane                 [86] Pei Sun, Henrik Kretzschmar, Xerxes Dotiwalla, Aure-
+                            ´                                  ´
+                        Simeoni, Corentin Sautier, Patrick Perez, Andrei Bursuc,                  lien Chouard, Vijaysai Patnaik, Paul Tsui, James Guo, Yin
+                        andRenaudMarlet. Threepillarsimprovingvisionfounda-                       Zhou, Yuning Chai, Benjamin Caine, et al. Scalability in
+                        tion model distillation for lidar. In IEEE Conf. Comput. Vis.             perception for autonomous driving: Waymo open dataset.
+                        Pattern Recog., 2024. 1                                                   In IEEE Conf. Comput. Vis. Pattern Recog., 2020. 1
+                                                                                    24516
+                 [87] Matthew Tancik, Pratul Srinivasan, Ben Mildenhall, Sara        [101] Jiarui Xu, Sifei Liu, Arash Vahdat, Wonmin Byeon, Xiao-
+                       Fridovich-Keil, Nithin Raghavan, Utkarsh Singhal, Ravi              longWang,andShaliniDeMello. Open-vocabularypanop-
+                       Ramamoorthi, Jonathan Barron, and Ren Ng. Fourier fea-              tic segmentation with text-to-image diffusion models. In
+                       tures let networks learn high frequency functions in low di-        IEEEConf.Comput.Vis. Pattern Recog., 2023. 3
+                       mensional domains. In Adv. Neural Inform. Process. Syst.,     [102] Mengde Xu, Zheng Zhang, Fangyun Wei, Han Hu, and
+                       2020. 5                                                             Xiang Bai. Side adapter network for open-vocabulary se-
+                 [88] Haotian Tang, Zhijian Liu, Shengyu Zhao, Yujun Lin, Ji               mantic segmentation. In IEEE Conf. Comput. Vis. Pattern
+                       Lin, Hanrui Wang, and Song Han. Searching efficient 3d              Recog., 2023. 3
+                       architectures with sparse point-voxel convolution. In Eur.    [103] Ning Xu, Linjie Yang, Yuchen Fan, Jianchao Yang,
+                       Conf. Comput. Vis., 2020. 2                                         Dingcheng Yue, Yuchen Liang, Brian Price, Scott Cohen,
+                 [89] Alex Teichman, Jesse Levinson, and Sebastian Thrun. To-              andThomasHuang. YouTube-VOS:Sequence-to-sequence
+                       wards 3D object recognition via classification of arbitrary         video object segmentation.   In Eur. Conf. Comput. Vis.,
+                       object tracks. In Int. Conf. Rob. Automat., 2011. 2, 4              2018. 2
+                 [90] HuguesThomas,CharlesR.Qi,Jean-EmmanuelDeschaud,                [104] Yan Yan, Yuxing Mao, and Bo Li. Second: Sparsely em-
+                       Beatriz Marcotegui, Franc¸ois Goulette, and Leonidas J.             bedded convolutional detection. Sensors, 2018. 1, 2
+                       Guibas. Kpconv: Flexible and deformable convolution for       [105] Kadir Yilmaz, Jonas Schult, Alexey Nekrasov, and Bastian
+                       point clouds. In Int. Conf. Comput. Vis., 2019. 1                   Leibe. Mask4former: Mask transformer for 4d panoptic
+                 [91] Sebastian Thrun, Mike Montemerlo, Hendrik Dahlkamp,                  segmentation. In Int. Conf. Rob. Automat., 2024. 2, 5, 8
+                       David Stavens, Andrei Aron, James Diebel, et al. Stan-                                                              ¨    ¨
+                                                                                     [106] Tianwei Yin, Xingyi Zhou, and Philipp Krahenbuhl.
+                       ley: The robot that won the darpa grand challenge. Journal          Center-based 3d object detection and tracking.   In IEEE
+                       of field Robotics, 2006. 1                                          Conf. Comput. Vis. Pattern Recog., 2021. 1, 2
+                 [92] Shaoyu Wang, Wanji Li, Wenwei Liu, Xin Liu, and Jian-          [107] Haobo Yuan, Xiangtai Li, Chong Zhou, Yining Li, Kai
+                       guo Zhu. Lidar2map: In defense of lidar-based semantic              Chen, and Chen Change Loy. Open-vocabulary sam: Seg-
+                       map construction using online camera-to-lidar distillation.         ment and recognize twenty-thousand classes interactively.
+                       In IEEE Conf. Comput. Vis. Pattern Recog., 2023. 1                  In Eur. Conf. Comput. Vis., 2024. 3
+                 [93] XinshuoWeng,JianrenWang,DavidHeld,andKrisKitani.               [108] Alireza Zareian, Kevin Dela Rosa, Derek Hao Hu, and
+                       3DMulti-ObjectTracking: ABaselineandNewEvaluation                   Shih-Fu Chang. Open-vocabulary object detection using
+                       Metrics. In Int. Conf. Intel. Rob. Sys., 2020. 1, 2, 8              captions. In IEEE Conf. Comput. Vis. Pattern Recog., 2021.
+                 [94] Bichen Wu, Alvin Wan, Xiangyu Yue, and Kurt Keutzer.                 3
+                       Squeezeseg: Convolutional neural nets with recurrent crf      [109] Li Zhang, Li Yuan, and Ramakant Nevatia. Global data
+                       for real-time road-object segmentation from 3d lidar point          association for multi-object tracking using network flows.
+                       cloud. In Int. Conf. Rob. Automat., 2018. 2                         In IEEE Conf. Comput. Vis. Pattern Recog., 2008. 2
+                 [95] Bichen Wu, Xuanyu Zhou, Sicheng Zhao, Xiangyu Yue,             [110] Tiantian Zhang, Zhangjun Zhou, and Jialun Pei. Evaluation
+                       and Kurt Keutzer. Squeezesegv2: Improved model struc-               study on sam 2 for class-agnostic instance-level segmenta-
+                       ture and unsupervised domain adaptation for road-object             tion. arXiv preprint arXiv:2409.02567, 2024. 1
+                       segmentation from a lidar point cloud. In Int. Conf. Rob.     [111] Yiwu Zhong, Jianwei Yang, Pengchuan Zhang, Chunyuan
+                       Automat., 2019. 2                                                   Li, Noel Codella, Liunian Harold Li, Luowei Zhou, Xiyang
+                 [96] Xiaopei Wu, Yuenan Hou, Xiaoshui Huang, Binbin Lin,                  Dai, Lu Yuan, Yin Li, et al.   Regionclip: Region-based
+                       Tong He, Xinge Zhu, et al. Taseg: Temporal aggregation              language-image pretraining. In IEEE Conf. Comput. Vis.
+                       network for lidar semantic segmentation. In IEEE Conf.              Pattern Recog., 2022. 3
+                       Comput. Vis. Pattern Recog., 2024. 2                          [112] Chong Zhou, Chen Change Loy, and Bo Dai. Extract free
+                 [97] Yi Wu, Jongwoo Lim, and Ming-Hsuan Yang. Online ob-                  dense labels from clip. In Eur. Conf. Comput. Vis., 2022. 3
+                       ject tracking: A benchmark. In IEEE Conf. Comput. Vis.        [113] Yin Zhou and Oncel Tuzel. Voxelnet: End-to-end learning
+                       Pattern Recog., 2013. 2                                             for point cloud based 3d object detection. In IEEE Conf.
+                 [98] Yongqin Xian, Christoph H. Lampert, Bernt Schiele, and               Comput. Vis. Pattern Recog., 2018. 1, 2
+                       ZeynepAkata. Zero-shotlearning-acomprehensiveevalu-           [114] ZixiangZhou,YangZhang,andHassanForoosh. Panoptic-
+                       ation of the good, the bad and the ugly. IEEE Trans. Pattern        polarnet: Proposal-free lidar point cloud panoptic segmen-
+                       Anal. Mach. Intell., 2018. 3                                        tation. In IEEE Conf. Comput. Vis. Pattern Recog., 2021. 2,
+                 [99] Zihao Xiao, Longlong Jing, Shangxuan Wu, Alex Zi-                    7
+                       hao Zhu, Jingwei Ji, Chiyu Max Jiang, et al.          3d      [115] Minghan Zhu, Shizhong Han, Hong Cai, Shubhankar
+                       open-vocabulary panoptic segmentation with 2d-3d vision-            Borse, Maani Ghaffari, and Fatih Porikli. 4d panoptic seg-
+                       language distillation. In Eur. Conf. Comput. Vis., 2024. 1,         mentation as invariant and equivariant field prediction. In
+                       2                                                                   Int. Conf. Comput. Vis., 2023. 2, 8
+                [100] Xuehan Xiong, Daniel Munoz, J. Andrew Bagnell, and             [116] Xinge Zhu, Hui Zhou, Tai Wang, Fangzhou Hong, Yuexin
+                       Martial Hebert. 3-D Scene Analysis via Sequenced Predic-            Ma,WeiLi,HongshengLi,andDahuaLin. Cylindricaland
+                       tions over Points and Regions. In Int. Conf. Rob. Automat.,         asymmetrical 3d convolution networks for lidar segmenta-
+                       2011. 2                                                             tion. In IEEE Conf. Comput. Vis. Pattern Recog., 2021. 2
+                                                                               24517

@@ -1,0 +1,58 @@
+                                                                                        objects and fast query, we introduce the Future Flow Fore-
+                                                                                        casting in the predictive thread and the Inverse Forward
+                                                                                        Flowintheinference thread.
+                                                                                        Future Flow Forecasting.            During training, we use
+                                                                                        FastNSF[27]toobtainsupervisedgroundtruthflows. Inin-
+                                                                                        ference time, the process is similar to ego-pose future align-
+                                                                                        ment in Sec 4.3. We utilize zeroFlow [36], a lightweight
+                                                                                        model distilled from FastNSF, to estimate key flows be-
+                 Figure 4. Ego-pose Alignment and Dynamic Object Alignment:             tween keyframes. These key flows are then input into the
+                 Thegreenpointsrepresentthepreviouslyprocessedframethathas              LSTM [15] to forecast future flows, supporting the fast
+                 been used to update the memories and the blue points are the cur-      alignment of dynamic objects across memory and incom-
+                 rent querying frame. The yellow box highlights static objects that     ing frames.
+                 can be aligned through ego-pose alignment. The red box indi-           Inverse Forward Flow Iteration. To enable efficient fea-
+                 cates dynamic objects, which require dynamic object alignment to       ture querying during inference, we leverage forecasted for-
+                 achieve proper alignment.
+                                                                                        ward flows to align the geometric memory with future
+                                                                                        frames. However, directly applying forward flows to the
+                    Depending on whether the camera pose is available, we               memory is time-consuming for the predictive thread, as it
+                 define two settings:                                                   requiresconstructinganewnearest-neighbortreeateachfu-
+                 • Known pose setting: we directly use the relative pose to             ture timestamp to enable fast access to the geometric mem-
+                   align future frames with the feature memory coordinates.             ory. Although backward flow is more efficient that it maps
+                 • Unknown pose setting: we utilize the pose estimated by               incomingpointstothepre-built nearest-neighbor tree of the
+                   Suma++[7]betweenkeyframestoupdatetheego-motion                       latest memory, directly forecasting backward flow is chal-
+                   memory, and then use the ego-pose forecaster to propa-               lenging due to the unknown number and positions of future
+                   gate the future ego-pose motion, ensuring proper align-              points, which leads to degraded performance (see Tab. 9).
+                   mentandeliminating ego motion.                                          To balance the efficiency and accuracy, we propose the
+                    Here we introduce the unknown pose setting. When a                  Inverse Forward Flow Iteration. The goal of our method is
+                 keyframe x is coming, the estimator E will estimate the                to find the corresponding point x in history memory with
+                              t                                                         the current query point y. The correspondence satisfies:
+                 relative ego motion between last keyframe xt−k and current
+                 keyframe xt:                                                                              g(x) = x = y −flow(x)                      (6)
+                                    p         =E(x       , x )                 (3)      whereflow(x)indicatestheforecastedforwardflowatpoint
+                                      t−k→t          t−k    t                           x, and -flow(x) represents the inverse forward flow.
+                    Then, utilize the key pose to update the ego-pose mem-                 Then we want to find a fixed point x∗ such that x∗ =
+                 ory mempt−k, we have:                                                  g(x∗). Given an initial guess x0 = y, define the iteration
+                              memp =W(p                , memp      )           (4)      as:
+                                      t         t−k→t          t−k                                     x     =g(x )=y−flow(x )                        (7)
+                                                                                                        n+1         n                   n
+                                                                                                                                                      ∗
+                    where W indicates the memory update function which                     Thesequence{xn}willconvergetothefixedpointx if
+                 we use the LSTM [15]. In order to forecast the relative                g(x) is a contraction mapping, i.e., if there exists a constant
+                 pose m frames ahead for the future frame x           using pose        L≤1,suchthatforallx1 andx2 satisfy:
+                                                                 t+m
+                 forecaster F, we have:                                                                 |g(x ) −g(x )| ≤ L|x −x |                     (8)
+                                                                                                             1        2          1      2
+                                   p         =F(memp,m)                        (5)
+                                    t→t+m                 t                                Thestopping iteration condition is
+                    wheretheego-poseforecasterisdesignedinamulti-head                                          |x      −x |≤ϵ                         (9)
+                 structure, with each head predicting the future pose for a                                       n+1      n
+                 fixed number of frames ahead.                                          where ϵ is the predefined tolerance, indicating x       has con-
+                                                                                                                                              n
+                 4.4. Dynamic Object Future Alignment                                   verged to the solution. To hold this condition, we need
+                                                                                        g(x) to be Lipschitz continuous, and its Lipschitz constant
+                    Comparedtostaticobjects, dynamicobjectsexhibitboth                  L≤1.Thus,weassume|flow′(x)| ≤ 1foreachdifferen-
+                 ego-motion and independent self-movement, with varying                 tiable point x. The detailed proof is provided in Supp. B.
+                 velocities and directions, as seen in the moving car in Fig. 4.           Thequerypointiteratively finds the local forecasted for-
+                 To achieve fine-grained self-motion alignment for dynamic              ward flow in memory, then backtracks through the inverse
+                                                                                    5

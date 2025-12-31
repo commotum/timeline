@@ -1,0 +1,819 @@
+                                 Revisiting the Test-Time Scaling of o1-like Models: Do they Truly Possess
+                                                                                          Test-Time Scaling Capabilities?
+                                                                 1                                           1                                        1                                       3                                 1,2 *
+                                 ZhiyuanZeng , QingyuanChen , ZhangyueYin , YunhuaZhou                                                                                                                XipengQiu
+                                                   1Fudan University, 2Shanghai Innovation Institute, 3Shanghai AI Laboratory
+                                                                                cengzy23@m.fudan.edu.cn; xpqiu@fudan.edu.cn
+                                                                      Abstract                                                                                            Correct                Incorrect
+                                                                                                                                                                 MATH                                             AIME
+                                       The advent of test-time scaling in large lan-                                                        7500                                           15000
+                                       guage models (LLMs), exemplified by Ope-                                                             5000                                           10000
+                                       nAI’s o1 series, has advanced reasoning capa-                                                       Length2500                                        5000
+                                       bilities by scaling computational resource al-
+                                       location during inference. While successors                                                                0                                               0
+                                                                                                                                                                            QwQ  LIMO                                       QwQ  LIMO
+                                       like QwQ, Deepseek-R1 (R1) and LIMO repli-                                                                 R1-671b                                         R1-671b
+                                                                                                                                                    R1-Distill-32bR1-Distill-14b                    R1-Distill-32bR1-Distill-14b
+                                       cate these advancements, whether these models                                                                           R1-Distill-1.5b                                  R1-Distill-1.5b
+                                       truly possess test-time scaling capabilities re-                                                                           GPQA                     15000             Omin-MATH
+                                       mains underexplored. This study found that                                                           7500
+                                                                                                                                                                                           10000
+                                       longer CoTs of these o1-like models do not                                                           5000
+                                       consistently enhance accuracy; in fact, correct                                                     Length2500                                        5000
+                                       solutions are often shorter than incorrect ones                                                            0                                               0
+                                       for the same questions. Further investigation                                                                                        QwQ  LIMO                                       QwQ  LIMO
+                                       shows this phenomenon is closely related to                                                                R1-671b                                         R1-671b
+                                                                                                                                                    R1-Distill-32bR1-Distill-14b                    R1-Distill-32bR1-Distill-14b
+                                       models’self-revision capabilities - longer CoTs                                                                         R1-Distill-1.5b                                  R1-Distill-1.5b
+                                       contain more self-revisions, which often lead                                                    Figure 1: The average length of correct solutions versus
+                                       to performance degradation. We then com-                                                         incorrect solutions evaluated on the same questions.For
+                                       pare sequential and parallel scaling strategies                                                  eachquestion,solutionlengthswereaveragedseparately
+                                       on QwQ, R1 and LIMO, finding that parallel                                                       for correct and incorrect responses, then averaged across
+                                       scaling achieves better coverage and scalability.                                                all questions.
+                                       Based on these insights, we propose Shortest
+                                       Majority Vote, a method that combines parallel
+                                       scaling strategies with CoT length characteris-                                                       Following o1’s success, models such as QwQ
+                                       tics, significantly improving models’ test-time                                                  (Team, 2024b), Deepseek-R1 (R1) (DeepSeek-AI
+                                       scalability compared to conventional majority                                                    et al., 2025) and LIMO (Ye et al., 2025) have
+                                       voting approaches.                                                                               emerged as leading open-source successors, repli-
+                                                                                                                                        cating o1’s achievements and demonstrating com-
+                                1 Introduction                                                                                          parable reasoning abilities. Although both QwQ,
+                                                                                                                                        R1 and LIMO demonstrate strong reasoning ca-
+                                Therelease of the OpenAI o1 series models (Ope-                                                         pabilities and the ability to generate lengthy CoT
+                                nAI, 2024a,b) marked a pivotal advancement in                                                           at test time, the existence of true test-time scal-
+                                the reasoning capabilities of Large Language Mod-                                                       ing where performance consistently improves
+                                els (LLMs), introducing a novel scaling paradigm,                                                       with longer CoTs remains to be verified for these
+                                test-time scaling, which allocates more compute                                                         models.
+                                resources during test time. The test-time scaling                                                            Toexplorethisquestion,wesystematicallyinves-
+                                havetwodimensions,sequentialandparallel (Zeng                                                           tigate the relationship between CoT length and rea-
+                                et al., 2024). Sequential scaling increase test-time                                                    soning performance in QwQ, R1 and LIMO, chal-
+                                computebyscalingthelengthofChain-of-Thought                                                             lenging the conventional assumption that extended
+                                (CoT) (Wei et al., 2022), while parallel scaling par-                                                   reasoning chains inherently lead to improved ac-
+                                allely samples multiple solutions and pick the best                                                     curacy. Contrary to expectations, our analysis re-
+                                one.                                                                                                    veals that longer CoTs do not consistently improve
+                                      * Corresponding author                                                                            accuracy of these o1-like models. Notably, we
+                                                                                                                                4651
+                          Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), pages 4651–4665
+                                                                         July 27 - August 1, 2025 ©2025 Association for Computational Linguistics
+                  found that the average length of correct solutions is    Vote substantially outperforms conventional Ma-
+                  shorterthanthatofincorrectonesforthesameques-            jority Vote, significantly improving the test-time
+                  tions, which is shown in Figure 1. This counterin-       scalability of both QwQ and R1 models.
+                  tuitive finding underscores the need for a deeper           Ourcontributions are as follows:
+                  understanding of the test-time scaling of o1-like
+                  models.                                                    1) We systematically investigate the test-time
+                    Tounderstand why the longer CoTs do not lead                scaling capabilities of o1-like models QwQ,
+                  to the better performance, we compared the differ-            R1andLIMO,andfindthattheirperformance
+                  ence between long CoTs and short CoTs, finding                can not be continuously improved through in-
+                  that long CoTs contain more self-revisions (“Wait”,           creasing CoT length.
+                 “Alternatively”) than the short CoTs, which is              2) Wereveal that insufficient self-revision capa-
+                  shown in Appendix F. Inspired by that, we itera-              bility of o1-like models is the primary reason
+                  tively prompted QwQ, R1 and LIMO for more self-               for their failure in sequential scaling.
+                  revisions. Our observations revealed that QwQ and          3) We find that parallel scaling achieves better
+                  R1-Distill-1.5b exhibited performance degradation             coverage and scalability than sequential revi-
+                  as the length of reflection increased. In contrast,           sion for o1-like models.
+                  R1-Distill-14b, R1-Distill-32b, and LIMO demon-            4) Based on our insights into sequential and
+                  strated initial performance improvements during               parallel scaling, we propose Shortest Major-
+                  early revisions, followed by oscillatory behavior             ity Vote, a test-time scaling method that en-
+                  in subsequent iterations. To further understand               hances majority voting by considering solu-
+                  the limitations of sequential scaling, we evaluated           tion length, significantly outperforming tradi-
+                  the models’ capacity to revise incorrect answers.             tional methods.
+                  Ourfindings indicate that QwQ, R1 and LIMO all           2 RelatedWork
+                  demonstrated limited ability to convert incorrect
+                  answers to correct ones during the revision pro-         The success of o1 has ushered in a new scaling
+                  cess. Most revisions retained the original answers,      paradigm, test-time compute scaling, which en-
+                  and more concerning, both QwQ and R1-Distill-            ables continuous improvements in model perfor-
+                  1.5b showed a higher propensity to change correct        mance by increasing computational expenditure
+                  answers to incorrect ones rather than vice versa.        during inference (OpenAI, 2024a,b). Currently,
+                  These results reveal that self-revision ability is       scaling test-time compute can be approached in
+                  a key factor in the effectiveness of sequential          two dimensions: parallel scaling and sequential
+                  scaling for o1-like models.                              scaling (Snell et al., 2024; Zeng et al., 2024).
+                    Giventhelimitedeffectivenessofsequentialscal-
+                  ing, we explored an alternative test-time scaling        Parallel Scaling     Parallel scaling typicallly sam-
+                  strategie, parallel scaling. Our comparative analy-      ples multiple solutions in parallel and pick one
+                  sis of sequential and parallel scaling revealed that     according to some guidence signal like reward. No-
+                  parallel scaling not only achieves the better cover-     table examples of parallel scaling include Best-of-
+                  age (pass@k score) but also offers superior scala-       N Search (Cobbe et al., 2021; Sun et al., 2024;
+                  bility compared to sequential scaling for QwQ and        Gui et al., 2024; Amini et al., 2024; Sessa et al.,
+                  R1, which demonstrates that o1-like models have          2024), which is based on a reward model (Cobbe
+                  limited sequential-scaling capability, but strong        et al., 2021; Lightman et al., 2024), and Majority
+                  parallel-scaling capability.                             Vote (Wang et al., 2023), which exploits model un-
+                    Building on these findings, we propose a novel         certainty. The primary distinction between these
+                  test-time scaling method, Shortest Majority Vote,        approaches lies in the method used to select the
+                  which incorporate parallel scaling approaches with       final solution or answer after sampling multiple
+                  our insight on sequential scaling. In particular, this   candidates. Both Best-of-N Search and Majority
+                  method leverages the observation that shorter solu-      Vote are parallel scaling techniques at the solution
+                  tions tend to lead to better performance compared        level, while Tree-Search algorithms can be viewed
+                  to longer ones. Shortest Majority Vote improves          as parallel scaling at the token or step level. Beam-
+                  majority vote by prioritizing clusters that have both    Search (Qiu et al., 2024; Yu et al., 2024; Xie et al.,
+                  moresolutions and shorter solution lengths. Exper-       2023; Kool et al., 2019) and MCTS (Hao et al.,
+                  imental results demonstrate that Shortest Majority       2023; Wan et al., 2024; Chen et al., 2024a; Zhang
+                                                                       4652
+                  et al., 2023) are classic examples of Tree-Search        3 ExperimentSetting
+                  algorithms. All parallel scaling methods rely on         Models Ourexperimentsinvolvedmodelsfrom
+                  guidance signals to select the optimal token, step,      the QwQ (Team, 2024b), LIMO(Ye et al., 2025)
+                  or solution from a set of candidates.                    and Deepseek-R1 series (DeepSeek-AI et al.,
+                                                                           2025), including Deepseek-R1, Deepseek-R1-
+                  Sequential Scaling     Sequential scaling enhances       Distill-Qwen-32b,Deepseek-R1-Distill-Qwen-14b,
+                  test-time computation by generating progressively        and Deepseek-R1-Distill-Qwen-1.5b. For simpl-
+                  longer solutions along the sequence dimension.           icy, we call these R1 models as R1-671b, R1-
+                  The most prevalent method of sequential scaling          Distill-32b, R1-Distill-14b and R1-Distill-1.5b re-
+                  is Self-Revision, where Madaan et al. (2023) first       spectively. The models were run using SGLang
+                  generate an initial response and then iteratively        framework (Zheng et al., 2024), with the sampling
+                  evaluate and refine it based on self-assessment. In      temperature set to 0.7 and the maximum generation
+                  contrast, Chen et al. (2024b); Gou et al. (2024)         length set to 32k. We show the system prompt and
+                  leverage external feedback—such as signals from          instructions used for evaluation in Appendix E.
+                  a code execution environment—rather than self-
+                  evaluation to enhance solutions.                         Benchmark Weconductedcomprehensiveevalu-
+                    Theeffectiveness of sequential scaling with self-      ations across four benchmarks: MATH-500 (Light-
+                  revision remains a contentious issue. Huang et al.       man et al., 2024), AIME (AIMO, 2018), Omini-
+                  (2024a); Kamoi et al. (2024) argue that models           MATH(Gaoetal.,2024),andGPQA(Reinetal.,
+                  cannot achieve effective self-refinement without         2023).   While MATH-500, AIME, and Omini-
+                  external feedback. Conversely, some researchers          MATHfocusonmathematical reasoning, GPQA
+                  posit that evaluating a solution’s correctness is in-    encompasses broader scientific domains.          For
+                  herently easier than generating a correct solution      AIMEevaluation, we utilized the AIMO validation
+                  (Leike, 2022), suggesting that LLMs have the ca-         set, comprising 90 questions from AIME 22, 23,
+                  pacity for self-evaluation. Kumar et al. (2024);         and24(AIMO,2018). Giventhecomputationalde-
+                  Zhangetal. (2024) show that it is possible to teach      mandsofevaluating the full Omini-MATH dataset
+                  LLM to self-refine through reinforcement learn-          (4.4K questions), we randomly sampled 500 ques-
+                  ing or supervised fine-tuning. Chen et al. (2024c)       tions to maintain efficiency. For GPQA,wefocused
+                  compared various test-time scaling algorithms and        on the diamond subset containing 198 questions.
+                  found that when feedback accuracy exceeds 90%,           Toensure robust evaluation of answer correctness,
+                  Self-Revision outperforms Best-of-N Search.             weemployedboththeOpenCompass(Contributors,
+                                                                           2023) and Qwen Math (Yang et al., 2024) evalua-
+                                                                           tors, considering an answer correct if validated by
+                  o1-like Models      The release of o1 (OpenAI,           either evaluator.
+                  2024a,b) has further underscored the significance
+                  of sequential scaling, as o1’s CoT length is substan-    4 TheFailureofSequentialScaling
+                  tially greater than that of conventional models. The     4.1   Invalid Scaling of CoT Length: Longer
+                  research community has made significant efforts to             CoTsDonotImprovePerformance
+                  reproduce the capabilities of o1 (Qin et al., 2024;
+                  Huangetal., 2024b; Jiang et al., 2024; Min et al.,       To investigate whether the accuracy of QwQ, R1
+                  2024; Muennighoff et al., 2025), with QwQ (Team,         and LIMO genuinely improves with increasing
+                  2024b) and R1 (DeepSeek-AI et al., 2025) and             CoT length, we sampled each model five times
+                  LIMO(Yeetal.,2025)emergingasthemostsuc-                  onthe same question and sorted the five solutions
+                  cessful attempts. However, Our findings reveal that      by length in ascending order. We grouped the so-
+                  for R1 and QwQ, extending solution length does           lutions based on their rank in this sorted list, with
+                  not necessarily yield better performance due to the      the i-th ranked solutions forming a distinct group.
+                  models’ limited self-revision capabilities. Parallel     For instance, all the longest solutions (rank 5) from
+                  findings by Wang et al. (2025) attribute this phe-       different questions formed one group, while all the
+                  nomenon to model underthinking, where models             shortest solutions (rank 1) formed another, result-
+                  initially reach correct intermediate solutions but       ing in 5 comprehensive solution groups for analy-
+                  subsequently deviate toward incorrect conclusions        sis.
+                  during extended reasoning.                                 Wepresenttheaveragelengthsofthefivegroups
+                                                                      4653
+                                                  R1-671b          R1-Distill-32b         R1-Distill-14b        R1-Distill-1.5b        QwQ          LIMO
+                           6497        MATH Length             23303         AIME Length             18207 Omini-MATH Length                9624        GPQA Length
+                           5491                                19548                                 15801                                  8108
+                           4486                                15792                                 13394                                  6592
+                                                                                                     10988
+                          Length3480                           12036                                  8582                                  5075
+                           2475                                  8281                                 6176                                  3559
+                           1469 1       2     3      4     5     4525 1       2     3      4     5    3769 1        2     3     4      5    2042 1       2      3     4     5
+                                            Group                                Group                                 Group                                 Group
+                                                                               (a) Evaluation for Solution length.
+                           0.99       MATH Accuracy                         AIME Accuracy                   Omini-MATH Accuracy                       GPQA Accuracy
+                           0.96                                 0.80                                  0.66                                 0.72
+                           0.93                                 0.72                                  0.60
+                                                                0.64                                  0.54                                 0.68
+                           0.90                                 0.56                                                                       0.64
+                           0.87                                 0.48                                  0.48                                 0.60
+                           0.84                                 0.40                                  0.42                                 0.56
+                          Accuracy0.81                          0.32                                  0.36                                 0.52
+                           0.78                                 0.24                                  0.30
+                           0.75                                 0.16                                  0.24                                 0.48
+                           0.72                                 0.08                                                                       0.44
+                                 1      2      3     4      5         1      2      3      4      5         1      2     3      4      5         1      2      3      4     5
+                                            Group                                Group                                 Group                                Group
+                                                                                   (b) Evaluation for accuracy.
+                        Figure 2: Solutions of QwQ and R1 were categorized into different groups according to their length and evaluated
+                        in terms of solution length (a) and accuracy (b). The categorization of solutions is progressed for each question
+                        independently, i.e., all groups of solutions are corresponding to the same questions.
+                        of solutions in Figure 2a. Since the grouping of                              observe an inverse scaling phenomenon, where ac-
+                        solutions is based on their lengths, the differences                          curacy decreases with increasing CoT length, es-
+                        in length between the groups are pronounced. The                              pecially on more difficult datasets like AIME and
+                        average length of the longest solutions is approx-                            Omini-MATH. These findings cast doubt on the
+                        imately twice that of the shortest solutions. This                            presumed test-time scaling capabilities of o1-like
+                        indicates that long-chain-of-thought (CoT) models                             models, challenging the assumption that extended
+                        like QwQ, R1 and LIMO exhibit a high diversity                                reasoning chains inherently yield superior problem-
+                        in the lengths of the solutions they sample.                                  solving performance.
+                            There is no clear correlation between the length                              To make the relationship between CoT length
+                        of solutions and the model’s size. For example, R1-                           and accuracy more clear, we compared the lengths
+                        Distill-1.5b produces the longest solutions while                             of correct and incorrect solutions for the same ques-
+                        QwQ(32b)generatestheshortest. Acomparisonof                                   tion. First, we identified questions that had both
+                        solution lengths across different datasets shows that                         correct and incorrect answers. For each of these
+                        solutions for simpler datasets, such as Math, are                             questions, we calculated the average length of cor-
+                        significantly shorter than those for more difficult                           rect and incorrect solutions. We then averaged
+                        datasets, like AIME. This suggests that the model                             these values across all questions to determine the
+                        adjusts the solution length based on the difficulty                           overall average length for correct and incorrect so-
+                        of the problem.                                                               lutions. The results are shown in Figure 1. We
+                            The accuracy of the five groups of solutions is                           found that, for QwQ, R1 and LIMO, across all
+                        presented in Figure 2b. Although there is a sig-                              modelsizes and datasets, the length of correct solu-
+                        nificant disparity in solution lengths across the                             tions is consistently shorter than that of incorrect so-
+                        groups, the differences in accuracy are much less                             lutions. This observation suggests that longer CoTs
+                        pronounced. Notably, we do not observe a consis-                              donotnecessarily lead to better performance and
+                        tent improvement in accuracy for either QwQ or                                mayevenbeassociatedwithloweraccuracy. More-
+                        R1assolution length increases. This trend holds                               over, we observed that for weaker models, such
+                        true across all model variants as well as across                              as QwQ and R1-Distill-1.5B, the gap in solution
+                        all evaluated datasets. In some cases, we even                                length between correct and incorrect solutions is
+                                                                                                4654
+                                                     0.6                                                                  100                                                                          Difference between Short and Long CoT                                                                                                 To
+                                                     0.5                                                                 ait80                                                                         understand why long solutions of QwQ, R1 and
+                                                    Acc0.4                                                                  60                                                                         LIMOis not better than short solutions, we ana-
+                                                     0.3                                                                    40
+                                                                                                   LIMO                                                                        R1-671b
+                                                     0.2                                           QwQ                   Number of W                                           R1-32b                  lyzed their differences. We observed that QwQ,
+                                                                                                   R1-Distill-32b                                                              R1-14b
+                                                                                                   R1-Distill-14b           20                                                 QwQ
+                                                     0.1                                           R1-Distill-1.5b                                                             LIMO                    R1andLIMOallprimarilyextendsolution length
+                                                            4k8k 16k               32k                        64k                   5              10              15               20
+                                                                      Max Token Limitation                                                   Number of Token (k)                                       through self-revision, characterized by markers
+                                                    (a) Max Token Limitation                                                (b) Frequence of “Wait”                                                    such as “Wait” and “Alternatively”. We show some
+                                              Figure 3: (a): The relationship between model accuracy                                                                                                   examples of that in Appendix F. To quantify this
+                                              and the generation parameter Max Token Limitation.                                                                                                       phenomenon,wecountedtheoccurrencesof“wait”
+                                              (b): The relationship between solution length and the                                                                                                    in solutions of QwQ, R1 and LIMO in Figure 3b.
+                                              average number of “wait” occur in a solution.                                                                                                            Theresults demonstrates a strong linear correlation
+                                                                                                                                                                                                       between solution length and the frequency of self-
+                                                                                                                                                                                                       correction markers for all models. This suggests
+                                              significantly larger than for stronger models, such                                                                                                      that the mechanisms of self-revision may play a
+                                              as R1-671b. This suggests that the invalid scaling                                                                                                       significant role in generating longer solutions.
+                                              phenomenon is more pronounced in the weaker
+                                              models.                                                                                                                                                  ScalingSolutionLengthwithSelf-Revision                                                                                               We
+                                                                                                                                                                                                       have tried to investigate the revision behaviors in-
+                                              4.2             Explaining Invalid Scaling: The Key                                                                                                      side the sampled solutions, however, it is difficult
+                                                              Factor is the Failure of Self-Revision                                                                                                   to extract the initial solution and the following revi-
+                                                                                                                                                                                                       sion exactly from QwQ, R1 and LIMO’s solutions.
+                                              In Section 4.1, we observed the phenomenon that                                                                                                          Alternatively to that, we prompted the models to
+                                              long solutions exhibit lower accuracy compared                                                                                                           continue thinking based on their sampled solutions.
+                                              to short solutions. In this section, we investigate                                                                                                             QwQ,R1andLIMOoftenconcludetheirsolu-
+                                              the underlying reasons for this phenomenon. We                                                                                                           tions with phrases like “final answer: ...”, and R1
+                                              first analyzed how the maximum token limitation                                                                                                          additionally outputs a ‘</think>’ tag followed by a
+                                              affects generation performance and confirmed that                                                                                                        final response. To facilitate smoother continuation
+                                              the observed invalid scaling phenomenon was not                                                                                                          of the reasoning process, we removed the “final an-
+                                              causedbyconstraintsinthemaximumtokenlength.                                                                                                              swer” portion from the solutions. We then used the
+                                              Next, we examined the differences between long                                                                                                           keyword “Wait” or “Alternatively” as the prompt
+                                              and short solutions, finding that long solutions ex-                                                                                                     to encourage self-revision. We calculated the prob-
+                                              hibit a higher frequency of self-revision. Moreover,                                                                                                     abilities of the model predicting the next token as
+                                              our analysis suggests a strong correlation between                                                                                                      “Wait” or “Alternatively” and selected the one with
+                                              self-revision, solution length, and accuracy.                                                                                                            the higher probability as the prompt.
+                                                                                                                                                                                                              WepromptedQwQ,R1andLIMOtocontinue
+                                              MaxTokenLimitation The max token limita-                                                                                                                 reasoning for 40 additional steps on the AIME
+                                              tion parameter controls the maximum number of                                                                                                            benchmark. We show the results in Figure 4c,
+                                              tokens a model can generate for a question, which                                                                                                        from which we observe that the solution length
+                                              plays a critical role in influencing model accuracy,                                                                                                     increase almost linearly with additional steps. Af-
+                                              especially when generating long solutions. To ex-                                                                                                        ter 40 steps, the solution length of QwQ and R1 is
+                                              plore its impact, we tested several max token limita-                                                                                                    almost third as their original length.
+                                              tion values and compared the performance of QwQ,                                                                                                                Weshowtheaccuracyaftersequential revision
+                                              R1and LIMO on the AIME benchmark. The re-                                                                                                                in Figure 4a and 4b. Our results reveal that the
+                                              sults are shown in Figure 3a, which revealed that                                                                                                        accuracy of QwQ and R1-Distill-1.5b decreases
+                                              16k is a key threshold: when the max token lim-                                                                                                          constantly as the number of reasoning steps in-
+                                              itation is below this value, it significantly affects                                                                                                    creases, while the accuracy of R1-Distill-32b, R1-
+                                              the model performance. However, increasing the                                                                                                           Distill-14b and LIMO initially improves and then
+                                              max token limitation beyond 16k leads to dimin-                                                                                                          oscillates with further reasoning steps. Further anal-
+                                              ishing returns, particularly for QwQ. In our other                                                                                                       ysis in Appendix C reveal that the improvement on
+                                              experiments, we set the max token limitation to                                                                                                          R1-Distill-32b, R1-Distill-14b and LIMO during
+                                              32k, suggesting that this parameter is not the main                                                                                                      revisions mainly comes from the revision on short
+                                              cause of invalid scaling.                                                                                                                                solutions. These results corroborate our previous
+                                                                                                                                                                                           4655
+                                    0.68                                                                0.4989                                                              46170
+                                                                                                                                                  R1-Distill-1.5b                           R1-Distill-32b
+                                    0.65                                                                0.4367                                    QwQ                                       R1-Distill-14b
+                                                                                                                                                                            38834           R1-Distill-1.5b
+                                    0.62                                                                                                                                                    QwQ
+                                                                                                        0.3744                                                                              LIMO
+                                                                                                                                                                            31498
+                                    0.59                                                                0.3122
+                                   Accuracy0.56                                                        Accuracy                                                            Length24163
+                                                                                                        0.2500
+                                    0.53                                     R1-Distill-32b                                                                                 16827
+                                                                             R1-Distill-14b             0.1878
+                                                                             LIMO
+                                    0.50 0      4    8                                                  0.1256                                                                9491
+                                                         12   16   20   24   28   32   36                        0    4    8   12   16   20  24   28   32   36                       0    4    8   12   16   20   24  28   32   36
+                                                              Iteration                                                             Iteration                                                           Iteration
+                                (a) Acc of R1-Distill-32b, 14b and LIMO                                   (b) Acc of R1-Distill-1.5b, QwQ                                  (c) Solution lengths during revisions.
+                                Figure 4: (a): Accuracy of R1-Distill-32b, R1-Distill-14b and LIMO during sequential revisions. (b): Accuracy of
+                                R1-Distill-1.5b and QwQ during sequential revisions. (c) Solution length increased with the more revision steps.
+                                                                                                          Wrong to Correct                    Correct to Wrong
+                                              R1-Distill-32b                          R1-Distill-14b                         R1-Distill-1.5b                                 QwQ                                    LIMO
+                                   0.08                                    0.08                                    0.20                                                                            0.08
+                                   0.06                                                                            0.15                                     0.4                                    0.06
+                                                                           0.06
+                                  atio0.04                                                                         0.10                                                                            0.04
+                                  R                                        0.04                                                                             0.2
+                                   0.02                                                                            0.05                                                                            0.02
+                                                                           0.02
+                                   0.00                                                                            0.00                                     0.0
+                                          0 4 8 12 16 20 24 28 32 36              0 4 8 12 16 20 24 28 32 36              0 4 8 12 16 20 24 28 32 36              0 4 8 12 16 20 24 28 32 36              0 4 8 12 16 20 24 28 32 36
+                                                    Iteration                               Iteration                              Iteration                               Iteration                               Iteration
+                                Figure 5: The ratio of turning an initial correct answer to incorrect one (correct to wrong) and an initial incorrect
+                                answer to a correct one (wrong to correct) during sequential scaling.
+                                experimental findings, suggesting that longer solu-                                                         R1-32b              R1-14b              R1-1.5b              QwQ LIMO
+                                tions do not improve performance, especially for                                                               72%                 70%                 58%                32%            54%
+                                weaker models such as QwQ and R1-Distill-1.5b.
+                                These findings suggest that the reason why longer                                                       Table 1: The proportion of the revisions that models
+                                solutions do not consistently lead to better perfor-                                                    sitck to the original wrong answers.
+                                manceinQwQ,R1andLIMOmaylieinthefailure
+                                of self-revision.
+                                                                                                                                        LIMO exhibit a higher successful-revision rate
+                                Investigating Self-Revision Behavior                                          Tofurther                 than failed-revision rate, the increase of successful-
+                                investigate the effectiveness of self-revision, we                                                      revision rate plateaus after approximately 10 steps,
+                                analyzed the proportion of cases where the model                                                        with further revisions providing no additional ben-
+                                corrected an initial incorrect answer to a correct                                                      efits. This observation explains why their accuracy
+                                one versus changing an initial correct answer to an                                                     during sequential scaling initially increases with
+                                incorrect one during scaling solution length, the                                                       multiple rounds of revision but later stabilizes with
+                                results of which are shown in Figure 5. We found                                                        fluctuations.
+                                that, the proportions of changing a incorrect answer                                                         The successful-revision rate of QwQ, R1 and
+                                to an correct one is extremely low, always below                                                        LIMOareallbelow10%,whatistheoutcomeof
+                                10%. Notably, for QwQ and R1-Distill-1.5b, the                                                          the model’s self-revision in unsuccessful cases?
+                                proportion of changing a correct answer to an in-                                                       Wehypothesize that, in most instances, the model
+                                correct one was even higher than that of correcting                                                     simplykeepsitsoriginalanswerunchanged. Toval-
+                                an incorrect answer to a correct one. This obser-                                                       idate that, we computed the proportion of instances
+                                vation helps explain why prompting QwQ and R1-                                                          where the model persists with its original answer,
+                                Distill-1.5b to continue reasoning led to a decrease                                                    evenwhenitisincorrect, andtheresults were as ex-
+                                in accuracy. For simplicty, we call the proportions                                                     pected. As shown in Figure 1, when the original an-
+                                of changing a incorrect answer to an correct one                                                        swer is wrong, both R1-Distill-32b and R1-Distill-
+                                as the successful-revision rate, while the reverse as                                                   14b maintain the original answer in over 70% of
+                                the failed-revision rate.                                                                               cases. Although retaining the original answer does
+                                     Although R1-Distill-32b, R1-Distill-14b and                                                        not reduce accuracy, it also makes the scaling solu-
+                                                                                                                                4656
+                                                 0.8                                                                    0.7
+                                                                                                                        0.6
+                                                 0.6                                                                    0.5
+                                                Coverage                                                               Acc0.4
+                                                 0.4
+                                                                            Parallel Scaling (R1-Distill-32b)           0.3                        Majority Vote (R1-Distill-32b)
+                                                                            Sequential Scaling (R1-Distill-32b)                                    Sequential Scaling (R1-Distill-32b)
+                                                                            Parallel Scaling (QwQ)                                                 Majority Vote (QwQ)
+                                                 0.2                        Sequential Scaling (QwQ)                    0.2                        Sequential Scaling (QwQ)
+                                                              20         40         60         80        100                        20          40         60         80        100
+                                                                   Number of Tokens (k)                                                  Number of Tokens (k)
+                                                            (a) Evaluation on Coverage.                                            (b) Evaluation on Accuracy
+                            Figure 6: (a): the coverage of sequential scaling and parallel scaling on AIME. (b): the accuracy of squential
+                            revision and majority vote on AIME.
+                            tion length ineffective. This phenomenon suggests                                         QwQ.However,apracticalparallel scaling method
+                            that the model’s ability to early stop may also be a                                      must select a final answer from a set of candidate
+                            critical factor influencing whether its performance                                       answers. We implement parallel scaling using ma-
+                            improves with an increasing solution length.                                              jority vote (Wang et al., 2023) and sequential scal-
+                                Theaboveanalysis indicates that the key factor                                        ing by taking the answer from the last revision as
+                            determining whether o1-like models’ performance                                           the final answer. Since majority voting requires
+                            improve with an increase in solution length is their                                      at least three solutions to be effective, it does not
+                            ability to self-revise. The model’s accuracy in-                                          provide any benefit when scaling the number of
+                            creases with the more incorrect answers revised to                                        solutions from 1 to 2. In contrast, sequential revi-
+                            correct and vice versa.                                                                   sion is effective for R1-Distill-32b when scaling
+                                                                                                                      the number of tokens to 10k, but further scaling
+                            5 SequentialScaling vs. Parallel Scaling                                                  does not yield additional benefits. Additionally,
+                            Based on our experimental findings presented in                                           because sequential scaling involves attention over
+                            Section 4.2, sequential scaling demonstrates lim-                                         a longer context, its computational cost is much
+                            ited effectiveness for QwQ, R1 and LIMO. An                                               higher than that of parallel scaling when generating
+                            alternative approach to scaling test-time compute                                         the same number of tokens.
+                            is parallel scaling, which generates multiple solu-                                       6 Application of Our Findings: Shortest
+                            tions in parallel and selects the best one as the final                                          Majority Vote
+                            answer.
+                                Wecomparedtheperformanceofsequentialscal-                                             Given the limitation of sequential scaling of the
+                            ing and parallel scaling in terms of the coverage                                         current o1-like models, we turn to parallel scal-
+                            (pass@k score) and accuracy of QwQ and R1,                                                ing techniques and incorperate it with our insight
+                            which are shown in Figure 6a and 6b respectively.                                         on sequential scaling. Specifically, we propose a
+                            For sequential scaling, we iteratively prompt mod-                                        newParallel Scaling algorithm: Shortest Majority
+                            els to self-revise for 40 steps. While for parallel                                       Vote. Shortest Majority Vote is an extension of
+                            scaling, we parallely sample 10 solutions. The cov-                                       Majority Vote, but it accounts for the length of the
+                            erage is evaluated by counting the proportion of                                          solutions generated by the model. In the original
+                            whether multiple candidate answers contain a cor-                                         Majority Vote, solutions with the same answer are
+                            rect one. In parallel scaling, coverage increases                                         grouped into a single category, and the number of
+                            by one if at least one sampled solution is correct.                                       solutions in each category is counted, with the an-
+                            Similarly, in sequential scaling, coverage increases                                      swer corresponding to the category with the most
+                            byoneifatleast one revision iteration succeeds.                                           solutions selected as the final answer. In contrast,
+                                Ourfindings show that, for the same number of                                         Shortest Majority Vote not only counts the number
+                            generated tokens, parallel scaling provides a signif-                                     of solutions in each category, but also computes
+                            icantly larger improvement in coverage compared                                           the average length of the solutions in each category.
+                            to sequential scaling, for both R1-Distill-32b and                                        Let the number of solutions in the i-th category be
+                                                                                                               4657
+                                                                                  Majority Vote         Shortest        Shortest Majority Vote
+                                      R1-Distill-32b                   R1-Distill-14b                   R1-Distill-1.5b                       QwQ               0.70          LIMO
+                                                             0.70                              0.4                             0.50
+                             0.70                                                                                                                               0.65
+                            Acc                              0.65                                                              0.45
+                             0.65                                                              0.3                                                              0.60
+                                                             0.60                                                              0.40                             0.55
+                             0.60
+                                       50     100    150               50    100    150                    100       200                  50      100    150                 100       200
+                                   Number of Tokens (k)             Number of Tokens (k)             Number of Tokens (k)             Number of Tokens (k)            Number of Tokens (k)
+                                 Figure 7: Parallel-scaling performance of Majority Vote, Shortest and Shortest Majority Vote on AIME.
+                                            Model               Solutions                           AIME                                               GPQA
+                                                                                   MV Shortest ShortestMV                             MV Shortest ShortestMV
+                                      R1-Distill-32b                             59.77          62.22              62.22             61.41         62.52              62.52
+                                      R1-Distill-14b                             58.88          60.44              60.44             51.21         52.32              52.32
+                                     R1-Distill-1.5b                  2             24          27.55              27.55             15.25         15.35              15.35
+                                            QwQ                                  41.77          40.22              40.22             58.05         57.02              57.02
+                                            LIMO                                 56.66          60.88              60.88             50.46         54.56              54.56
+                                      R1-Distill-32b                             72.88          61.99              73.77             63.33         61.21              63.53
+                                      R1-Distill-14b                             71.77          62.00              71.55             56.16         56.66              56.46
+                                     R1-Distill-1.5b                 16          40.00          26.22              42.22             29.59         27.77              30.20
+                                            QwQ                                  51.33          40.88              50.88             62.25         56.82              62.25
+                                            LIMO                                 68.88          62.22              70.00             55.58         50.15              55.89
+                          Table 2: Performance comparison between Majority Vote (MV), Shortest and Shortest Majority Vote (Shortest MV)
+                          onAIMEandGPQA,whenthereare2and16solutionssampled.
+                          ci and the average solution length in that category                                  tal results are presented in Table 2 and Figure 7.
+                          be li. The score for category i in Shortest Majority                                 Table 2 demonstrates that Shortest Majority Vote
+                          Vote is computed as:                                                                 significantly outperforms both Majority Vote and
+                                                                    c                                          Shortest methods, particularly on the AIME bench-
+                                                         s =          i                              (1)       mark. Figure 7 illustrates the parallel-scaling per-
+                                                           i      logl
+                                                                         i                                     formance of these three methods, showing that as
+                          and the final answer is chosen from the category                                     the number of generated tokens increases, Short-
+                          with the highest score. The score s is designed                                      est Majority Vote maintains superior performance
+                                                                                    i
+                          with the assumption that the correct answer is more                                  over both alternatives on AIME. The correspond-
+                          likely to appear in categories with a larger number                                  ing parallel-scaling results for GPQA are provided
+                          of solutions and shorter solution lengths. Shortest                                  in Appendix D. Notably, while Shortest performs
+                          Majority Vote offers two key advantages: first, it                                   better than Majority Vote when only two solutions
+                          is particularly effective for some o1-like models,                                   are sampled, it exhibits inferior performance in all
+                          where performance deteriorates with increasing so-                                   other scenarios. Shortest Majority Vote is also ef-
+                          lution length; second, it enables the use of solution                                fective for many other reasoning models and chat
+                          length as a guidence signal for identifying supe-                                    models, which is shown in Appendix A. These em-
+                          rior solutions when candidate solutions are limited,                                 pirical findings strongly support the effectiveness
+                          especially in cases where conventional Majority                                      of the Shortest Majority Vote approach.
+                          Vote becomes ineffective due to having only two                                      6.1      Variants of Shortest Majority Vote
+                          candidate solutions.
+                              Weevaluated the performance of Shortest Ma-                                      There are many variations of Shortest Majority
+                                                                                                                                                              c      c
+                                                                                                                                                                i     i
+                          jority Vote and Majority Vote through experiments                                    Vote implementation, such as l , √ . We chose to
+                                                                                                                                                                i     l
+                          ontheAIMEandGPQAbenchmarks,sampling16                                                use log for two main reasons:                           i
+                          solutions from QwQ, R1 and LIMO models. We
+                          implemented a simple baseline approach, denoted                                         1. Scaling laws tell us that model performance is
+                          as "Shortest," which selects the answer from the                                             log - linearly related to the amount of compu-
+                          solution with the minimal length. The experimen-                                             tation, and computation is quadratically re-
+                                                                                                         4658
+                  Model      Majority Vote          log               sqrt              linear            square
+                  QwQ      51.33%(baseline)   50.89%(-0.87%)    50.67%(-1.30%)     50.44%(-1.73%)    49.33%(-3.90%)
+                  R1-32b   72.89%(baseline)   73.78%(+1.22%)    74.22%(+1.83%)    73.56%(+0.91%)     71.33%(-2.13%)
+                  R1-14b   71.78%(baseline)   71.56%(-0.31%)    71.78%(+0.00%)     71.33%(-0.62%)    71.11%(-0.93%)
+                  R1-1.5b  40.00%(baseline)   42.22%(+5.56%)    42.44%(+6.11%)    42.22%(+5.56%)     37.78%(-5.56%)
+                  LIMO     68.89%(baseline)   70.00%(+1.61%)    70.00%(+1.61%)    71.11%(+3.23%)     71.11%(+3.23%)
+                Table 3: Performance of different Shortest Majority Vote variants on AIME dataset. 16 Solutions are sampled for
+                each question.
+                  Model      Majority Vote          log               sqrt              linear            square
+                  QwQ      62.26%(baseline)   62.26%(+0.00%)    61.95%(-0.49%)     61.64%(-0.99%)    60.41%(-2.97%)
+                  R1-32b   63.33%(baseline)   63.54%(+0.32%)    63.43%(+0.16%)    63.94%(+0.96%)     63.94%(+0.96%)
+                  R1-14b   56.16%(baseline)   56.46%(+0.54%)    56.26%(+0.18%)    56.36%(+0.36%)     56.57%(+0.72%)
+                  R1-1.5b  29.60%(baseline)   30.20%(+2.05%)    30.10%(+1.71%)     29.29%(-1.02%)    28.18%(-4.78%)
+                  LIMO     67.49%(baseline)   67.69%(+0.30%)    67.18%(-0.46%)     66.67%(-1.22%)    65.13%(-3.50%)
+                Table 4: Performance of different Shortest Majority Vote variants on GPQA dataset. 16 Solutions sampled for each
+                question
+                     lated to the number of tokens. Therefore,       scaling capability. We found that the longer solu-
+                     model performance should be related to the      tions not necessarily yield better performance, and
+                     log of token count: f(logl2) = f(2logl ).       that sequential scaling through self-revision has
+                                               i             i
+                  2. As we can observe from Figure 2, the vari-      limited effectiveness. Based on these insights, we
+                     ance in solution length for the same question   developedShortestMajorityVote,aparallelscaling
+                     sample is substantial. Longer solutions often   method that considers solution length, which sig-
+                     contain more than twice the number of tokens    nificantly outperformed traditional majority vote.
+                     as shorter solutions, and token counts signif-  Limitations
+                     icantly outweigh the vote counts in majority      1. Given the considerable cost of R1-671b, eval-
+                     voting. To prevent token counts from com-            uation on it was limited to the experiments
+                     pletely dominating cluster selection in Short-       in Figures 1 and 2, whereas distilled R1 was
+                     est Majority Vote, we use log to reduce the          utilized for all subsequent.
+                     influence of token count on voting results. As
+                     showninFigure 7 and Table 2, directly using       2. Our experimental framework was limited to
+                     length as a reward (Shortest) performs much          static model checkpoints. Future research
+                     worse compared to Majority Vote.                     should investigate test-time scaling behavior
+                   Weempiricallycomparedtheimpactofdifferent              using dynamic checkpoints in reinforcement
+                weight functions on shortest majority voting per-         learning settings.
+                formance in Table 2, testing four functions: 1) Log:   3. While the proposed shortest majority method
+                  c            c            c             c
+                   i           i             i             i
+                 logl 2) Sqrt: √l 3) Linear: l 4) Square: l2              may have limited applicability for models
+                    i           i            i            i
+                   WefoundthatLogfunctioncanstably improve                with strong sequential-scaling capabilities, so-
+                performance over Majority Vote. Sqrt, Linear and          lution length remains a valuable guidance sig-
+                Square functions, however, show more unstable             nal for candidate selection in parallel scaling
+                performance. For example, in GPQA experiments,            scenarios. The method can be adapted to a
+                Linear and Square may actually cause performance          Longest Majority Vote variant for such cases.
+                degradation. We will supplement these experi-        Ethics Statement
+                ments in the appendix, thank you for your sug-
+                gestion.                                             This paper honors the ACL Code of Ethics. The
+                7 Conclusion                                         dataset used in the paper does not contain any pri-
+                                                                     vate information. All data and tools used in this
+                In this study, we challenged the assumption that     study comply with their respective licenses and
+                o1-like models like QwQ and R1 have test-time        terms of use.
+                                                                 4659
+                  References                                                 Lin Gui, Cristina Gârbacea, and Victor Veitch. 2024.
+                  AIMO. 2018.         Dataset card for aimo valida-             Bonbon alignment for large language models and
+                     tion aime. https://huggingface.co/datasets/                the sweetness of best-of-n sampling.         CoRR,
+                     AI-MO/aimo-validation-aime.                                abs/2406.00832.
+                  Afra Amini, Tim Vieira, and Ryan Cotterell. 2024. Vari-    ShiboHao,YiGu,HaodiMa,JoshuaJiahuaHong,Zhen
+                     ational best-of-n alignment. CoRR, abs/2407.06057.         Wang,DaisyZheWang,andZhitingHu.2023. Rea-
+                                                                                soning with language model is planning with world
+                  Guoxin Chen, Minpeng Liao, Chengxi Li, and Kai Fan.           model. In Proceedings of the 2023 Conference on
+                     2024a. Alphamath almost zero: process supervision          Empirical Methods in Natural Language Process-
+                     without process. CoRR, abs/2405.03553.                     ing, EMNLP 2023, Singapore, December 6-10, 2023,
+                                                                                pages 8154–8173. Association for Computational
+                  Xinyun Chen, Maxwell Lin, Nathanael Schärli, and              Linguistics.
+                     DennyZhou.2024b. Teaching large language mod-           Jie   Huang,    Xinyun    Chen,     Swaroop    Mishra,
+                     els to self-debug. In The Twelfth International Con-       Huaixiu Steven Zheng, Adams Wei Yu, Xiny-
+                     ference on Learning Representations, ICLR 2024,            ing Song, and Denny Zhou. 2024a. Large language
+                     Vienna, Austria, May 7-11, 2024. OpenReview.net.           models cannot self-correct reasoning yet. In The
+                  Ziru Chen, Michael White, Raymond J. Mooney, Ali              Twelfth International Conference on Learning
+                     Payani, Yu Su, and Huan Sun. 2024c. When is                Representations, ICLR 2024, Vienna, Austria, May
+                     tree search useful for LLM planning? it depends            7-11, 2024. OpenReview.net.
+                     on the discriminator. In Proceedings of the 62nd        Zhen Huang, Haoyang Zou, Xuefeng Li, Yixiu Liu,
+                     Annual Meeting of the Association for Computa-             Yuxiang Zheng, Ethan Chern, Shijie Xia, Yiwei Qin,
+                     tional Linguistics (Volume 1: Long Papers), ACL            Weizhe Yuan, and Pengfei Liu. 2024b. O1 replica-
+                     2024, Bangkok, Thailand, August 11-16, 2024, pages         tion journey – part 2: Surpassing o1-preview through
+                     13659–13678. Association for Computational Lin-            simple distillation, big progress or bitter lesson?
+                     guistics.                                                  Preprint, arXiv:2411.16489.
+                  Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian,
+                     Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias          Jinhao Jiang, Zhipeng Chen, Yingqian Min, Jie Chen,
+                     Plappert, Jerry Tworek, Jacob Hilton, Reiichiro            Xiaoxue Cheng, Jiapeng Wang, Yiru Tang, Haox-
+                     Nakano, Christopher Hesse, and John Schulman.              iang Sun, Jia Deng, Wayne Xin Zhao, and 1 oth-
+                     2021. Training verifiers to solve math word prob-          ers. 2024. Technical report: Enhancing llm reason-
+                     lems. CoRR, abs/2110.14168.                                ing with reward-guided tree search. arXiv preprint
+                                                                                arXiv:2411.11694.
+                  OpenCompass Contributors. 2023.         Opencompass:
+                     A universal evaluation platform for foundation          Ryo Kamoi, Yusen Zhang, Nan Zhang, Jiawei Han,
+                     models.     https://github.com/open-compass/               and Rui Zhang. 2024. When can llms actually cor-
+                     opencompass.                                               rect their own mistakes? A critical survey of self-
+                                                                                correction of llms. CoRR, abs/2406.01297.
+                  DeepSeek-AI, Daya Guo, Dejian Yang, Haowei Zhang,
+                     Junxiao Song, Ruoyu Zhang, Runxin Xu, Qihao Zhu,        Wouter Kool, Herke van Hoof, and Max Welling. 2019.
+                     Shirong Ma, Peiyi Wang, Xiao Bi, Xiaokang Zhang,           Stochastic beams and where to find them: The
+                     Xingkai Yu, Yu Wu, Z. F. Wu, Zhibin Gou, Zhi-              gumbel-top-k trick for sampling sequences without
+                     hong Shao, Zhuoshu Li, Ziyi Gao, and 181 others.           replacement. In Proceedings of the 36th Interna-
+                     2025. Deepseek-r1: Incentivizing reasoning capa-           tional Conference on Machine Learning, ICML 2019,
+                     bility in llms via reinforcement learning. Preprint,       9-15 June 2019, Long Beach, California, USA, vol-
+                     arXiv:2501.12948.                                          ume 97 of Proceedings of Machine Learning Re-
+                                                                                search, pages 3499–3508. PMLR.
+                  Bofei Gao, Feifan Song, Zhe Yang, Zefan Cai, Yibo
+                     Miao, Qingxiu Dong, Lei Li, Chenghao Ma, Liang          AviralKumar,VincentZhuang,RishabhAgarwal,YiSu,
+                     Chen, Runxin Xu, Zhengyang Tang, Benyou Wang,              John D. Co-Reyes, Avi Singh, Kate Baumli, Shariq
+                     Daoguang Zan, Shanghaoran Quan, Ge Zhang, Lei              Iqbal, Colton Bishop, Rebecca Roelofs, Lei M.
+                     Sha, Yichang Zhang, Xuancheng Ren, Tianyu Liu,             Zhang, Kay McKinney, Disha Shrivastava, Cosmin
+                     and Baobao Chang. 2024. Omni-math: A univer-               Paduraru, George Tucker, Doina Precup, Feryal M. P.
+                     sal olympiad level mathematic benchmark for large          Behbahani, and Aleksandra Faust. 2024. Training
+                     language models. CoRR, abs/2410.07985.                     language models to self-correct via reinforcement
+                  Zhibin Gou, Zhihong Shao, Yeyun Gong, Yelong Shen,            learning. CoRR, abs/2409.12917.
+                     Yujiu Yang, Nan Duan, and Weizhu Chen. 2024.            Jan Leike. 2022. Why i’m excited about ai-assisted
+                     CRITIC:large language models can self-correct with         humanfeedback.
+                     tool-interactive critiquing.  In The Twelfth Inter-
+                     national Conference on Learning Representations,        Hunter Lightman, Vineet Kosaraju, Yuri Burda, Harri-
+                     ICLR2024,Vienna, Austria, May 7-11, 2024. Open-            son Edwards, Bowen Baker, Teddy Lee, Jan Leike,
+                     Review.net.                                                John Schulman, Ilya Sutskever, and Karl Cobbe.
+                                                                         4660
+                     2024. Let’s verify step by step. In The Twelfth In-    Charlie Snell, Jaehoon Lee, Kelvin Xu, and Aviral Ku-
+                     ternational Conference on Learning Representations,      mar.2024. ScalingLLMtest-timecomputeoptimally
+                     ICLR2024,Vienna, Austria, May 7-11, 2024. Open-          can be more effective than scaling model parameters.
+                     Review.net.                                              CoRR,abs/2408.03314.
+                  Aixin Liu, Bei Feng, Bing Xue, Bingxuan Wang,             Hanshi Sun, Momin Haider, Ruiqi Zhang, Huitao
+                     BochaoWu,ChengdaLu,ChenggangZhao,Chengqi                 Yang, Jiahao Qiu, Ming Yin, Mengdi Wang, Pe-
+                     Deng, Chenyu Zhang, Chong Ruan, and 1 others.            ter L. Bartlett, and Andrea Zanette. 2024.     Fast
+                     2024. Deepseek-v3 technical report. arXiv preprint       best-of-n decoding via speculative rejection. CoRR,
+                     arXiv:2412.19437.                                        abs/2410.20290.
+                  AmanMadaan, Niket Tandon, Prakhar Gupta, Skyler
+                     Hallinan, Luyu Gao, Sarah Wiegreffe, Uri Alon,         QwenTeam.2024a. Qwen2.5technical report. arXiv
+                     Nouha Dziri, Shrimai Prabhumoye, Yiming Yang,            preprint arXiv:2412.15115.
+                     Shashank Gupta, Bodhisattwa Prasad Majumder,
+                     Katherine Hermann, Sean Welleck, Amir Yazdan-          QwenTeam.2024b. Qwq: Reflectdeeplyonthebound-
+                     bakhsh, and Peter Clark. 2023. Self-refine: Itera-       aries of the unknown.
+                     tive refinement with self-feedback. In Advances in
+                    Neural Information Processing Systems 36: Annual        Ziyu Wan, Xidong Feng, Muning Wen, Stephen Marcus
+                    Conference on Neural Information Processing Sys-          McAleer, Ying Wen, Weinan Zhang, and Jun Wang.
+                     tems 2023, NeurIPS 2023, New Orleans, LA, USA,           2024. Alphazero-like tree-search can guide large
+                    December10-16,2023.                                       language model decoding and training. In Forty-
+                  Yingqian Min, Zhipeng Chen, Jinhao Jiang, Jie Chen,         first International Conference on Machine Learning,
+                     Jia Deng, Yiwen Hu, Yiru Tang, Jiapeng Wang, Xi-         ICML2024,Vienna,Austria,July21-27,2024.Open-
+                     aoxue Cheng, Huatong Song, and 1 others. 2024.           Review.net.
+                     Imitate, explore, and self-improve: A reproduction     JunWang,MengFang,ZiyuWan,MuningWen,Jiachen
+                     report on slow-thinking reasoning systems. arXiv         Zhu, Anjie Liu, Ziqin Gong, Yan Song, Lei Chen,
+                     preprint arXiv:2412.09413.                               Lionel M. Ni, Linyi Yang, Ying Wen, and Weinan
+                  Niklas Muennighoff, Zitong Yang, Weijia Shi, Xi-            Zhang. 2024. Openr: An open source framework
+                     ang Lisa Li, Li Fei-Fei, Hannaneh Hajishirzi, Luke       for advanced reasoning with large language models.
+                     Zettlemoyer, Percy Liang, Emmanuel Candès, and           CoRR,abs/2410.09671.
+                    Tatsunori Hashimoto. 2025. s1: Simple test-time
+                     scaling. Preprint, arXiv:2501.19393.                   Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc V.
+                                                                              Le, Ed H. Chi, Sharan Narang, Aakanksha Chowd-
+                  OpenAI. 2024a. Learning to reason with llms.                hery, and Denny Zhou. 2023.        Self-consistency
+                  OpenAI. 2024b. Openai o1 system card.                       improves chain of thought reasoning in language
+                                                                              models. In The Eleventh International Conference
+                  Yiwei Qin, Xuefeng Li, Haoyang Zou, Yixiu Liu, Shijie       on Learning Representations, ICLR 2023, Kigali,
+                    Xia, Zhen Huang, Yixin Ye, Weizhe Yuan, Hector            Rwanda,May1-5,2023.OpenReview.net.
+                     Liu, Yuanzhi Li, and Pengfei Liu. 2024. O1 repli-
+                     cation journey: A strategic progress report - part 1.  YueWang,QiuzhiLiu,Jiahao Xu, Tian Liang, Xingyu
+                    CoRR,abs/2410.18982.                                      Chen, Zhiwei He, Linfeng Song, Dian Yu, Juntao Li,
+                                                                              Zhuosheng Zhang, Rui Wang, Zhaopeng Tu, Haitao
+                  Jiahao Qiu, Yifu Lu, Yifan Zeng, Jiacheng Guo, Ji-          Mi, and Dong Yu. 2025. Thoughts are all over the
+                     ayi Geng, Huazheng Wang, Kaixuan Huang, Yue              place: Ontheunderthinkingofo1-likellms. Preprint,
+                    Wu,andMengdiWang.2024. Treebon: Enhancing                 arXiv:2501.18585.
+                     inference-timealignmentwithspeculativetree-search
+                     and best-of-n sampling. CoRR, abs/2410.16033.          Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten
+                  David Rein, Betty Li Hou, Asa Cooper Stickland,             Bosma,Brian Ichter, Fei Xia, Ed H. Chi, Quoc V. Le,
+                     Jackson Petty, Richard Yuanzhe Pang, Julien Di-          and Denny Zhou. 2022. Chain-of-thought prompting
+                     rani, Julian Michael, and Samuel R. Bowman. 2023.        elicits reasoning in large language models. In Ad-
+                     GPQA:Agraduate-level google-proof q&a bench-             vances in Neural Information Processing Systems 35:
+                     mark. CoRR, abs/2311.12022.                              Annual Conference on Neural Information Process-
+                                                                              ing Systems 2022, NeurIPS 2022, New Orleans, LA,
+                  Pier Giuseppe Sessa, Robert Dadashi, Léonard                USA,November28-December9,2022.
+                     Hussenot, Johan Ferret, Nino Vieillard, Alexandre
+                     Ramé, Bobak Shahriari, Sarah Perrin, Abe Friesen,      Yuxi Xie, Kenji Kawaguchi, Yiran Zhao, James Xu
+                     Geoffrey Cideron, Sertan Girgin, Piotr Stanczyk,         Zhao, Min-Yen Kan, Junxian He, and Michael Qizhe
+                    AndreaMichi, Danila Sinopalnikov, Sabela Ramos,           Xie. 2023. Self-evaluation guided beam search for
+                    Amélie Héliou, Aliaksei Severyn, Matt Hoffman,            reasoning. In Advances in Neural Information Pro-
+                     Nikola Momchev, and Olivier Bachem. 2024.                cessing Systems 36: Annual Conference on Neural
+                     BOND: aligning llms with best-of-n distillation.         Information Processing Systems 2023, NeurIPS 2023,
+                    CoRR,abs/2407.14622.                                      NewOrleans, LA, USA, December 10 - 16, 2023.
+                                                                       4661
+        An Yang, Beichen Zhang, Binyuan Hui, Bofei Gao,
+         Bowen Yu, Chengpeng Li, Dayiheng Liu, Jian-
+         hong Tu, Jingren Zhou, Junyang Lin, Keming Lu,
+         Mingfeng Xue, Runji Lin, Tianyu Liu, Xingzhang
+         Ren, and Zhenru Zhang. 2024. Qwen2.5-math tech-
+         nical report: Toward mathematical expert model via
+         self-improvement. CoRR, abs/2409.12122.
+        Yixin Ye, Zhen Huang, Yang Xiao, Ethan Chern, Shijie
+         Xia, and Pengfei Liu. 2025. Limo: Less is more for
+         reasoning. Preprint, arXiv:2502.03387.
+        Fei Yu, Anningzhe Gao, and Benyou Wang. 2024. Ovm,
+         outcome-supervised value models for planning in
+         mathematical reasoning. In Findings of the Associ-
+         ation for Computational Linguistics: NAACL 2024,
+         Mexico City, Mexico, June 16-21, 2024, pages 858–
+         875. Association for Computational Linguistics.
+        Zhiyuan Zeng, Qinyuan Cheng, Zhangyue Yin,
+         Bo Wang, Shimin Li, Yunhua Zhou, Qipeng Guo,
+         Xuanjing Huang, and Xipeng Qiu. 2024. Scaling
+         of search and learning: A roadmap to reproduce
+         o1fromreinforcement learning perspective. CoRR,
+         abs/2412.14135.
+        Shun Zhang, Zhenfang Chen, Yikang Shen, Mingyu
+         Ding, Joshua B. Tenenbaum, and Chuang Gan. 2023.
+         Planning with large language models for code gen-
+         eration. In The Eleventh International Conference
+         on Learning Representations, ICLR 2023, Kigali,
+         Rwanda,May1-5,2023.OpenReview.net.
+        Yunxiang Zhang, Muhammad Khalifa, Lajanugen Lo-
+         geswaran, Jaekyeom Kim, Moontae Lee, Honglak
+         Lee, and Lu Wang. 2024. Small language models
+         need strong verifiers to self-correct reasoning. In
+         Findings of the Association for Computational Lin-
+         guistics, ACL 2024, Bangkok, Thailand and virtual
+         meeting, August 11-16, 2024, pages 15637–15653.
+         Association for Computational Linguistics.
+        LianminZheng,LiangshengYin,ZhiqiangXie,Chuyue
+         Sun, Jeff Huang, Cody Hao Yu, Shiyi Cao, Christos
+         Kozyrakis, Ion Stoica, Joseph E. Gonzalez, Clark W.
+         Barrett, and Ying Sheng. 2024. Sglang: Efficient
+         execution of structured language model programs. In
+         Advances in Neural Information Processing Systems
+         38: Annual Conference on Neural Information Pro-
+         cessing Systems 2024, NeurIPS 2024, Vancouver, BC,
+         Canada, December 10 - 15, 2024.
+                              4662
+                                 A PerformanceofShortestMajorityVote                                                                                    R1-671b          R1-Distill-32b         R1-Distill-14b         QwQ          LIMO
+                                                                                                                                             0.28      AIME Solution Distribution                           AIME Token Distribution
+                                          onMoreModels.                                                                                      0.26                                                0.36
+                                                                                                                                             0.24                                                0.33
+                                                                                                                                             0.22                                                0.30
+                                                                                                                                                                                                 0.27
+                                 To demonstrate the applicability of shortest ma-                                                            0.20                                                0.24
+                                                                                                                                             0.18                                               ercentage0.21
+                                 jority voting across a wider range of models, we                                                            0.16                                               P0.18
+                                                                                                                                             0.14                                                0.15
+                                 have included additional evaluation results for both                                                        0.12                                                0.12
+                                                                                                                                                   1        2         3        4         5             1        2        3         4        5
+                                 o1-like models (s1 (Muennighoff et al., 2025)                                                                                      Group                                              Group
+                                                                                                                                                       GPQA Solution Distribution                           GPQA Token Distribution
+                                 and Open-Reasoner-Zero (Wang et al., 2024)) and                                                             0.28                                                0.33
+                                                                                                                                             0.26                                                0.30
+                                 instruction-based models (Deepseek-v3 (Liu et al.,                                                          0.24                                                0.27
+                                                                                                                                             0.22                                                0.24
+                                 2024) and Qwen-2.5-72b-instruct (Team, 2024a)),                                                             0.20                                                0.21
+                                                                                                                                                                                                ercentage0.18
+                                 as shown in Tables 5. We found that Shortest Ma-                                                            0.18                                               P0.15
+                                                                                                                                             0.16                                                0.12
+                                 jority Vote also performs excellently on these mod-                                                         0.14                                                0.09
+                                                                                                                                                   1        2         3        4         5             1        2        3         4        5
+                                 els, especially with s1 and Open-Reasoner-Zero.                                                                                    Group                                              Group
+                                 Although Qwen-2.5-72b and Deepseek-v3 do not                                                               Figure 8: The number of correct solutions and tokens
+                                 generate long chain-of-thought reasoning, Short-                                                           distributed across groups of different lengths.
+                                 est Majority Vote still significantly improves their
+                                 performance on AIME.
+                                 B IsInvalidScaling PhenomenonConflict                                                                      C FurtheranalysisonSequentialScaling
+                                          to Findings of R1 technique Report?                                                                         onR1-Distill-14b, R1-Distill-32b and
+                                                                                                                                                      LIMO
+                                 ThetrainingobjectiveofR1aimstoimprovemodel
+                                 accuracy, yet we observe that correct solutions tend                                                       InSection4.2,weobservedthatR1-Distill-14b,R1-
+                                 to be shorter than incorrect ones. This raises an                                                          Distill-32b and LIMO demonstrated some perfor-
+                                 intriguing question: Why does R1’s reinforcement                                                           manceimprovements after multiple rounds of self-
+                                 learning (RL) training consistently produce longer                                                         revision, followed by stabilization. Furthermore, in
+                                 solutions?                                                                                                 Section4.1, wefoundthatthecorrectsolutionsgen-
+                                      To investigate this phenomenon, we analyzed                                                           erated by R1-Distill-14b, R1-Distill-32b and LIMO
+                                 five solutions per question, organizing them into                                                          were generally shorter than incorrect solutions. To
+                                 groups by length in ascending order. Figure 8 il-                                                          reconcile these seemingly contradictory findings
+                                 lustrates the distribution of correct solutions across                                                     and further analyze how R1-Distill-14b, R1-Distill-
+                                 these groups.                                                                                              32bandLIMObenefitfromself-revision, we con-
+                                      Ouranalysis revealed that correct solutions pre-                                                      ductedadetailedanalysisofself-revisionoutcomes
+                                 dominantly appear in shorter-length groups, par-                                                           on both long and short solutions. Our methodol-
+                                 ticularly in the AIME dataset. However, when                                                               ogyforcollecting long and short solutions involved
+                                 examining the token distribution, we found that                                                            sampling five solutions for each question, ordering
+                                 correct solution tokens are concentrated in longer-                                                        them by length, and then segregating the longest
+                                 solution groups. This apparent contradiction arises                                                        and shortest solutions into separate groups. The
+                                 because the total token count is determined by both                                                        results of self-revision on both short and long so-
+                                 the number of solutions and the average tokens per                                                         lutions are presented in Figure 9. Our analysis
+                                 solution. As shown in Figure 2a, solutions in the                                                          reveals that short solutions exhibited significant
+                                 longest group contain nearly twice as many tokens                                                          performance improvements following self-revision,
+                                 as those in the shortest group. This explains why,                                                         while this trend was less pronounced for long so-
+                                 despite having fewer individual solutions, longer                                                          lutions. Therefore, the performance improvements
+                                 solutions account for a greater share of the total                                                         we observed through self-revision in R1-Distill-
+                                 tokens.                                                                                                    14b, R1-Distill-32b and LIMO primarily stem from
+                                      Wehypothesize that this discrepancy explains                                                          the self-revision on short solutions. This suggests
+                                 whyRLtrainingtends to produce longer solutions:                                                            that the relationship between accuracy and solution
+                                 the training process may favor generating longer                                                           length for these models is complex, demonstrating
+                                 solutions, even if they are less accurate, because                                                         neither a strictly positive nor negative correlation
+                                 they contribute more tokens to the gradient.                                                               with length.
+                                                                                                                                    4663
+                                                                                 AIMEDataset                                                      GPQADataset
+                            Model
+                                                                Majority Vote             Shortest Majority Vote                 Majority Vote             Shortest Majority Vote
+                            QwQ                              51.33%(baseline)                 50.89%(-0.87%)                  62.26%(baseline)                62.26%(+0.00%)
+                            R1-32b                           72.89%(baseline)                73.78%(+1.22%)                   63.33%(baseline)                63.54%(+0.32%)
+                            R1-14b                           71.78%(baseline)                 71.56%(-0.31%)                  56.16%(baseline)                56.46%(+0.54%)
+                            R1-1.5b                          40.00%(baseline)                42.22%(+5.56%)                   29.60%(baseline)                30.20%(+2.05%)
+                            LIMO                             68.89%(baseline)                70.00%(+1.61%)                   67.49%(baseline)                67.69%(+0.30%)
+                            s1                               40.89%(baseline)                42.22%(+3.26%)                   55.59%(baseline)                55.90%(+0.55%)
+                            Open-Reasoner-Zero               41.78%(baseline)                43.33%(+3.72%)                   50.81%(baseline)                50.51%(-0.60%)
+                            Qwen-2.5-72b                     20.22%(baseline)                21.11%(+4.40%)                   46.26%(baseline)                47.18%(+2.00%)
+                            Deepseek-v3                      64.67%(baseline)                65.56%(+1.37%)                   66.46%(baseline)                66.16%(-0.46%)
+                          Table 5: Performance improvement of Shortest Majority Vote compared to Majority Vote on QwQ, distilled R1,
+                          LIMO,s1,Open-Reasoner-Zero, Qwen-2.5-72b and Deepseek-v3.
+                                    0.722                                            0.732                                             0.7278
+                                               Overall                                                                     Overall
+                                    0.690      Short                                 0.700                                 Short
+                                               Long                                                                        Long        0.6567
+                                    0.658                                            0.668
+                                                                                                                                       0.5856
+                                    0.626                                            0.636
+                                   Accuracy0.594                                     Accuracy0.604                                    Accuracy0.5144
+                                    0.562                                            0.572                                             0.4433                                Overall
+                                                                                                                                                                             Short
+                                                                                                                                                                             Long
+                                    0.530 0   4  8                                   0.540 0   4   8                                   0.3722
+                                                    12  16  20  24 28  32  36                         12  16  20 24  28  32 36                0   4   8 12  16  20 24  28  32 36
+                                                        Iteration                                         Iteration                                         Iteration
+                                              (a) R1-Distill-32b                               (b) R1-Distill-14b                                (c) R1-Distill-14b
+                          Figure 9: Accuracy of short solutions and long solutions of R1-Distill-14b (a) and R1-Distill-32b (b) during
+                          sequential revision.
+                          D ParallelScaling of Shortest Majority                                                   Systemprompt
+                                 Vote on GPQA                                                                      You are a helpful and harmless assistant.
+                                                                                                                   Youshouldthink step-by-step.
+                          In Section 6, we demonstrated that our proposed
+                          Shortest Majority Vote achieves superior test-time                                      Instruction for MATH-500, AIME and Omini-
+                          scaling performance compared to the other two                                       MATH:
+                          methods on the AIME benchmark. In this section,                                          Instruction
+                          wepresent the parallel-scaling results on GPQA in
+                          Figure 10. While Shortest Majority Vote consis-                                          Answer the question and enclose the final
+                          tently outperforms the Shortest method on GPQA,                                          answer in boxed{}
+                          it does not exhibit significantly better parallel scal-
+                          ing performance compared to Majority Vote on this                                       Instruction for GPQA:
+                          benchmark. This phenomenon might be attributed                                           Instruction
+                          to the smaller performance gap between short and
+                          long solutions on GPQA compared to AIME, sug-                                            Selectthebestanswerfromthefollowingop-
+                          gesting that solution length plays a less critical                                       tions. Output only the letter corresponding
+                          role in determining solution quality on the GPQA                                         to the correct answer, enclosed in boxed{}.
+                          benchmark, which can be observed from Figure 2b
+                          E Prompt
+                          System prompt:
+                                                                                                        4664
+                                                                                  Majority Vote         Shortest        Shortest Majority Vote
+                                       R1-Distill-32b                  R1-Distill-14b                   R1-Distill-1.5b                      QwQ                              LIMO
+                                                                                               0.3                            0.62                             0.56
+                             0.64                            0.55
+                                                             0.50                              0.2                            0.60                             0.54
+                            Acc                                                                                                                                0.52
+                             0.62                            0.45                                                             0.58
+                                                                                               0.1                                                             0.50
+                                       25      50     75               25     50     75                  25      50      75               20       40                      20       40
+                                    Number of Tokens (k)            Number of Tokens (k)             Number of Tokens (k)            Number of Tokens (k)             Number of Tokens (k)
+                                     Figure 10: Performance Comparison between Majority Vote and Shortest Majority Vote on GPQA.
+                          F Examplesofself-revision
+                               Examples
+                               Wait, let me verify that again ...
+                               Wait,        but that seems straightforward,
+                               but let me check if I got the constants right
+                               ...
+                               Wait, but let me verify this to ensure
+                               I didn’t make a mistake ...
+                               Wait, so is the answer 756?                             But let
+                               mecheckifthis is consistent ...
+                               Wait,        but in 3D space, the centers
+                               might not be coplanar? ...
+                               Alternatively, try to find a general formula ...
+                               Alternatively, consider that m is such
+                               that m divides k where k is from 1 to 999 ...
+                               Alternatively, maybe we can use mod-
+                               ulo 8 to get constraints ...
+                               Alternatively, perhaps there’s a smarter
+                               approach ...
+                               Alternatively,             another         way to think
+                               about this problem is to recognize that w
+                               and z are roots of unity ...
+                                                                                                         4665

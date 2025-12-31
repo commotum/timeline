@@ -1,0 +1,1584 @@
+                     Self-Improving Language Models for Evolutionary Program Synthesis:
+                                                      ACaseStudyonARC-AGI
+                                            Julien Pourcel1 Cédric Colas*12 Pierre-Yves Oudeyer*1
+                                      Abstract                                search through the space of possible programs, using meth-
+                   Manyprogramsynthesistasksprovetoochalleng-                 ods like genetic programming or sequential Bayesian infer-
+                   ing for even state-of-the-art language models to           ence (Koza, 1994; Liang et al., 2010). These approaches
+                   solve in single attempts. Search-based evolution-          generate initial candidates based on task constraints, then
+                   ary methods offer a promising alternative by ex-           iteratively refine them through mutation and crossover op-
+                   ploring solution spaces iteratively, but their effec-      erations. However, their effectiveness depends heavily on
+                   tiveness remain limited by the fixed capabilities          having intelligent program generators and mutation opera-
+                   of the underlying generative model. We propose             tors—without these, algorithms must expend massive com-
+                   SOAR,amethodthatlearnsprogramsynthesisby                   putation, blindly exploring the space of possible solutions.
+                   integrating language models into a self-improving          Large language models (LLMs) have marked a new turn in
+                   evolutionary loop. SOAR alternates between (1)             program synthesis by acting as powerful program genera-
+                   an evolutionary search that uses an LLM to sam-            tors (Roziere et al., 2023; Guo et al., 2024), solving many
+                   ple and refine candidate solutions, and (2) a hind-        tasks in a single attempt (Li & Ellis, 2024). For harder
+                   sight learning phase that converts search attempts         problems, they can serve as intelligent operators for evolu-
+                   into valid problem-solution pairs used to fine-tune        tionary search, proposing targeted modifications to existing
+                   theLLM’ssamplingandrefinementcapabilities—                 solutions (Lehman et al., 2023; Olausson et al., 2023; Mey-
+                   enabling increasingly effective search in subse-           erson et al., 2024). But these approaches face a fundamental
+                   quent iterations. On the challenging ARC-AGI               limitation: the capabilities of the model used for sampling
+                   benchmark, SOAR achieves significant perfor-               and refinement remain fixed, and simply sampling more
+                   mance gains across model scales and iterations,            candidates or trying more refinements yields diminishing
+                   leveraging positive transfer between the sampling          returns. This paper introduces a system that learns to sample
+                   and refinement finetuning tasks. These improve-            and refine programs from past synthesis attempts, enabling
+                   ments carry over to test-time adaptation, enabling         sustained performance improvements beyond the limits of
+                                                             1
+                   SOARtosolve52%ofthepublictestset.                          search-based methods.
+                                                                              WeproposeSelf-improving Operators for Automated pro-
+              1. Introduction                                                 gram Refinements (SOAR), a framework that integrates
+              Program synthesis promises to transform how humans inter-       language models into a self-improving evolutionary loop.
+              act with computers by automatically discovering programs        SOARalternates between two phases: first, using an LLM
+              that satisfy their intent. Instead of writing precise instruc-  to sample and refine candidate programs through evolution-
+              tions, users can express their goals through constraints, ex-   ary search (Sample&Refine phase), then using these search
+              amples, or natural language, letting synthesis algorithms       traces to fine-tune the model’s sampling and refinement ca-
+              figure out the implementation details. However, finding a       pabilities. This creates a virtuous cycle—better models
+              programthatsatisfies all constraints may be challenging due     enable more effective search, which in turn provides bet-
+              to the vast space of possible implementations.                  ter training data for further model improvements. Unlike
+                                                                              previous approaches that rely on human-engineered domain-
+              Traditional program synthesis approaches rely on iterated       specific languages to scaffold search, or human-generated
+                 *                 1      2                                   solutions to finetune program generators, SOAR learns to
+                  Equal supervision Inria MIT. Correspondence to: Julien      synthesize programs in Python, learning solely from its own
+              Pourcel <julien.pourcel@inria.fr>.                              synthesis attempts, including both successes and failures.
+              Proceedings of the 42nd International Conference on Machine     Wedemonstrate SOAR’s effectiveness on the Abstraction
+              Learning, Vancouver, Canada. PMLR 267, 2025. Copyright 2025     and Reasoning Corpus (ARC), a program synthesis bench-
+              bythe author(s).                                                markspecifically designed to challenge AI models’ core rea-
+                  1Our code is open-sourced at: github.com/flowersteam/SOAR
+                                                                           1
+                                                       Learning program synthesis with self-improving language models: A case study on ARC-AGI
+                                                                                                                                                                                                   iterate
+                                                                                          Program solution                                          Evolutionary  Search                                              Learning
+                                        ARC task
+                                                                                                                                                             ARC task
+                                                                                                                                                                                                           ﬁnetuned LLM (init. base LLM)
+                                                                                                                                                                           Learned program 
+                                                                                                                                                                                                                 Sampling & reﬁnement
+                                                                                                                                                                                sampling
+                                                                                                                                                                                                                     LLM ﬁne-tuning
+                                                                                                                                                   solution
+                                                                                                                                                                                       3k prog.
+                                                                                                                                                                           Learned program 
+                                                                                                                                                                                                                       Data selection
+                                                                                                                                                                               reﬁnement
+                                                                                                                                                       Majority 
+                                                                                                                                                                                       6k prog.
+                                                            ? 
+                                                                                                                                                          vote
+                                                                                                                                                                                                             search traces
+                          Figure 1. Overview of the SOAR architecture solving a task from the Abstract Reasoning Corpus. Each ARC task implicitly encodes
+                                                                  ˆ                                                                                      ˆ
+                          for grid transformation f demonstrated via examples {x                                            , y       }suchthat f(x                 ) = y          . To solve a task, one must find the output
+                                                                                                                       train    train                          train          train
+                          grids ytest corresponding to test input grids xtest. SOAR learns to synthesize transformation programs f in Python by alternating between
+                          an evolutionary search phase (sampling and refining candidate programs with an LLM) and a learning phase (finetuning the LLM on
+                          previous synthesis attempts)—eventually solving 52% of ARC-AGI public test set.
+                          soning capabilities (Chollet, 2019). Each ARC task requires                                                        their own improvement, our work opens new possibilities
+                          inferring from just a few examples an implicit transforma-                                                         for creating increasingly capable AI systems that can tackle
+                          tion mapping input colored grids to output grids. These                                                            complex reasoning tasks through a combination of search
+                          transformations often involve fundamental concepts like ob-                                                        and learned program refinement.
+                          ject permanence, arithmetic, physics, or geometric relations.
+                          Current language models struggle with program synthesis                                                            2. Related Work
+                          on ARC: even the state-of-the-art GPT-4.1, or Claude-4-
+                          Sonnet could only solve 8.00% and 20.75% of the test tasks                                                         Traditional program synthesis algorithms rely on iterated
+                          respectively. While search considerably improves the perfor-                                                       search algorithms like genetic programming or sequential
+                          manceofouropen-source models (from 1-2% to 14-26%),                                                                MonteCarlo(Goldberg; Holland; Koza, 1994; Langdon &
+                          fixed model capabilities create a performance ceiling.                                                             Poli, 2013; Liang et al., 2010; Saad et al., 2019), where their
+                          Through iterative self-improvement, SOAR breaks through                                                            effectiveness heavily depends on well-engineered program
+                          this ceiling. After four training iterations, SOAR solves                                                          priors and mutation operators. With the emergence of deep
+                          an extra 10-19% tasks across model sizes. Given access to                                                          learning, recent work has explored learning these compo-
+                          target tasks, but not to their ground truth solutions, SOAR                                                        nents from data: either training neural networks to sam-
+                          learns to solve an extra 3-5% tasks across model sizes with                                                        ple programs conditioned on input-output examples (Balog
+                          test-time training. With a final test performance of 52%,                                                          et al., 2016; Ellis et al., 2021), or training decision mech-
+                          our best model outperforms previous program synthesis                                                              anisms to speed up search (Shi et al., 2022). While these
+                          methods based on open weight LLM and without using any                                                             approaches rely on exhaustive search in constrained hand-
+                          hand-crafteddata. Importantly, these gains arise purely from                                                       defined programming languages, SOARlearns to synthesize
+                          the model learning to sample and refine better programs                                                            programs in Python from past synthesis attempts, eliminat-
+                          through its own search experience, without requiring task                                                          ing the need for offline datasets or manual engineering.
+                          specific human-engineering or training data.                                                                       Large language models have emerged as powerful tools for
+                          Our work demonstrates how program synthesis systems                                                                program synthesis (Roziere et al., 2023; Guo et al., 2024),
+                          can transcend the limitations of their base models through                                                         both as direct solution generators (Li & Ellis, 2024) and as
+                          self-improvement. We present:                                                                                      mutation operators for evolutionary search (Lehman et al.,
+                                                                                                                                             2023; Olausson et al., 2023; Meyerson et al., 2024). These
+                          1. a framework that iteratively improves its evolutionary                                                          capabilities have enabled sophisticated search methods that
+                               search capabilities by learning from its own search expe-                                                     can both refine and diversify solutions: e.g.generating di-
+                               rience without human-engineered data,                                                                         verse difficult programming problems (Pourcel et al., 2024),
+                          2. a test-time training mechanism enabling continuous im-                                                          high-quality poems (Bradley et al., 2023) or interesting pat-
+                               provement on target problems,                                                                                 terns in cellular automata (Kumar et al., 2024). Whether
+                          3. empirical evidence that iterative model improvement                                                             used for convergent or divergent search, these methods treat
+                               can help overcome the performance plateaus inherent                                                           the LLM as a fixed component, preventing them from im-
+                               to search methods,                                                                                            proving through experience. SOAR overcomes this lim-
+                          4. state-of-the-art results for program synthesis leveraging                                                       itation by continuously adapting its underlying language
+                               open-source LLMs on ARC-AGI’s public test set.                                                                model through self-improvement.
+                          Byshowinghowprogramsynthesissystemscanbootstrap                                                                    Recent work has shown that LLMs can learn to reason
+                                                                                                                                        2
+                                                Learning program synthesis with self-improving language models: A case study on ARC-AGI
+                      by training on successful reasoning traces—either self-                                            3.1. Problem definition
+                      generated (Zelikman et al., 2022; 2024; Guo et al., 2025),                                         The ARC benchmark is a canonical example of program-
+                      or produced by classical search algorithms (Gandhi et al.,                                         ming by example (PBE) (Menon et al., 2013), where the
+                      2024). SOAR also internalizes search traces into the model,                                        goal is to synthesize a program that satisfies a specification
+                      but can do so leveraging both successful and failed attempts,                                      defined through input-output examples. Formally, in PBE,
+                      using hindsight learning. Moreover, SOAR also learns to                                            we aim to find a program f within a given programming
+                      refine solutions from past experience, and leverages these                                         language such that for every provided example pair (x,y),
+                      improved capabilities in a test-time evolutionary search.                                          the program correctly maps inputs to outputs: y = f(x).
+                      TheAbstraction and Reasoning Corpus (ARC) represents                                               This paradigm enables users to specify desired behavior im-
+                      a particularly challenging synthesis benchmark that has at-                                        plicitly through examples rather than writing explicit code.
+                      tracted significant attention over the past years (Chollet,                                        In the specific case of ARC, each task consists of:
+                      2019). ARC tasks can be solved in two ways: (1) direct                                             1. a set of 2–10 training examples {(x                              , y      )} where
+                      prediction of output grids (transductive approach), or (2) pre-                                                                                                   train    train
+                      diction of a transformation program used to generate the                                                x       and y          are colored grid pairs;
+                                                                                                                                train          train
+                      output grids (inductive approach) (Li et al., 2024). First
+                      attempts at leveraging LLMs for transduction achieved poor                                         2. a set of test inputs {xtest} for evaluation.
+                      results (Xu et al., 2023; Gendron et al., 2023; Mirchandani                                        Thegoalis to find a Python function f such that f(xtrain) =
+                      et al., 2023) but finetuning models on synthetic data brought                                      y        for all training examples, and f(x                         ) produces the
+                      significant performance gains (Li et al., 2024; Akyürek et al.,                                      train                                                         test
+                                                                                                                         correct (hidden) y              .
+                      2024). Early inductive approaches leveraged heavily human-                                                                     test
+                      engineereddomain-specificlanguages(DSL)andexhaustive                                               Each grid is a 2D array of size h × w with (h,w) ∈ [1..30]
+                      search (Hodel, 2023; Wind, 2020). More recent approaches                                           where each cell contains an integer from 0 to 9 representing
+                      used closed-source LLM for Python synthesis: sampling                                              a color. The challenge lies in discovering the underlying
+                      andrefining populations of candidate programs (Wang et al.,                                        transformation pattern from just a few examples. ARC is
+                      2023; Li et al., 2024). Two recent projects trained LLMs                                           composed of 400 train tasks to use for algorithm develop-
+                      to sample programs in ARC: Butt et al. (2024) used on-                                             ment(ARC-train), and 400 test tasks to use for evaluation
+                      line RL and hindsight learning in a custom DSL, while                                              (ARC-test), with each task containing both training input-
+                      Li et al. (2024) used human-generated Python solutions.                                            output examples to guide the inference and test input-output
+                      With SOAR,wecontinuously refine search operators (sam-                                             grids to test it. Each ARC task encodes a new implicit
+                      pling and refinement) solely from past synthesis attempts,                                         transformation that may involve fundamental concepts like
+                      achieving competitive performance while eliminating any                                            counting, arithmetic, pattern completion, or spatial reason-
+                      dependence on human engineering and datasets.                                                      ing. This makes them relatively easy for humans, yet sur-
+                                                                                                                         prisingly difficult for AI systems (LeGris et al., 2024).
+                      3. Method                                                                                          3.2. Program synthesis as evolutionary search with
+                      SOAR(Self-improving Operators for Automated program                                                       LLM-basedsamplingandrefinement
+                      Refinements) is a framework that enables program synthesis                                         ARCtasksaretoochallenging for current language models
+                      systems to learn and improve from their own search experi-                                         to solve directly (see proof in Section 4.1). SOAR combines
+                      ences. Ratherthanrelyingonafixedlanguagemodeltosam-                                                the generative capabilities of LLMs with an evolutionary
+                      ple or refine programs, SOAR implements a self-improving                                           search process that iteratively improves candidate solutions.
+                      loop where the system’s capabilities grow through iterative                                        At a high level, our Sample&Refine search first samples
+                      search and learning phases (Fig. 1). During the evolutionary                                       an initial pool of candidate solutions (sampling step), then
+                      search phase, SOAR uses an LLM to both sample candidate                                            iteratively refines the most promising ones using execution
+                      programs and refine them through targeted modifications,                                           feedback (refinement step). In the end, we use majority
+                      producing a diverse set of solution attempts (Section 3.2).                                        voting to select the most likely test output grids to submit
+                      In the learning phase, these search traces are used to fine-                                       for evaluation (see Appendix D.1). Appendix G provides
+                      tune the underlying LLM, enhancing its ability to sample                                           the prompts used for sampling and refinement.
+                      and refine programs for future tasks (Section 4.2). SOAR
+                      iterates this process to create a virtuous cycle: better models
+                      enable more effective search, which in turn provides richer                                        Programsampling. GivenabaseLLMparameterizedby
+                      training data for further model improvements (Section 3.4).                                        θ, we sample a set of Python programs f without constrain-
+                                                                                                                         ing ourselves to a hand-coded domain-specific language:
+                                                                                                                                                 f ∼ P (· | x            , x      , y      ).
+                                                                                                                                                           θ         test    train   train
+                                                                                                                     3
+                                                Learning program synthesis with self-improving language models: A case study on ARC-AGI
+                      Each candidate program is executed through a Python in-                                            through finetuning. Specifically, each search attempt pro-
+                      terpreter to produce output grids: ytest = f(xtest). This                                          duces a rich set of program candidates, including both suc-
+                      inductive approach allows us to implement a sample-and-                                            cessful and failed attempts, that can serve as training data
+                      test strategy—scaling the number of candidate solutions                                            for enhancing both program sampling and refinement.
+                      increases our chances of discovering a transformation that
+                      satisfies all input-output examples, a requirement for our                                         Finetuning sampling capabilities.                            Weaimto improve
+                      program to truly capture the implicit transformation of the                                        our model’s ability to sample correct programs by learning
+                      task. AlphaCode scaled this approach to millions of at-                                            from its past synthesis attempts. For each task in the ARC-
+                      tempts per task to achieve human-level performance on                                              train set, we have access to ground truth test outputs ytest,
+                      coding challenges (Li et al., 2022).                                                               allowing us to identify correct sampled programs fcorrect.
+                                                                                                                         This gives us a dataset Dgen                    of (task, solution) pairs.
+                      Programrefinement.                     Whenacandidateprogramf pro-                                                                        correct
+                      duces incorrect outputs (y                      =f(x            ) ̸= y        ), we can            However,thisapproachfacesasignificant limitation: search
+                                                               synth             train        train                      fails to sample any correct solution in most tasks, severely
+                      use this execution feedback to guide the LLM in refining its                                       limiting the size of Dgen               . To address this, we augment our
+                      solution f → f+:                                                                                                                    correct
+                                      f+ ∼P (· | f,x                , x      , y      , y       ),                       training data through hindsight relabeling (Andrychowicz
+                                                  θ             test    train    train    synth                          et al., 2017). The key insight is that any program f0 sampled
+                      clearly labeling both successful (y                           =y ),andfailed                       during search, while possibly incorrect for its intended task,
+                                                                            synth         train
+                      (y         ̸=y )transformationsintherefinement prompt.                                             is by definition correct for the task of mapping inputs to the
+                         synth         train
+                                                                                                                         outputs it produces. Formally, given a program:
+                      Sample&Refinesearchalgorithm. Oursearchprocess                                                                           f ∼P (f | x ,x                      , y      ),
+                      consists of two steps: (1) an initial sampling step that in-                                                               0         θ          test    train    train
+                                                                                                                         wecancreate a new synthetic task for which f is a correct
+                      dependently samples 3k candidate solutions, and (2) a re-                                                                                                                  0
+                                                                                                                         solution by executing f on all inputs:
+                      finement step with a budget of 3k refinements. The second                                                                              0
+                                                                                                                                                  ∀x∈x , y                    =f (x).
+                      step frames refinement as a generative multi-armed bandit:                                                                             train     synth        0
+                      each refinement creates a new arm that can further be re-                                          This gives us a new valid (task, solution) pair:
+                      fined. We tackle this problem with REX, a combination                                              {(x        , y       , x     ), f } where f is guaranteed to be cor-
+                                                                                                                               train    synth     test     0                 0
+                      of Thompson sampling based on the accuracy of training                                             rect by construction. This approach allows us to leverage all
+                      input-output examples with an additional exploration bonus                                         programs sampled during search for training, not just those
+                      (Tang et al., 2024). This efficiently balances our search                                          that happened to solve their intended tasks.
+                      budget between the exploration of new program variations                                           Theresulting synthetic dataset Dgen contains 6k datapoints
+                      and the exploitation of known successful paths.                                                                                                       synth
+                                                                                                                         collected for each of the 400 tasks in ARC-train—a total
+                      Ensembling with weighted majority voting.                                      Westart             of 2.4M datapoints. Given our limited computational re-
+                      with 6k candidate programs (3k from sampling, 3k from                                              sources, we sub-sample this dataset to ≤ 50 examples per
+                      refinement). Each program is evaluated on the ARC task’s                                           task. This is done by ranking solutions according to their
+                      input-output examples to compute its example accuracy, and                                         accuracy on input-output examples and test pairs, then sam-
+                      is also run on the test input to produce an output grid. We                                        pling 25 top performing solutions (greedy approach), then
+                      then group programs by their test output grid and assign                                           sampling 25 bottom performing solutions to introduce some
+                      each unique grid a score: the sum of example accuracies of                                         diversity in the set of relabelled problem-solution pairs. Sec-
+                                                                                                                         tion 4.2 compares this solution to alternatives. With the
+                      all programs that produced it. This gives us a weighted vote                                       resulting dataset D′gen , we finetune our model to sample
+                      over test outputs, favoring grids produced by more accurate                                                                      synth
+                      programs (see Appendix D.1 for more details). This en-                                             better programs by minimizing:
+                                                                                                                                    L=E ′gen [−logP (f | x                           , y      , x     )].
+                      sembling approach helps mitigate individual program errors                                                               D                    θ           train   train     test
+                      while capturing common patterns across successful solu-                                                                    correct
+                      tions. We eventually return two candidate solutions, as per                                        Finetuning refinement capabilities.                           Beyondimproving
+                      the benchmark rules (Chollet, 2024).                                                               initial program sampling, we aim to enhance our model’s
+                                                                                                                         ability to refine incorrect programs using execution feed-
+                      3.3. Learning to search via self-improved sampling and                                             back. For tasks in ARC-train where we have access to
+                             refinement                                                                                  ground truth outputs, we can identify correct refinements:
+                      The search process described above relies entirely on the                                          cases where an incorrect program f was successfully re-
+                                                                                                                         fined into a correct program f+. We collect these successful
+                      base LLM’s ability to sample and refine programs. We                                               refinements into a dataset Drefine .
+                      propose to leverage the data generated during the Sam-                                                                                         correct
+                      ple&Refine search phase to improve these capabilities                                              Here again, we subsample this dataset to ≤ 50 examples
+                                                                                                                    4
+                                                Learning program synthesis with self-improving language models: A case study on ARC-AGI
+                      per task. This is achieved by balancing the sampling over                                          large-2407 to study larger models, including one trained on
+                      bins of the input-output accuracy of the parent program:                                           different data, by a different company. We finetune models
+                      0%, 1-34%, 34-98%, and 100% to ensure diversity. Sec-                                              on a single H100 using the RS-LoRA (7B and 14B models)
+                      tion 4.2 compares this strategy to alternatives. With the                                          and RS-QLoRAalgorithms(Huetal.,2021;Dettmersetal.,
+                      resulting dataset D′refine, we finetune our model to better                                        2024; Kalajdzievski, 2023) (larger models) with the Unsloth
+                                                     correct
+                      refine programs by minimizing:                                                                     library (Daniel et al., 2023). We use LoRA rank 256 with
+                        L = E refine -logP (f+ | f,x                           , x      , y      , y       ).          α=32,andtrainfor3epochswithalearningrateof5e-5
+                                    D                    θ                  test    train    train   synth
+                                      correct                                                                            (see Section D.4 for details).
+                      3.4. Closing the loop: iterative self-improvement on
+                             training and testing tasks                                                                  4. Experiments
+                      Self-improvement on training tasks.                                The search and                  Our experiments explore how program synthesis systems
+                      learning phases described above form the building blocks                                           can grow beyond their initial capabilities through self-
+                      of SOAR’s self-improvement loop. At each iteration i, we                                           improvement. We begin by showing that even the strongest
+                      alternate between: (1) Sample&Refine search phase: Using                                           languagemodelsstruggletosolveARCtaskswithoutsearch,
+                      modelθi to sample and refine programs through evolution-                                           establishing the need for iterative exploration (Sec. 4.1).
+                      ary search and (2) Learning phase: Using the search traces                                         Fromthere, we demonstrate how models can learn to search
+                      to train an improved model θ                           by finetuning the base                      more effectively by fine-tuning on their own synthesis at-
+                                                                       i+1
+                      model(see Figure 1). Each iteration builds upon previous                                           tempts—improving both their ability to sample and re-
+                      improvements—themodelfinetunediniteration i’s learn-                                               fine programs (Sec. 4.2). These improvements accumulate
+                      ing phase powers the search in iteration i + 1, generating                                         across iterations, creating a virtuous cycle of increasingly ef-
+                      richer training data to train the model i + 1. This creates a                                      fective search (Sec. 4.3). Crucially, this cycle allows SOAR
+                      virtuous cycle where better models enable more effective                                           to break through the performance ceilings encountered by
+                      search which, in turn, yields better training data.                                                scaling model size or compute budget alone (Section 4.4).
+                      After this training phase, we collect and deduplicate all so-                                      We conclude by analyzing the diversity of generated so-
+                      lutions generated by the models using an embedding model                                           lutions and find that while SOAR tends to converge on
+                      with a cosine similarity threshold of 0.9 (CodeRankEmbed).                                         consistent programs after success, it preserves diversity on
+                      Wethensubsamplethisdataset as described in Section 3.3                                             unsolved tasks (Sec. 4.5). Together, these results establish
+                      (50 examples per ARC-train problem) and use the resulting                                          SOARasasignificantadvanceinprogramsynthesis,demon-
+                      dataset to finetune a base model that will serve as the basis                                      strating how systems can bootstrap their own improvement
+                      of test-time training iterations.                                                                  through iterative search and learning. Appendix H provides
+                                                                                                                         examples of sampled programs and refinement examples.
+                      Test-time training.                 Wecanadapttheself-improvement                                  4.1. Program synthesis methods must leverage search
+                      loop to let the agent learn from target problems where the
+                      ground truth is not accessible. This is achieved by focusing                                       Canstate-of-the-art language models solve ARC tasks in a
+                      on finetuning sampling capabilities by selecting solution ex-                                      single attempt? To find out, we evaluated several models in
+                      amples according to their training accuracy on input–output                                        a one-shot setting, where each model tries to generate a cor-
+                      examples only (instead of ground truth accuracy), before                                           rect program in just one try. As shown in Table 1, even the
+                      applying hindsight relabeling. Refinement finetuning could                                         strongest models achieve modest success rates on ARC-test:
+                      potentially be adapted to work without ground truth (at test                                       e.g.Claude-4-Sonnet (20.75%), GPT-4.1 (8.00%). Smaller
+                      time) with hindsight relabeling. However, we reserve this                                          open-source models perform even worse, with Qwen-2.5-
+                      approach for future work, as our current test-time improve-                                        Coder models achieving 1.00-2.25% success rates across
+                      ment method focuses solely on refining explicit sampling                                           modelsizes. Direct program synthesis remains too challeng-
+                      capabilities. This enables a powerful test-time training loop:                                     ing for current language models.
+                      after running several iterations of full self-improvement on                                       Two approaches can potentially improve performance:
+                      the training set, we can further adapt our model through                                           (1) transduction, where models directly predict output grids
+                      additional iterations focused specifically on test tasks.                                          without generating programs, or (2) inductive program
+                                                                                                                         synthesis combined with search. While both approaches
+                      Implementation details.                    Weevaluate SOARincombina-                               currently yield comparable results (Li et al., 2024), pro-
+                      tion with LLMs from the Qwen-2.5-Coder series (7B, 14B,                                            gram synthesis offers a key advantage: it enables sys-
+                      32B), known for their strong coding capabilities while re-                                         tematic exploration of the solution space, allowing perfor-
+                      maining small enough to allow compute-efficient finetuning                                         mancetoscale with additional compute through search. We
+                      (Hui et al., 2024). We also used Qwen-2.5-72B and Mistral-                                         compare three settings using a series of Qwen-2.5-Coder
+                                                                                                                     5
+                                 Learning program synthesis with self-improving language models: A case study on ARC-AGI
+               models: (1) single-shot sampling, (2) sampling 6k candi-            mancetoavoidoverfitting the method to test tasks.
+               date programs (Sample-6k), and (3) using half the bud-
+               get for initial sampling and half for targeted refinements          Learning to sample programs.           Akeychallenge in im-
+               (Sample&Refine-6k). Table 1 shows that both sampling and            proving sampling capabilities is extracting meaningful train-
+               sample&refine search dramatically improve performance,              ing signal from search attempts. While we could only train
+               with Sample&Refine-6k achieving the best results across             onsuccessful solutions, this would severely limit our train-
+               all model sizes. Notably, this allows smaller open-source           ing data since many tasks remain unsolved. Instead, we
+               models to outperform much larger closed-source ones by              explore several strategies for creating synthetic training data
+               leveraging additional computation: the 7B model beats GPT-          fromallsampledprogramsthroughhindsightrelabeling(see
+               4.1, and ≥32B models beat Claude-4-Sonnet. Only state-              Section 3.3). For each ARC-train task:
+               of-the-art reasoning models (o3-mini and Gemini-2.5-Pro                • correct-only: sample uniformly up to 50 solutions that
+               outperform Sample&Refine-6k with Qwen ≥32B (see more                      solved the task (no hindsight learning);
+               model evaluations in Appendix 6).
+               However, search performance typically scales logarithmi-               • uniform: sample uniformly 50 candidate solutions,
+               cally with compute budget and is ultimately bounded by                    then apply hindsight learning to create corresponding
+               the capabilities of the base model used for sampling and                  problem-solution pairs;
+               refinement. This observation motivates our key question:               • greedy: sample the 50 solutions that solved the most
+               can we learn to search more effectively by improving these                train and test examples, then apply hindsight learning;
+               underlying capabilities? Our experiments demonstrate how               • greedy-diverse: sample 25 solutions greedily, then 25
+               iterative self-improvement breaks through this barrier.                   solutions that solved the fewest training examples (for
+                                                                                         diversity), before applying hindsight learning.
+                 Model               1-shot    Sample     Sample&      SOAR        Table 2 compares these strategies by measuring sampling
+                                                 -6k      Refine-6k     -6k        accuracy after finetuning (% of train tasks solved using 3k
+                 Qwen-2.5-C-7B        1.00      5.63        14.25      36.25       samples). While all methods leveraging finetuned mod-
+                 Qwen-2.5-C-14B       1.00      12.63       19.87      42.75       els improve over the baseline, the greedy-diverse method
+                 Qwen-2.5-C-32B       1.50      12.88       25.25      44.38       performed best—suggesting the importance of balancing
+                 Qwen-2.5-72B         1.75      18.50       25.62      44.88       between learning from successful solutions and maintaining
+                 Mistral-Large-2      2.50      19.75       26.25      45.50
+                 GPT-4.1              8.00        –           –          –         diversity in the training data.
+                 Claude-4-Sonnet      20.75       –           –          –
+                 Reasoners                                                                                               Sample-3k acc
+                 o3-mini              33.00       –           –          –                               nofinetuning        29.29
+                 Gemini-2.5-pro       38.25       –           –          –                       finetune: correct-only      34.67
+               Table 1. Performance on ARC-test (% solved). Scores are com-                          finetune: uniform       32.38
+               puted using LLMs performing program synthesis. Sampling small                          finetune: greedy        34.3
+               open-source models 6k times with majority voting (Sample-6k)                   finetune: greedy-diverse       36.46
+               or sampling them 3k times and executing 3k refinement steps         Table 2. Sampling finetuning. ARC-train performance after sam-
+               before majority voting (Sample&Refine-6k) outperforms the one-      pling 3k samples with Qwen-2.5-Coder-14B models finetuned for
+               shot program synthesis performance of much larger non-reasoning     program sampling (% solved).
+               closed-source models. SOAR nearly doubles search performance        Learning to refine programs.         Beyond sampling initial
+               for all models. Sample&Refine and SOAR not run with closed-         solutions, we aim to improve the model’s ability to refine
+               source models for budget reasons.                                   programs using execution feedback. We explore two strate-
+                                                                                   gies for curating refinement examples from search traces.
+               4.2. Learning to sample and refine programs                         For each ARC task:
+               Our framework for learning to search alternates between                • uniform: sample uniformly up to 50 successful refine-
+               search and learning phases: first using the model to sample               mentexamples;
+               and refine solutions, then using these attempts to improve             • diverse: balance that sample based on the training
+               the model’s capabilities. This section analyzes how to ef-                scores of the incorrect parent program (0%, 1–34%,
+               fectively extract training signal from search attempts, exam-             34–98%,and100%withincorrecttest outputs).
+               ining three key questions: (1) how to learn better program
+               sampling, (2) how to learn better program refinement, and           Table3showstheARC-trainperformanceofsearchmethods
+               (3) whether and how these capabilities can be learned jointly.      leveraging a non-finetuned model for sampling (3k samples)
+               Weconducttheseexperiments using Qwen-2.5-Coder-14B                  andafinetuned model for refinement (3k refinements) using
+               and make design choices based on the ARC-train perfor-              either of these two data generation methods. Both strategies
+                                                                                6
+                                    Learning program synthesis with self-improving language models: A case study on ARC-AGI
+                 improve refinement capabilities substantially, with diverse                          80
+                 sampling performing marginally better (42.88% when refin-
+                 ing solutions sampled by a non-finetuned model).                                     70
+                                                                                                      60
+                                            Sample-3k acc      Sample&Refine
+                                                                                                      50                                 QC-7B
+                           nofinetuning          29.67               34.83                           -train score (%)                    QC-14B
+                      finetune: uniform                              42.67                            40                                 QC-32B
+                                                                                                     ARC                                 Q-72B
+                       finetune: diverse                             42.88                                                               Mistral-Large
+                                                                                                      30                                 all models
+                                                                                                                                         oracle (all models)
+                 Table 3. Refinement finetuning: ARC-train performance of Sam-                    SOAR(base-model)       1             2             3
+                 ple&Refine search methods (6k budget) using a non-finetuned                                            Training iteration
+                 Qwen-2.5-Coder-14B model in the sampling step before refining             Figure 2. Iterated self-improvement on training problems. ARC-
+                 sampled solutions with different Qwen-2.5-Coder-14B models                train performance across training iterations. Training iteration 0:
+                 finetuned for program refinement (% solved).                              search with base models. All: score achieved by applying majority
+                                                                                           voting on the combined generated solutions of the five models.
+                 Positive synergy between sample and refine tasks.                         with better search capabilities, with the >32B models out-
+                 Should we train separate models for sampling and refine-                  performing smaller variants at iteration 0; (2) smaller mod-
+                 ment, or can a single model learn both effectively? Table 4               els show steeper improvements in early iterations; (3) all
+                 shows that joint finetuning outperforms both base models                  modelsizes continue to benefit from further training itera-
+                 and task-specific finetuning—for both sampling and search                 tions, though gains may slow down in later iterations; and
+                 performance. This indicates a clear synergy: learning to                  (4) relative improvements are largest for smaller models,
+                 sample helps refinement, and vice versa. The results sug-                 with the 7B model nearly doubling its performance.
+                 gest that both tasks benefit from shared representations of
+                 program structure and transformation patterns. Rather than                Wefoundthatpoolingdatafromthesearchtracesofourfive
+                 splitting effort between specialized models, joint learning of-           models before performing majority voting (5 × 6k samples
+                 fers a more efficient and effective path. Appendix E presents             per task) significantly outperformed all of them (see brown
+                 moredetailed experiments supporting this result.                          line on Fig. 2)—suggesting that different model sizes may
+                                                                                           solve problems in complementary ways. However, majority
+                                                                        Sample&            voting is not an ideal aggregation strategy; we observed
+                    Samplemodel        Refine model      Sample-3k      Refine-6k          an average score gap of 9.5% between majority voting and
+                          base              base           29.67          34.83            oracle performance across our models, where the oracle
+                       fine-samp          fine-ref         36.46          43.88            is defined as a task being solved if at least one solution
+                       fine-both         fine-both         39.79          44.42            produces the correct output. This gap indicates room for
+                                                                                           improvement in developing better ensembling methods.
+                 Table 4. ARC-train accuracy using different combinations of               Since pooled data from multiple models and iterations con-
+                 models for the Sample (col 1) and Refine (col 2) phases.                  sistently yielded better performance during search (see Fig-
+                 fine-samp/ref/both refers to Qwen-2.5-Coder-14B finetuned for             ure 2), we trained a series of base models on a subset of
+                 sampling, refinement, or both, respectively.        Sample-3k and         the combined dataset of all training iterations and model
+                 Sample&Refine-6k (cols 2, 3) indicate the ARC-train accuracy
+                 after sampling (3k solutions) and after search (3k samples + 3k           sizes (as described in Section 3.4). These models, trained
+                 refinements).                                                             on a greater diversity of programs and refinement strategies,
+                                                                                           significantly outperform models trained on their own data
+                 4.3. Learning to search with iterated self-improvement                    only (Table 5). We use these models called SOAR(all train)
+                                                                                           as starting points for test-time training steps.
+                 Having established effective methods for self-improvement,
+                 we now examine how improvements compound through                                 Modelsize           SOAR(3train)       SOAR(all train)
+                 iterations and scale with model size.                                              QC-7B                  19.9                33.0
+                                                                                                   QC-14B                  24.5                39.1
+                 Self-improvement on ARC-train problems.                   Figure 2                QC-32B                  28.0                41.1
+                 shows substantial gains across iterations for all model sizes,                     Q-72B                  34.6                39.8
+                                                                                             Mistral-Large-123B            28.5                40.1
+                 solving an extra +27% (7B), +24% (14B), +20% (32B),                       Table 5. ARC-test accuracy after training base models on a subset
+                +19%(72B) and +22% (Mistral) problems on ARC-train.                        of 1) the data obtained at the 2nd SOAR iteration using that same
+                 The relationship between model size and performance re-                   model size, SOAR(3 train); 2) all data collected by all models and
+                 veals several interesting patterns: (1) larger models start               all previous train iterations SOAR(all train).
+                                                                                        7
+                                               Learning program synthesis with self-improving language models: A case study on ARC-AGI
+                                            QC-7B                                                                                                                                         SOAR (all models)
+                                  55        QC-14B                                                                                 50
+                                            QC-32B
+                                            Q-72B
+                                            Mistral-Large                                                                          40                                                     Gemini-2.5-Pro
+                                  50        all models
+                                            oracle (all models)                                                                                                                           o3-mini
+                                                                                                                                   30
+                                  45
+                                                                                                                                                                                          Claude-4-Sonnet
+                                                                                                                                  -test score (%)20                                  One-shot
+                                 -test score (%)                                                                                                                                     SOAR (base model)
+                                  40                                                                                                                                                 SOAR (1 train)
+                                                                                                                                  ARC                                                SOAR (2 train)
+                                 ARC                                                                                               10     GPT-4.1                                    SOAR (3 train)
+                                                                                                                                                                                     SOAR (all train + 0 test)
+                                  35                                                                                                                                                 SOAR (all train + 1 test)
+                                                                                                                                                                                     SOAR (all train + 2 test)
+                                                                                                                                     0                                               SOAR (all models)
+                               SOAR(all-train)                       1                            2                                      7             14            32             72            123
+                                                   Test time training iteration                                                                               Model size (B)
+                      Figure 3. Iterated self-improvement on test problems. ARC-test                                   Figure 4. Performance plateaus with increasing model size when
+                      performance across test-time training iterations. Iteration 0: search                            using fixed sampling and refinement capabilities (Sample-6k and
+                      with the models finetuned in training iteration 4 (right-most points                             Sample&Refine-6k). In contrast, SOAR progressively lifts the
+                      in Figure 2). All: score achieved by applying majority voting on                                 scaling curves across iterations, enabling smaller models to match
+                      the combined search data of the five models.                                                     or outperform much larger ones. Note that only the 7B, 14B, and
+                                                                                                                       32Bmodelsarefromthesamefamily(Qwen-2.5-Coder),72Bis
+                                                                                                                       from the Qwen-2.5 family, and 123B is Mistral-large-2407.
+                      Self-improvementonARC-testproblems(test-timetrain-
+                      ing).      The results from Section 4.3 demonstrated signifi-                                    Self-improvement enables each model size to reach perfor-
+                      cant performance gains through iterative self-improvement                                        mancelevels that previously required much larger models.
+                      on training tasks. However, practical applications require                                       Figure 5 reveals a similar ceiling when scaling search bud-
+                      systemsthatcanimproveonnewproblemswithoutaccessto                                                get. With the 7B base model, performance saturates after
+                      ground-truth solutions. This raises a key question: Can our                                      roughly 5k search attempts. In contrast, SOAR-iteration 1
+                      self-improvement framework continue to raise performance                                         nearly doubles its ARC-test accuracy, which remains true
+                      whenadaptedtotarget test problems?                                                               whencontrolling for FLOP budget (see Appendix B). No-
+                      Starting from models fine-tuned on all data collected                                            tably, a significant fraction of this gain appears during the
+                      through 4 iterations on ARC-train problems (previous sec-                                        refinement phase. These results show that search alone is
+                      tion), we perform two additional iterations of test-time train-                                  insufficient—learning to refine is essential.
+                      ing on ARC-test problems, leading to an extra 5% perfor-
+                      manceonARC-test(Figure2). Takentogether,thecombina-                                                        35
+                      tion of train-time and test-time improvements dramatically                                                 30
+                      raised performance across all model scales. Our 7B model                                                   25
+                      improved from its initial 14.25% to 36.25% accuracy on                                                     20
+                      ARC-test, a 2.5 fold increase. Similarly, the 14B model
+                      rose from 19.87% to 42.75%, the 32B model improved from                                                    15
+                                                                                                                                -test score (%)                                   SOAR (base-model)
+                      25.25% to 44.37%, 72B from 25.62% to 44.87%, while                                                         10                                               SOAR (1 train)
+                                                                                                                                ARC                                               SOAR (2 train)
+                      Mistral-Large-2 accuracy improved from 26.25% to 45.5%.                                                      5                                              SOAR (3 train)
+                                                                                                                                                                                  SOAR (all train + 0 test)
+                      Bycombiningsolutions across all model sizes through ma-                                                                                        SampleRefine SOAR (all train + 1 test)
+                      jority voting, we achieved our peak performance of 52.00%                                                    0                                              SOAR (all train + 2 test)
+                                                                                                                                       0       1000 2000 3000 4000 5000 6000
+                      onARC-testandanoracleperformance of 57.25%.                                                                                         Number of samples
+                                                                                                                       Figure 5. Search alone hits diminishing returns with increased bud-
+                      4.4. Escaping scaling plateaus through                                                           get: the base 7B model plateaus after about 5k search attempts.
+                             self-improvement                                                                          SOARoutperformsthis baseline by a wide margin, with improve-
+                                                                                                                       ments compounding across iterations.
+                      Figure 4 shows that simply running search with increasing                                        Together, these results show that SOAR breaks through both
+                      model size eventually yields diminishing returns. While                                          model-size and search-budget plateaus by improving the
+                      larger models perform better in early iterations, Sample-6k                                      modelitself. Rather than pushing harder against fixed limits
+                      and Sample&Refine-6k curves flatten beyond 32B, suggest-                                         (scaling model sizes or search budgets), SOAR lifts them—
+                      ing a model-size scaling plateau: more parameters alone                                          transforming flat scaling curves into steps of improvement.
+                      do not suffice when the model’s sampling and refinement                                          This effect is especially striking for smaller models: Qwen-
+                      behaviors remain fixed. In contrast, the SOAR curves re-                                         2.5-7B reaches 36.25% on ARC-test after SOAR’s itera-
+                      veal a different pattern. While each SOAR iteration also                                         tions, outperforming much larger systems like o3-mini and
+                      plateaus, subsequent iterations consistently lift the perfor-                                    Claude-4-Sonnet. These results establish SOAR as a sig-
+                      mance ceiling—establishing new, higher scaling curves.                                           nificant advance in program synthesis approaches to ARC.
+                                                                                                                   8
+                                  Learning program synthesis with self-improving language models: A case study on ARC-AGI
+                Ourapproach outperforms prior methods that relied on ex-             self-improvement alone can bootstrap strong reasoning ca-
+                tensive human-generated training data (Li et al., 2024) and          pabilities in general-purpose language models.
+                and expensive search methods built on much larger closed-            Ourexperiments highlight two key findings. First, SOAR
+                source models (Greenblatt, 2024) (see further comparisons            overcomes the performance plateaus typically observed
+                in Appendix Table 6). By enabling models to improve them-            whenscalingmodelsizeorsearchbudget. Byimprovingthe
+                selves from scratch, SOAR eliminates the need for hand-              underlying model itself, it establishes new, higher scaling
+                engineered programs, DSLs, or external datasets—marking              baselines. Second, we observe complementary problem-
+                a step toward more autonomous, scalable synthesis systems.           solving strategies across model sizes: smaller models often
+                4.5. Solution diversity across iterations                            learn faster and sometimes solve tasks that larger ones miss.
+                                                                                     Training base models on aggregated solutions from multi-
+                Tokeeponimprovingandsolvingharder problems, SOAR                     ple models and iterations yields the strongest improvements
+                must keep on exploring the space of possible solutions. Fig-         (see Table 5), while ensembling solutions across model sizes
+                ure 6 shows a steady decrease in solution diversity across           leads to our best ARC-test performance (52%). These re-
+                self-improvement iterations for the problems SOAR man-               sults suggest that cross-model diversity is a key driver of
+                aged to solve. For unsolved problems, diversity initially            performance gains in self-improving program synthesis.
+                drops after the first iteration but then plateaus, suggest-          Crucially, SOAR offers a substantial advantage over ap-
+                ing that our relabeling method may help maintain some                proaches that rely on fixed models within static search loops.
+                exploratory capacity. While this helps preserve diversity            State-of-the-art systems like FunSearch and AlphaEvolve
+                on unsolved tasks, integrating explicit diversity-enhancing          (Romera-Paredesetal., 2024; Liu et al., 2024; AlphaEvolve-
+                strategies could further extend SOAR’s ability to explore            team, 2025) use program synthesis without adapting the
+                solution spaces and sustain continual improvement.                   model. SOAR could serve as a drop-in upgrade, enabling
+                          0.6                                                        these systems to continually learn from their own search
+                                    Solved                                           traces. The framework could also be extended with richer
+                          0.5       Unsolved                                         operators, such as crossover (Meyerson et al., 2024).
+                          0.4                                                        While SOAR is domain-agnostic, we only evaluate it on
+                          0.3                                                        ARC.Futureworkshouldtestitsapplicability to domains
+                        Diversity                                                    like software engineering or mathematical discovery (Dong
+                          0.2                                                        &Ma,2025; Jain et al.). Computational efficiency is an-
+                          (avg pairwise distance)0.1                                 other limitation: SOAR currently requires 6,000 synthesis
+                          0.0                                                        attempts per task per iteration. Although we observe steady
+                               0            1            2             3             gains, these diminish over time, hinting at potential lim-
+                                              Generation                             its. Whether these are intrinsic or methodological remains
+                Figure 6. Solution diversity across generations of SOAR. Thin        open, but several strategies could help, such as adaptively
+                lines indicate solution diversity across for each of the 400 ARC-    rerouting the search budget from solved tasks to harder ones,
+                train problems, colored in green when solved, in red when un-        or improving optimization methods (e.g., see Chow et al.
+                solved. Thick lines indicate averages across solved and unsolved     (2024); Tang et al. (2025); Gehring et al. (2024)).
+                problems respectively. SOAR maintains solution diversity for
+                unsolved problems but converges on lower solution diversity for      Onelikely bottleneck is low solution diversity. While prior
+                solved problems. Diversity is measured as the average pairwise       workfoundthat RLandfinetuning often reduce output di-
+                cosine distance in embedding space (CodeRankEmbed)                   versity (Zhang et al., 2025; Yue et al., 2025), we find that
+                5. Discussion                                                        SOARpreservesdiversity on unsolved tasks, likely due to
+                                                                                     hindsight relabeling, which retroactively creates new prob-
+                Our work shows that program synthesis systems can tran-              lems from failed programs. Still, this maintained diversity
+                scend their initial capabilities by iteratively improving both       appears insufficient to sustain continual progress. Future
+                sampling and refinement through a cycle of evolutionary              workcould enhance it by explicitly optimizing for diversity
+                search and learning. Here we reflect on the broader implica-         during finetuning, introducing quality-diversity methods, or
+                tions and challenges ahead.                                          generating new problems to expand solution diversity (Co-
+                ARC was explicitly designed to resist pattern matching               las et al., 2022; Pourcel et al., 2024). These directions may
+                and require core reasoning, making it a strong testbed               help maintain a virtuous cycle of improvement and push
+                for program synthesis (Chollet, 2024). Most models fail              program synthesis closer to open-ended discovery.
+                without human-written examples or human-encoded priors.
+                SOAR’sability to improve purely from its own search ex-
+                perience—without demonstrations or DSLs—show that
+                                                                                  9
+                             Learning program synthesis with self-improving language models: A case study on ARC-AGI
+              Acknowledgments                                                C., Vikram, S., Lebron, F., Choy, P., Ramasesh, V., Web-
+              This work benefitted from access to the HPC resources of       son, A., and Pope, R. How to scale your model. 2025.
+              IDRISundertheallocation A0171011996 made by GENCI.             Retrieved from https://jax-ml.github.io/scaling-book/.
+              It was also co-funded by AI Chair ANR DeepCuriosity         Balog, M., Gaunt, A. L., Brockschmidt, M., Nowozin, S.,
+              ANR-19-CHIA-0004. Cédric Colas acknowledges funding            and Tarlow, D. Deepcoder: Learning to write programs.
+              fromtheEuropeanUnion’sHorizon2020researchandinno-              arXiv preprint arXiv:1611.01989, 2016.
+              vation programme under the Marie Skłodowska-Curie grant
+              agreement No 101065949.                                     Bradley, H., Dai, A., Teufel, H., Zhang, J., Oostermeijer,
+                                                                             K., Bellagente, M., Clune, J., Stanley, K., Schott, G., and
+              ImpactStatement                                                Lehman,J. Quality-diversity through ai feedback. arXiv
+                                                                             preprint arXiv:2310.13032, 2023.
+              This work demonstrates how iterative model improvement      Butt, N., Manczak, B., Wiggers, A., Rainone, C., Zhang,
+              can help overcome the performance plateaus typically en-       D. W., Defferrard, M., and Cohen, T. Codeit: Self-
+              countered when scaling both model size and search budget.      improving language models with prioritized hindsight
+              This finding suggests an important principle for developing    replay. In International Conference on Machine Learn-
+              morecapable AI systems that could benefit society across       ing, 2024.
+              numerous applications, from software development to sci-
+              entific discovery.                                          Chollet, F. On the measure of intelligence. arXiv preprint
+              However, the development of self-improving AI systems          arXiv:1911.01547, 2019.
+              naturally raises safety considerations. While our results   Chollet, F. Arc prize website. "https://arcprize.o
+              showclear performance slow downs rather than unbounded         rg/", 2024. ARC Prize Leaderboard.
+              improvement, suggesting inherent limitations to our spe-
+              cific approach, the general principle of systems improving  Chow, Y., Tennenholtz, G., Gur, I., Zhuang, V., Dai, B.,
+              through self-directed learning could inspire future systems    Thiagarajan, S., Boutilier, C., Agarwal, R., Kumar, A.,
+              with broader capabilities. This underscores the importance     and Faust, A. Inference-aware fine-tuning for best-of-
+              of implementingappropriatesafeguardsandoversightmech-          n sampling in large language models. arXiv preprint
+              anisms when developing such systems.                           arXiv:2412.15287, 2024.
+              Wedemonstrate these results using open-source language      Colas, C., Karch, T., Sigaud, O., and Oudeyer, P.-
+              models and will release our complete codebase upon publi-      Y. Autotelic agents with intrinsically motivated goal-
+              cation. We believe this transparency is crucial for respon-    conditioned reinforcement learning: a short survey. Jour-
+              sible development of increasingly capable AI systems, and      nal of Artificial Intelligence Research, 74:1159–1199,
+              weencourage researchers building on this work to maintain      2022.
+              similar standards of openness while carefully considering
+              potential societal impacts.                                 Daniel, H., Michael, H., and team, U. Unsloth, 2023. URL
+                                                                             http://github.com/unslothai/unsloth.
+              References                                                  Dettmers,T.,Pagnoni,A.,Holtzman,A.,andZettlemoyer,L.
+              Akyürek, E., Damani, M., Qiu, L., Guo, H., Kim, Y., and        Qlora: Efficient finetuning of quantized llms. Advances
+                Andreas, J. The surprising effectiveness of test-time        in Neural Information Processing Systems, 36, 2024.
+                training for abstract reasoning, 2024. Preprint.          Dong, K. and Ma, T. Beyond limited data: Self-play llm
+              AlphaEvolve-team. AlphaEvolve: A Gemini-powered cod-           theorem provers with iterative conjecturing and proving.
+                ing agent for designing advanced algorithms — deep-          arXiv preprint arXiv:2502.00212, 2025.
+                mind.google. https://deepmind.google/disc                 Ellis, K., Wong, C., Nye, M., Sablé-Meyer, M., Morales, L.,
+                over/blog/alphaevolve-a-gemini-power                         Hewitt, L., Cary, L., Solar-Lezama, A., and Tenenbaum,
+                ed-coding-agent-for-designing-advance                        J. B. Dreamcoder: Bootstrapping inductive program
+                d-algorithms/,2025.                                          synthesis with wake-sleep library learning. In Proceed-
+              Andrychowicz, M., Wolski, F., Ray, A., Schneider, J., Fong,    ings of the 42nd acm sigplan international conference on
+                R., Welinder, P., McGrew, B., Tobin, J., Pieter Abbeel, O.,  programming language design and implementation, pp.
+                and Zaremba, W. Hindsight experience replay. Advances        835–850, 2021.
+                in neural information processing systems, 30, 2017.       Gandhi,K.,Lee,D.,Grand,G.,Liu,M.,Cheng,W.,Sharma,
+              Austin, J., Douglas, S., Frostig, R., Levskaya, A., Chen,      A., and Goodman,N.D. Streamofsearch(sos): Learning
+                                                                       10
+                                Learning program synthesis with self-improving language models: A case study on ARC-AGI
+                 to search in language. arXiv preprint arXiv:2404.03683,        Kalajdzievski, D. A rank stabilization scaling factor for
+                 2024.                                                             fine-tuning with lora. arXiv preprint arXiv:2312.03732,
+               Gehring, J., Zheng, K., Copet, J., Mella, V., Carbonneaux,          2023.
+                 Q., Cohen, T., and Synnaeve, G. Rlef: Grounding code           Koza, J. R. Genetic programming as a means for program-
+                 llms in execution feedback with reinforcement learning.           mingcomputers by natural selection. Statistics and com-
+                 arXiv preprint arXiv:2410.02089, 2024.                            puting, 4:87–112, 1994.
+               Gendron, G., Bao, Q., Witbrock, M., and Dobbie, G. Large         Kumar,A.,Lu,C.,Kirsch,L.,Tang,Y.,Stanley,K.O.,Isola,
+                 language models are not strong abstract reasoners. arXiv          P., and Ha, D. Automatingthesearchforartificiallifewith
+                 preprint arXiv:2305.19555, 2023.                                  foundation models. arXiv preprint arXiv:2412.17799,
+               Goldberg, e. a. Genetic algorithms and machine learning.            2024.
+                 3(2):95–99. ISSN 1573-0565. doi: 10.1023/A:102260              Langdon, W. B. and Poli, R. Foundations of genetic pro-
+                 2019183. URL https://doi.org/10.1023/A:                           gramming. Springer Science & Business Media, 2013.
+                 1022602019183.
+                                                                                LeGris, S., Vong, W. K., Lake, B. M., and Gureckis, T. M.
+               Greenblatt, R. Draw more samples. "https://redwoo                   H-arc: Arobustestimateofhumanperformanceontheab-
+                 dresearch.substack.com/p/getting-50-s                             straction and reasoning corpus benchmark. arXiv preprint
+                 ota-on-arc-agi-with-gpt", 2024. Accuracy                          arXiv:2409.01374, 2024.
+                 from ARCPrize Leaderboard.
+                                                                                Lehman, J., Gordon, J., Jain, S., Ndousse, K., Yeh, C.,
+               Guo, D., Zhu, Q., Yang, D., Xie, Z., Dong, K.,                      and Stanley, K. O. Evolution through large models. In
+                 Zhang, W., Chen, G., Bi, X., Wu, Y., Li, Y., et al.               HandbookofEvolutionary Machine Learning, pp. 331–
+                 Deepseek-coder: When the large language model meets               366. Springer, 2023.
+                 programming–theriseofcodeintelligence. arXivpreprint
+                 arXiv:2401.14196, 2024.                                        Li, W.-D. and Ellis, K. Is programming by example solved
+                                                                                   byllms? arXiv preprint arXiv:2406.08316, 2024.
+               Guo, D., Yang, D., Zhang, H., Song, J., Zhang, R., Xu, R.,
+                 Zhu, Q., Ma, S., Wang, P., Bi, X., et al. Deepseek-r1: In-     Li, W.-D., Hu, K., Larsen, C., Wu, Y., Alford, S., Woo, C.,
+                 centivizing reasoning capability in llms via reinforcement        Dunn, S. M., Tang, H., Naim, M., Nguyen, D., Zheng,
+                 learning. arXiv preprint arXiv:2501.12948, 2025.                  W.-L., Tavares, Z., Pu, Y., and Ellis, K. Combining
+                                                                                   induction and transduction for abstract reasoning, 2024.
+               Hodel, M. Arc-dsl. https://github.com/michael                       URLhttps://arxiv.org/abs/2411.02272.
+                 hodel/arc-dsl,2023. [OnlineGitHubrepository].
+                                                                                Li, Y., Choi, D., Chung, J., Kushman, N., Schrittwieser, J.,
+               Holland, J. H. Adaptation in Natural and Artificial Systems:        Leblond,R.,Eccles,T.,Keeling,J.,Gimeno,F.,DalLago,
+                 An Introductory Analysis with Applications to Biology,            A., et al. Competition-level code generation with alpha-
+                 Control, and Artificial Intelligence. The MIT Press. ISBN         code. Science, 378(6624):1092–1097, 2022.
+                 978-0-262-27555-2. doi: 10.7551/mitpress/1090.001.00
+                 01. URL https://direct.mit.edu/books/m                         Liang, P., Jordan, M. I., and Klein, D. Learning programs:
+                 onograph/2574/Adaptation-in-Natural-a                             Ahierarchical bayesian approach. In ICML, volume 10,
+                 nd-Artificial-SystemsAn.                                          pp. 639–646, 2010.
+               Hu, E. J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y., Wang,    Liu, F., Tong, X., Yuan, M., Lin, X., Luo, F., Wang, Z.,
+                 S., Wang, L., and Chen, W. Lora: Low-rank adaptation of           Lu, Z., and Zhang, Q. Evolution of heuristics: Towards
+                 large language models. arXiv preprint arXiv:2106.09685,           efficient automatic algorithm design using large language
+                 2021.                                                             model. arXiv preprint arXiv:2401.02051, 2024.
+               Hui, B., Yang, J., Cui, Z., Yang, J., Liu, D., Zhang, L.,        Menon,A.,Tamuz,O.,Gulwani,S.,Lampson,B.,andKalai,
+                 Liu, T., Zhang, J., Yu, B., Lu, K., et al. Qwen2. 5-coder         A. A machine learning framework for programming
+                 technical report. arXiv preprint arXiv:2409.12186, 2024.          by example. In International Conference on Machine
+               Jain, N., Han, K., Gu, A., Li, W.-D., Yan, F., Zhang, T.,           Learning, pp. 187–195. PMLR, 2013.
+                 Wang,S., Solar-Lezama, A., Sen, K., and Stoica, I. Live-       Meyerson, E., Nelson, M. J., Bradley, H., Gaier, A., Moradi,
+                 codebench: Holistic and contamination free evaluation             A., Hoover, A. K., and Lehman, J. Language model
+                 of large language models for code. In The Thirteenth              crossover: Variation through few-shot prompting. ACM
+                 International Conference on Learning Representations.             Transactions on Evolutionary Learning, 4(4):1–40, 2024.
+                                                                             11
+                                 Learning program synthesis with self-improving language models: A case study on ARC-AGI
+               Mirchandani, S., Xia, F., Florence, P., Ichter, B., Driess, D.,     Xu, Y., Li, W., Vaezipoor, P., Sanner, S., and Khalil, E. B.
+                  Arenas, M. G., Rao, K., Sadigh, D., and Zeng, A. Large              Llms and the abstraction and reasoning corpus: Suc-
+                  language models as general pattern machines. arXiv                  cesses, failures, and the importance of object-based rep-
+                  preprint arXiv:2307.04721, 2023.                                    resentations. arXiv preprint arXiv:2305.18354, 2023.
+               Olausson, T. X., Inala, J. P., Wang, C., Gao, J., and Solar-        Yue, Y., Chen, Z., Lu, R., Zhao, A., Wang, Z., Song, S., and
+                  Lezama, A. Is self-repair a silver bullet for code genera-          Huang,G. Doesreinforcementlearningreally incentivize
+                  tion? arXiv preprint arXiv:2306.09896, 2023.                        reasoning capacity in llms beyond the base model? arXiv
+                                                                                      preprint arXiv:2504.13837, 2025.
+               Pourcel, J., Colas, C., Molinaro, G., Oudeyer, P.-Y., and           Zelikman,E.,Wu,Y.,andGoodman,N.D. Star: Self-taught
+                  Teodorescu, L. Aces: generating diverse programming                 reasoner. arXiv preprint arXiv:2203.14465, 2022.
+                  puzzles with autotelic language models and semantic
+                  descriptors. Neurips, 2024.                                      Zelikman, E., Harik, G., Shao, Y., Jayasiri, V., Haber, N.,
+               Romera-Paredes, B., Barekatain, M., Novikov, A., Balog,                and Goodman, N. D. Quiet-star: Language models can
+                  M., Kumar, M. P., Dupont, E., Ruiz, F. J., Ellenberg, J. S.,        teach themselves to think before speaking. arXiv preprint
+                  Wang,P., Fawzi, O., et al. Mathematical discoveries from            arXiv:2403.09629, 2024.
+                  program search with large language models. Nature, 625           Zhang, Y., Diddee, H., Holm, S., Liu, H., Liu, X., Samuel,
+                  (7995):468–475, 2024.                                              V., Wang, B., and Ippolito, D. Noveltybench: Evaluating
+               Roziere, B., Gehring, J., Gloeckle, F., Sootla, S., Gat, I.,           language models for humanlike diversity. arXiv preprint
+                  Tan, X. E., Adi, Y., Liu, J., Sauvestre, R., Remez, T., et al.      arXiv:2504.05228, 2025.
+                  Code llama: Open foundation models for code. arXiv               Zheng, L., Yin, L., Xie, Z., Sun, C. L., Huang, J., Yu, C. H.,
+                  preprint arXiv:2308.12950, 2023.                                    Cao, S., Kozyrakis, C., Stoica, I., Gonzalez, J. E., et al.
+                                                                                      Sglang: Efficient execution of structured language model
+               Saad, F. A., Cusumano-Towner, M. F., Schaechtle, U., Ri-               programs. Advances in Neural Information Processing
+                  nard, M. C., and Mansinghka, V. K. Bayesian synthesis              Systems, 37:62557–62583, 2024.
+                  of probabilistic programs for automatic data modeling.
+                  Proceedings of the ACM on Programming Languages, 3
+                  (POPL):1–32, 2019.
+               Shi, K., Bieber, D., and Singh, R. Tf-coder: Program
+                  synthesis for tensor manipulations. ACM Transactions on
+                  ProgrammingLanguagesandSystems(TOPLAS),44(2):
+                  1–36, 2022.
+               Tang, H., Hu, K., Zhou, J. P., Zhong, S. C., Zheng, W.-L.,
+                  Si, X., and Ellis, K. Code repair with LLMs gives an
+                  exploration-exploitation tradeoff. In The Thirty-eighth
+                  Annual Conference on Neural Information Processing
+                  Systems, 2024. URL https://openreview.net
+                  /forum?id=o863gX6DxA.
+               Tang, Y., Zheng, K., Synnaeve, G., and Munos, R. Optimiz-
+                  ing language models for inference time objectives using
+                  reinforcementlearning. arXiv preprint arXiv:2503.19595,
+                  2025.
+               Wang,R.,Zelikman, E., Poesia, G., Pu, Y., Haber, N., and
+                  Goodman,N.D. Hypothesis search: Inductive reasoning
+                  with language models. arXiv preprint arXiv:2309.05660,
+                  2023.
+               Wind, J. S. 1st place 2020 arc kaggle. https://gi
+                  thub.com/top-quarks/ARC-solution, 2020.
+                  [Online GitHub repository].
+                                                                               12
+                                Learning program synthesis with self-improving language models: A case study on ARC-AGI
+               A. Comparison with prior work
+                                                    Method %ARC-testsolved #attempt/task Faircomparison?
+                  One-shot LLMsampling(1attempt/task)
+                         Claude-3.5-Sonnet / Claude-4-Sonnet      11.25 / 20.75           1         Yes (closed-source LLM)
+                                           GPT-4.1 / o3-mini      8.00 / 33.00            1         Yes (closed-source LLM)
+                                              Mistral-large-2         2.50                1         Yes
+                                               Qwen2.5-72B            4.00                1         Yes
+                                  Qwen2.5-Coder-(7/14/32B)      1.00 / 1.00 / 1.75        1         Yes
+                                            Sample&Refine
+                                              Mistral-large-2        26.25              6000        Yes
+                                               Qwen2.5-72B           25.62              6000        Yes
+                         Qwen2.5-Coder-(7/14/32B) (QC-nB) 14.25 / 19.87 / 25.25         6000        Yes
+                Ours: iterated self-improved search (SOAR)
+                                              SOAR-Mistral           45.50              6000        ours
+                                               SOAR-Q-72B            44.87              6000        ours
+                                       SOAR-QC-(7/14/32B) 36.25/42.75/44.37             6000        ours
+                                               SOAR-QC-all           52.00             6000×5       ours
+                                      SOAR-QC-all(Oracle)            57.25             6000×5       ours, but using oracle eval (skip maj. vote)
+                                 Prior inductive approaches
+                                     CodeIt (Butt et al., 2024)      15.00              2500        Yes
+                    BARC-induction (Heavy) (Li et al., 2024)         30.50              10000       Yes, but heavy use of human data and closed LLM
+                 BARC-induction (Potpourri) (Li et al., 2024)        38.00              20000       Yes, but heavy use of human data and closed LLM
+                                       Icecuber (Wind, 2020)         39.00            Unknown       No, looking at val set, human DSL
+                                           (Greenblatt, 2024)        42.00              8160        Yes, but closed-source LLM
+               Table 6. Comparison of inductive methods on the ARC benchmark. Our approach SOAR outperforms previous induction performance.
+               B. Scaling laws
+               Finetuning costs: Finetuning is inexpensive compared to the search phase. FLOPs per iteration is 6N ×(100·T), where N
+               is LLMparametersandT istokenspercompletion. With≤ 100datapointspertask, sampling FLOPs is 2N ×(6000·T ·n),
+               makingfinetuning ∼ 5% of total FLOPs—nearly negligible. Additionally, autoregressive generation is slower (token-by-
+               token forward passes), while finetuning processes sequences in one forward and backward pass (see Austin et al. (2025) for
+               moredetails). Figure 8 plots the performance of the different generations of SOAR with a search budget of 6k, against the
+               performance of Sample&Refine using the base model with a search budget of 12.6k matching the FLOPs used by SOAR at
+               generation 1 (6k search by the base model, 6k search by the finetuned model, and 5% extra to cover for finetuning costs).
+               SOARatgeneration1reachesfar superior performance with the same computational budget.
+                                                                             13
+                         Learning program synthesis with self-improving language models: A case study on ARC-AGI
+                                  60                                  SOAR (base-model)
+                                                                      SOAR (base-model, 12.6k)
+                                  50                                  SOAR (1-train)
+                                                                      SOAR (2-train)
+                                                                      SOAR (3-train)
+                                  40
+                                  30
+                                 -train score (%) 20
+                                 ARC10
+                                   0              SampleRefine
+                                       0    2000 4000 6000 8000 10000 12000
+                                                     Number of Samples
+            Figure 7. Scaling laws of iterated self-improvement on training problems. ARC-train performance across training iterations (gen-0 base
+            model) for Qwen-2.5-Coder-7b. We increased the number of generation zero samples to 12,600 to match the total FLOPS usage of
+            generation two, including both training and inference.
+                                                           14
+                              Learning program synthesis with self-improving language models: A case study on ARC-AGI
+                     80       Qwen2.5-Coder-7B-Instruct                   80      Qwen2.5-Coder-14B-Instruct
+                             Soar (base-model)                                   Soar (base-model)
+                     70      Soar (0 train)                               70     Soar (0 train)
+                             Soar (1 train)                                      Soar (1 train)
+                     60      Soar (2 train)                               60     Soar (2 train)
+                     50      Soar (3 train)                               50     Soar (3 train)
+                     40                                                   40
+                    -train score (%)30                                   -train score (%)30
+                    ARC20                                                ARC20
+                     10                                                   10
+                      0                                        SampleRefine0                                       SampleRefine
+                            21     23    25     27    29    211    213           21    23     25    27     29    211   213
+                                     Number of Samples                                   Number of Samples
+                     80       Qwen2.5-Coder-32B-Instruct                  80          Qwen2.5-72B-Instruct
+                             Soar (base-model)                                   Soar (base-model)
+                     70      Soar (0 train)                               70     Soar (0 train)
+                             Soar (1 train)                                      Soar (1 train)
+                     60      Soar (2 train)                               60     Soar (2 train)
+                     50      Soar (3 train)                               50     Soar (3 train)
+                     40                                                   40
+                    -train score (%)30                                   -train score (%)30
+                    ARC20                                                ARC20
+                     10                                                   10
+                      0                                        SampleRefine0                                       SampleRefine
+                            21     23    25     27    29    211    213           21    23     25    27     29    211   213
+                                     Number of Samples                                   Number of Samples
+                                                                               Comparison of the last generation
+                     80       Mistral-Large-Instruct-2407                 80               Soar (3 train)
+                             Soar (base-model)
+                     70      Soar (0 train)                               70
+                             Soar (1 train)
+                     60      Soar (2 train)                               60
+                     50      Soar (3 train)                               50
+                     40                                                   40
+                    -train score (%)30                                   -train score (%)30QC-7B
+                    ARC20                                                ARC20   QC-14B
+                                                                                 QC-32B
+                     10                                                   10     Q-72B
+                                                               SampleRefine      Mistral-Large                     SampleRefine
+                      0     21     23    25     27    29    211    213     0     21    23     25    27     29    211   213
+                                     Number of Samples                                   Number of Samples
+              Figure 8. Scaling laws of iterated self-improvement on training problems. ARC-train performance across training iterations.
+                                                                        15
+                              Learning program synthesis with self-improving language models: A case study on ARC-AGI
+                     50       Qwen2.5-Coder-7B-Instruct                   50      Qwen2.5-Coder-14B-Instruct
+                             SOAR (base model)                                   SOAR (base model)
+                             SOAR (all train + 0 test)                           SOAR (all train + 0 test)
+                     40      SOAR (all train + 1 test)                    40     SOAR (all train + 1 test)
+                             SOAR (all train + 2 test)                           SOAR (all train + 2 test)
+                     30                                                   30
+                    -test score (%)20                                    -test score (%)20
+                    ARC10                                                ARC10
+                      0                                        SampleRefine0                                       SampleRefine
+                            21     23    25     27    29    211    213           21    23     25    27     29    211   213
+                                     Number of Samples                                   Number of Samples
+                     50       Qwen2.5-Coder-32B-Instruct                  50          Qwen2.5-72B-Instruct
+                             SOAR (base model)                                   SOAR (base model)
+                             SOAR (all train + 0 test)                           SOAR (all train + 0 test)
+                     40      SOAR (all train + 1 test)                    40     SOAR (all train + 1 test)
+                             SOAR (all train + 2 test)                           SOAR (all train + 2 test)
+                     30                                                   30
+                    -test score (%)20                                    -test score (%)20
+                    ARC10                                                ARC10
+                      0                                        SampleRefine0                                       SampleRefine
+                            21     23    25     27    29    211    213           21    23     25    27     29    211   213
+                                     Number of Samples                                   Number of Samples
+                              Mistral-Large-Instruct-2407                 Comparison of the last generation (gen-3)
+                     50                                                   50
+                             SOAR (base model)                                   QC-7B
+                             SOAR (all train + 0 test)                           QC-14B
+                     40      SOAR (all train + 1 test)                    40     QC-32B
+                             SOAR (all train + 2 test)                           Q-72B
+                                                                                 Mistral-Large
+                     30                                                   30
+                    -test score (%)20                                    -test score (%)20
+                    ARC10                                                ARC10
+                      0                                        SampleRefine0                                       SampleRefine
+                            21     23    25     27    29    211    213           21    23     25    27     29    211   213
+                                     Number of Samples                                   Number of Samples
+              Figure 9. Scaling laws of iterated self-improvement on test problems. ARC-test performance across training iterations (gen-0 model
+              trained on ).
+                                                                        16
+                  Learning program synthesis with self-improving language models: A case study on ARC-AGI
+         C. Model ensembling
+                                      All models
+                       Mistral+Q-72B+QC-32B+14B
+                            Mistral+Q-72B+QC-32B
+                                   Mistral+Q-72B
+                           Q-72B+QC-32B+14B+7B
+                                 QC-32B+14B+7B
+                                        Mistral
+                                         Q-72B
+                                     QC-14B+7B
+                                        QC-32B
+                                        QC-14B
+                                         QC-7B
+                                              0     20     40
+                                                 ARC-test score (%)
+                             Figure 10. ARC-test score for different model combinations
+         D. Implementation details
+         D.1. Weighted Majority Voting Algorithm
+         Thealgorithm processes the ensemble of model responses, each containing output predictions for a set of input grids. It
+         groups responses by their test output grids and applies weighted voting to select the most reliable predictions (see Alg. 1).
+         WeightedMajorityVotingAlgorithm:
+          1. Pattern Extraction: Each response’s complete set of test outputs is serialized into a pattern key.
+          2. Weighted Voting: Patterns are weighted using the formula: weight = count + c × train_accuracy, where count is
+            the frequency of the pattern, train_accuracy is the mean accuracy of the generated program on the training examples,
+            and c is a scaling parameter, as we want to penalize low pattern with a low train_accuracy we set it to a high values
+            (c = 1000).
+          3. Selection: The top n_output patterns with highest weights are selected as final outputs.
+         Algorithm 1 Weighted Majority Voting algorithm
+         Require: Set of responses with test outputs and training accuracies, scaling parameter c, number of outputs n_output
+         Ensure: Top n_output patterns with highest weights (n_output = 2 when testing)
+         1: Pattern Extraction:
+         2: for each response do
+         3:  Serialize the complete set of test outputs into a pattern key
+         4: end for
+         5: Weighted Voting:
+         6: for each unique pattern do
+         7:  Computecount ←frequencyofthepattern
+         8:  Computetrain_accuracy ←meanaccuracyofthegeneratedprogramontrainingexamples
+         9:  Computeweight ← count+c×train_accuracy
+         10: end for
+         11: Selection:
+         12: Select the top n_output patterns with the highest weight values as final outputs
+                                            17
+                          Learning program synthesis with self-improving language models: A case study on ARC-AGI
+            D.2. Majority voting data selection for test time training data
+            To select data for Test Time Training, we employed our greedy-diverse data selection process, introducing a minor
+            modification to the sampling strategy within the greedy component. Since test accuracy is unavailable during this phase, we
+            utilize a majority voting procedure to identify the most probable correct solution, which is then used to train our models (see
+            Algorithm 2).
+            Algorithm 2 Weighted Sampling from Categories
+            Require: Ensemble of responses with associated training accuracy; N: number of responses to sample
+            Ensure: List of sampled responses
+             1: Group responses according to their test output grids
+             2: For each group g , compute the majority voting weight
+                              i
+             3: Normalize the weights
+             4: Allocate ngi samples to each group gi by drawing from a multinomial distribution with parameters (group weights, N)
+             5: Initialize an empty list for sampled responses
+             6: for each group g do
+                             i
+             7:   For each response in gi, compute quality score (c × train_accuracy)
+             8:   Normalize quality scores within the group (use uniform weights if all scores are zero)
+             9:   Sample n  responses from g , weighted by quality scores
+                          gi              i
+            10:   Addthesampledresponses to the output list
+            11: end for
+            12: return the list of sampled responses
+            D.3. REXModification
+            For the REX (Refinement through EM-based sampling) algorithm, we adopted the hyperparameter C = 20, aligning with
+            the recommendations from the hyperparameter analysis presented in the original REX publication (Tang et al., 2024).
+            Recognizing that REX’s inherent sequential processing can lead to substantial computational time, we implemented two key
+            modifications to enhance its efficiency:
+              1. Accelerated Refinement via Multiple Completions: To speed up the REX algorithm, we modified the sampling
+                process. Instead of generating a single completion per prompt, we sampled four completions simultaneously. This
+                approach leverages the efficiency of modern inference systems where the computational cost associated with prompt
+                processing is incurred only once, even when generating multiple output sequences.
+              2. Parallelized REX Instances: To further reduce overall execution time, we parallelized the execution of REX itself.
+                RatherthanrunningasingleREXprocess,welaunchedfourindependentREXinstancesthatwereexecutedconcurrently
+                across multiple compute nodes. This approach draws conceptual parallels to island genetic algorithms, where a global
+                population is partitioned into isolated subpopulations that evolve independently. Such parallelization strategies offer
+                several advantages: they promote greater diversity in the search space, mitigate the risk of premature convergence, and
+                have demonstrated promising results in recent work such as FunSearch (Romera-Paredes et al., 2024).
+            D.4. Training
+            Wefine-tuned our model using Unsloth (Daniel et al., 2023), starting from the Instruct model at each iteration. The training
+            setup included a warmup ratio of 0.1, the AdamW optimizer with a learning rate of 5e-5, a batch size of 1, gradient
+            accumulation over 64 steps, and a weight decay of 0.05. Training was performed only on the response using RS-LoRA or
+            RS-QLoRAforlargermodels(those exceeding 14 billion parameters) in bfloat16 precision. Additionally, for each training
+            example, the order of the grid was randomly shuffled to improve generalization.
+            D.5. Inference
+            Forinference, weemployedSGLang(Zhengetal.,2024)asourengine. Toaccelerategeneration,wesampled50completions
+            in parallel for each task. Each task’s prompt included one few-shot example drawn from the ARC training set, selected from
+            a different task from the previous generation (or from the current generation for the first iteration). To reduce computational
+                                                              18
+                                   Learning program synthesis with self-improving language models: A case study on ARC-AGI
+                cost, generation for a task was halted once at least 100 solutions achieved perfect accuracy on ARC input-output examples.
+                This criterion was applied independently during both the sampling and refinement phases.
+                Algorithm 3 SOAR
+                Require: pretrained LLM, ARC dataset
+                Ensure: Best performing program solution
+                  1: loop
+                  2:    Generate 3k program candidates
+                  3:    Apply program refinement to obtain 6k programs
+                  4:    Perform majority voting on refined programs
+                  5:    Update search traces
+                  6:    Perform data selection
+                  7:    Apply generation & refinement fine-tuning
+                  8: end loop
+                  9: return Top performing program solutions
+                E. Learning to generate and refine programs jointly
+                Given that both generation and refinement can be improved independently, should we train separate specialized models
+                or can a single model learn both capabilities? Table 7 explores several combinations of using base/finetuned models for
+                generation and refinement steps. The results reveal several key insights:
+                1. Negative transfer from generation to refinement: Models finetuned for generation (fine-gen) decrease refinement
+                    performance compared to base models (exp 2 < exp 1),
+                2. Positive transfer from refinement to generation: Models finetuned for refinement only (fine-ref) strongly improve program
+                    generation compared to base models (exp 7 > exp 1), even more so than models finetuned for generation (exp 7 > exp 5),
+                3. Positive interaction effects between refinement and generation: Models finetuned for refinement and generation jointly
+                    (fine-both) lead to better generation (exp 8 > exp 7 > exp 1) and better refinements (exp 8 > exp 6 > exp 1) than leveraging
+                    two models trained on each of the tasks.
+                Theseresults demonstrate the importance of learning both to better generate and to better refine programs, and highlighting a
+                useful synergy between the two capabilities. This suggests these tasks share underlying knowledge about program structure
+                and transformation patterns.
+                                                         Exp    Genmodel       Ref model     Genacc      Search acc
+                                                          1         base          base        29.67         34.83
+                                                          2                     fine-gen                    32.92
+                                                          3                      fine-ref                   42.88
+                                                          4                     fine-both                   44.04
+                                                          5       fine-gen        base        36.46         40.63
+                                                          6                      fine-ref                   43.88
+                                                          7       fine-ref        base        39.17         39.93
+                                                          8                     fine-both     39.79         44.42
+                Table 7. ARC-train performance using different combinations of models for generation (col 2) and refinement (col 3). fine-gen/ref/both
+                indicate a base model finetuned for generation, refinement or both. Gen acc and search acc indicate the ARC-train accuracy after
+                generations (3k solutions) and after search (3k generations + 3k refinements).
+                F. Program synthesis using a mix of induction and transduction
+                During our analysis of data collected in the self-improving phase on ARC-train tasks, we identified some solutions that
+                employed a hybrid approach combining transduction and induction (see Code F). These solutions used Python to compute
+                                                                                     19
+                   Learning program synthesis with self-improving language models: A case study on ARC-AGI
+         basic properties like matrix dimensions, then applied a "transduction" strategy to directly map these computed properties to
+         hardcoded outputs.
+         This hybrid approach presents several issues:
+         Impact on Majority Voting: Such solutions can severely compromise our majority weighting strategy. Instead of learning
+         generalizable patterns, the model essentially copies and pastes training outputs from the prompt, which skews the voting
+         mechanismtowardpotentially incorrect solutions.
+         Limited Generalization: The hardcoded conditional structure (as shown in the example) creates brittle solutions that only
+         workfor specific input dimensions encountered during training, failing to capture the underlying logical patterns that define
+         the ARCtask.
+         Detection and Mitigation: Fortunately, these problematic solutions can be easily identified and filtered out by checking
+         whether any computed outputs using the solution appear in the code (solution). This simple validation step helps maintain
+         the integrity of our inductive learning process.
+         def transform(grid_lst: list[list[int]]) -> list[list[int]]:
+            grid = [row[:] for row in grid_lst]
+            rows, cols = (len(grid), len(grid[0]))
+            central_value = None
+            for r in range(rows):
+                for c in range(cols):
+                   if grid[r][c] != 0:
+                      central_value = grid[r][c]
+                      break
+                if central_value is not None:
+                   break
+            if central_value is None:
+                return grid
+            if rows == cols == 13:
+                pattern = [[0, ..., 0]]
+            elif rows == 17 and cols == 12:
+                pattern = [[0, ..., 0]]
+            elif rows == 13 and cols == 18:
+                pattern = [[0, ..., 0]]
+            elif rows == 17 and cols == 19:
+                pattern = [[0, ..., 0]]
+            else:
+                return grid
+            return pattern
+         G.Prompts
+         Prompt for sampling solution:
+           ----- Role: system --------------------
+           You are an AI assistant specialized in solving Abstract Reasoning Corpus (ARC-AGI) tasks by
+           reasoning and generating Python code.
+           ----- Role: user --------------------
+           You are an AI assistant specialized in solving Abstract Reasoning Corpus (ARC-AGI) tasks by
+           generating Python code.
+           Your goal is to analyze input-output grid pairs. The outputs were produced by applying a
+           transformation rule to the inputs. Implement the transformation rules as a Python function.
+           You should only write the implemented the transformation in code.
+           You must write code in triple backticks (‘‘‘python and then ‘‘‘). You must write a function
+           called ‘transform‘ which takes a single argument, the input grid as ‘list[list[int]]‘, and
+           returns the transformed grid (also as ‘list[list[int]]‘).
+           You should make sure that you implement a version of the transformation which works in general
+           (at least for all given input-output pairs and test input pairs).
+                                              20
+                Learning program synthesis with self-improving language models: A case study on ARC-AGI
+         The number in the input grid can be mapped to the following colors: 0:Black; 1:Blue; 2:Red; 3:
+         Green; 4:Yellow; 5:Grey; 6:Pink; 7:Orange; 8:Purple; 9:Brown
+         Now, solve the following ARC-AGI task:
+         # Task to solve:
+         ## Input 1 (grid shape: 3 by 3):
+         [[3 3 8]
+          [3 7 0]
+          [5 0 0]]
+         ## Output 1 (grid shape: 3 by 3):
+         [[0 0 5]
+          [0 7 3]
+          [8 3 3]]
+         ## Input 2 (grid shape: 3 by 3):
+         [[5 5 2]
+          [1 0 0]
+          [0 0 0]]
+         ## Output 2 (grid shape: 3 by 3):
+         [[0 0 0]
+          [0 0 1]
+          [2 5 5]]
+         ## Test Input 1 (grid shape: 3 by 3):
+         [[6 3 5]
+          [6 8 0]
+          [4 0 0]]
+         ‘‘‘
+       Prompt for sampling Refinement:
+         ----- Role: system --------------------
+         You are an AI assistant specialized in solving Abstract Reasoning Corpus (ARC-AGI) tasks by
+         reasoning and generating Python code.
+         ----- Role: user --------------------
+         You are an AI assistant specialized in solving Abstract Reasoning Corpus (ARC-AGI) tasks by
+         repairing Python code implementations.
+         Your goal is to analyze input-output grid pairs. The outputs were produced by applying a
+         transformation rule to the inputs.
+         You will be given a python function ‘transform‘ that was supposed to implement the
+         transformation rule, but it is not working correctly for all inputs.
+         You role is to fix this ‘transform‘ function.
+         Your solution should be:
+         - Accurate: Correctly fix the transformation for all given inputs so they give correct outputs
+         as provided (it should also work for all test inputs)
+         - Comprehensive: Handles all possible input scenarios
+         - Well-structured: Uses clear, readable, and efficient code
+         The number in the input grid can be mapped to the following colors: 0:Black; 1:Blue; 2:Red; 3:
+         Green; 4:Yellow; 5:Grey; 6:Pink; 7:Orange; 8:Purple; 9:Brown
+           Now, repair the following ARC-AGI task implementation:
+         **                                **
+         # Task to solve:
+         ## Input 1 (grid shape: 3 by 3):
+                                     21
+                Learning program synthesis with self-improving language models: A case study on ARC-AGI
+         [[0 7 7]
+          [7 7 7]
+          [0 7 7]]
+         ## Output 1 (grid shape: 9 by 9):
+         [[0 0 0 0 7 7 0 7 7]
+          [0 0 0 7 7 7 7 7 7]
+          [0 0 0 0 7 7 0 7 7]
+          [0 7 7 0 7 7 0 7 7]
+          [7 7 7 7 7 7 7 7 7]
+          [0 7 7 0 7 7 0 7 7]
+          [0 0 0 0 7 7 0 7 7]
+          [0 0 0 7 7 7 7 7 7]
+          [0 0 0 0 7 7 0 7 7]]
+         ## Input 2 (grid shape: 3 by 3):
+         [[4 0 4]
+          [0 0 0]
+          [0 4 0]]
+         ## Output 2 (grid shape: 9 by 9):
+         [[4 0 4 0 0 0 4 0 4]
+          [0 0 0 0 0 0 0 0 0]
+          [0 4 0 0 0 0 0 4 0]
+          [0 0 0 0 0 0 0 0 0]
+          [0 0 0 0 0 0 0 0 0]
+          [0 0 0 0 0 0 0 0 0]
+          [0 0 0 4 0 4 0 0 0]
+          [0 0 0 0 0 0 0 0 0]
+          [0 0 0 0 4 0 0 0 0]]
+         ## Input 3 (grid shape: 3 by 3):
+         [[0 0 0]
+          [0 0 2]
+          [2 0 2]]
+         ## Output 3 (grid shape: 9 by 9):
+         [[0 0 0 0 0 0 0 0 0]
+          [0 0 0 0 0 0 0 0 0]
+          [0 0 0 0 0 0 0 0 0]
+          [0 0 0 0 0 0 0 0 0]
+          [0 0 0 0 0 0 0 0 2]
+          [0 0 0 0 0 0 2 0 2]
+          [0 0 0 0 0 0 0 0 0]
+          [0 0 2 0 0 0 0 0 2]
+          [2 0 2 0 0 0 2 0 2]]
+         ## Input 4 (grid shape: 3 by 3):
+         [[6 6 0]
+          [6 0 0]
+          [0 6 6]]
+         ## Output 4 (grid shape: 9 by 9):
+         [[6 6 0 6 6 0 0 0 0]
+          [6 0 0 6 0 0 0 0 0]
+          [0 6 6 0 6 6 0 0 0]
+          [6 6 0 0 0 0 0 0 0]
+          [6 0 0 0 0 0 0 0 0]
+          [0 6 6 0 0 0 0 0 0]
+          [0 0 0 6 6 0 6 6 0]
+          [0 0 0 6 0 0 6 0 0]
+          [0 0 0 0 6 6 0 6 6]]
+                                     22
+                Learning program synthesis with self-improving language models: A case study on ARC-AGI
+         ## Input 5 (grid shape: 3 by 3):
+         [[2 2 2]
+          [0 0 0]
+          [0 2 2]]
+         ## Output 5 (grid shape: 9 by 9):
+         [[2 2 2 2 2 2 2 2 2]
+          [0 0 0 0 0 0 0 0 0]
+          [0 2 2 0 2 2 0 2 2]
+          [0 0 0 0 0 0 0 0 0]
+          [0 0 0 0 0 0 0 0 0]
+          [0 0 0 0 0 0 0 0 0]
+          [0 0 0 2 2 2 2 2 2]
+          [0 0 0 0 0 0 0 0 0]
+          [0 0 0 0 2 2 0 2 2]]
+         ## Test Input 1 (grid shape: 3 by 3):
+         [[7 0 7]
+          [7 0 7]
+          [7 7 0]]
+         Previous implementation:
+         ‘‘‘python
+         def transform(grid):
+            n = len(grid)
+            m = len(grid[0])
+            output_size = n * m
+            output = [[0] * output_size for _ in range(output_size)]
+            for i in range(n):
+              for j in range(m):
+                 value = grid[i][j]
+                 for ii in range(i * m, (i + 1) * m):
+                   for jj in range(j * n, (j + 1) * n):
+                     output[ii][jj] = value
+            return output
+         ‘‘‘
+         This implementation of transform function correctly worked on 0/5 train input-output pairs.
+         Detailed results:
+         ## Output 1 computed by ‘transform‘ is incorrect.
+         The execution gave the following results (grid shape: 9 by 9):
+         [[0 0 0 7 7 7 7 7 7]
+          [0 0 0 7 7 7 7 7 7]
+          [0 0 0 7 7 7 7 7 7]
+          [7 7 7 7 7 7 7 7 7]
+          [7 7 7 7 7 7 7 7 7]
+          [7 7 7 7 7 7 7 7 7]
+          [0 0 0 7 7 7 7 7 7]
+          [0 0 0 7 7 7 7 7 7]
+          [0 0 0 7 7 7 7 7 7]]
+         ## Output 2 computed by ‘transform‘ is incorrect.
+         The execution gave the following results (grid shape: 9 by 9):
+         [[4 4 4 0 0 0 4 4 4]
+          [4 4 4 0 0 0 4 4 4]
+          [4 4 4 0 0 0 4 4 4]
+          [0 0 0 0 0 0 0 0 0]
+          [0 0 0 0 0 0 0 0 0]
+          [0 0 0 0 0 0 0 0 0]
+          [0 0 0 4 4 4 0 0 0]
+          [0 0 0 4 4 4 0 0 0]
+          [0 0 0 4 4 4 0 0 0]]
+         ## Output 3 computed by ‘transform‘ is incorrect.
+         The execution gave the following results (grid shape: 9 by 9):
+         [[0 0 0 0 0 0 0 0 0]
+                                     23
+                Learning program synthesis with self-improving language models: A case study on ARC-AGI
+          [0 0 0 0 0 0 0 0 0]
+          [0 0 0 0 0 0 0 0 0]
+          [0 0 0 0 0 0 2 2 2]
+          [0 0 0 0 0 0 2 2 2]
+          [0 0 0 0 0 0 2 2 2]
+          [2 2 2 0 0 0 2 2 2]
+          [2 2 2 0 0 0 2 2 2]
+          [2 2 2 0 0 0 2 2 2]]
+         ## Output 4 computed by ‘transform‘ is incorrect.
+         The execution gave the following results (grid shape: 9 by 9):
+         [[6 6 6 6 6 6 0 0 0]
+          [6 6 6 6 6 6 0 0 0]
+          [6 6 6 6 6 6 0 0 0]
+          [6 6 6 0 0 0 0 0 0]
+          [6 6 6 0 0 0 0 0 0]
+          [6 6 6 0 0 0 0 0 0]
+          [0 0 0 6 6 6 6 6 6]
+          [0 0 0 6 6 6 6 6 6]
+          [0 0 0 6 6 6 6 6 6]]
+         ## Output 5 computed by ‘transform‘ is incorrect.
+         The execution gave the following results (grid shape: 9 by 9):
+         [[2 2 2 2 2 2 2 2 2]
+          [2 2 2 2 2 2 2 2 2]
+          [2 2 2 2 2 2 2 2 2]
+          [0 0 0 0 0 0 0 0 0]
+          [0 0 0 0 0 0 0 0 0]
+          [0 0 0 0 0 0 0 0 0]
+          [0 0 0 2 2 2 2 2 2]
+          [0 0 0 2 2 2 2 2 2]
+          [0 0 0 2 2 2 2 2 2]]
+         ## Output Test 1 computed by ‘transform‘ (we don’t know if it is correct or not) The execution
+         gave the following results (grid shape: 9 by 9):
+         [[7 7 7 0 0 0 7 7 7]
+          [7 7 7 0 0 0 7 7 7]
+          [7 7 7 0 0 0 7 7 7]
+          [7 7 7 0 0 0 7 7 7]
+          [7 7 7 0 0 0 7 7 7]
+          [7 7 7 0 0 0 7 7 7]
+          [7 7 7 7 7 7 0 0 0]
+          [7 7 7 7 7 7 0 0 0]
+          [7 7 7 7 7 7 0 0 0]]
+         The previous code give incorrect output for: Output 1, Output 2, Output 3, Output 4, Output 5.
+         Now, you need to fix the code to produce correct output for all inputs.
+         % ----- Role: Assistant (response) -------------------
+         ‘‘‘python
+         def transform(grid):
+            output = [[0 for _ in range(9)] for _ in range(9)]
+            for i in range(3):
+              for j in range(3):
+                 if grid[i][j] != 0:
+                   for x in range(3):
+                     for y in range(3):
+                        output[i * 3 + x][j * 3 + y] = grid[x][y]
+            return output
+         ‘‘‘
+                                     24
+              Learning program synthesis with self-improving language models: A case study on ARC-AGI
+       H.ExamplesofSolutions
+       H.1. ARCProblem6b9890af
+       Solve the task online here, then read the program.
+       def transform(grid):
+         def find_bounding_box(grid, color):
+            min_row, max_row, min_col, max_col = (float(’inf’), float(’-inf’), float(’inf’),
+                                       float(’-inf’))
+            for i, row in enumerate(grid):
+              for j, cell in enumerate(row):
+                if cell == color:
+                   min_row = min(min_row, i)
+                   max_row = max(max_row, i)
+                   min_col = min(min_col, j)
+                   max_col = max(max_col, j)
+            return (min_row, max_row, min_col, max_col)
+         def create_bounding_box(grid, color):
+            min_row, max_row, min_col, max_col = find_bounding_box(grid, color)
+            bounding_box = []
+            for i in range(min_row, max_row + 1):
+              row = grid[i][min_col:max_col + 1]
+              bounding_box.append(row)
+            return bounding_box
+         def resize_bounding_box(bounding_box, size):
+            resized_box = [[0] * size for _ in range(size)]
+            rows, cols = (len(bounding_box), len(bounding_box[0]))
+            row_step = rows / (size - 1) if rows > 1 else 0
+            col_step = cols / (size - 1) if cols > 1 else 0
+            for i in range(size):
+              for j in range(size):
+                if i == 0 or i == size - 1 or j == 0 or (j == size - 1):
+                   resized_box[i][j] = bounding_box[0][0]
+                else:
+                   row_idx = min(int(i * row_step), rows - 1)
+                   col_idx = min(int(j * col_step), cols - 1)
+                   resized_box[i][j] = bounding_box[row_idx][col_idx]
+            return resized_box
+         colors = set()
+         for row in grid:
+            for cell in row:
+              if cell != 0:
+                colors.add(cell)
+         color_bounding_boxes = {}
+         for color in colors:
+            color_bounding_boxes[color] = create_bounding_box(grid, color)
+         max_size = 0
+         for color in colors:
+            bounding_box = color_bounding_boxes[color]
+            max_dim = max(len(bounding_box), len(bounding_box[0]))
+            max_size = max(max_size, max_dim)
+         output_size = max_size
+         output_grid = [[0] * output_size for _ in range(output_size)]
+         for color in colors:
+            bounding_box = color_bounding_boxes[color]
+            resized_box = resize_bounding_box(bounding_box, output_size)
+            for i in range(output_size):
+              for j in range(output_size):
+                if resized_box[i][j] == color:
+                   output_grid[i][j] = color
+         return output_grid
+                                  25
+              Learning program synthesis with self-improving language models: A case study on ARC-AGI
+       H.2. ARCProblem72ca375d
+       Solve the task online here, then read the program.
+       def transform(grid):
+         def find_largest_rectangle(grid):
+            rows, cols = (len(grid), len(grid[0]))
+            max_area = 0
+            max_rectangle = (0, 0, 0, 0)
+            for i in range(rows):
+              for j in range(cols):
+                if grid[i][j] == 0:
+                   continue
+                color = grid[i][j]
+                width = 1
+                while j + width < cols and grid[i][j + width] == color:
+                   width += 1
+                for k in range(i, rows):
+                   if grid[k][j] != color:
+                     break
+                   for l in range(j, j + width):
+                     if grid[k][l] != color:
+                        break
+                   else:
+                     continue
+                   break
+                area = (k - i) * (l - j)
+                if area > max_area:
+                   max_area = area
+                   max_rectangle = (i, j, k, l)
+            return max_rectangle
+         def extract_rectangle(grid, rect):
+            i, j, k, l = rect
+            return [row[j:l] for row in grid[i:k]]
+         def find_largest_connected(grid, color):
+            rows, cols = (len(grid), len(grid[0]))
+            visited = [[False] * cols for _ in range(rows)]
+            max_size = 0
+            max_component = []
+            def dfs(i, j, component):
+              if i < 0 or i >= rows or j < 0 or (j >= cols) or visited[i][j] or (grid[i][j]
+                                         != color):
+                return
+              visited[i][j] = True
+              component.append((i, j))
+              dfs(i + 1, j, component)
+              dfs(i - 1, j, component)
+              dfs(i, j + 1, component)
+              dfs(i, j - 1, component)
+            for i in range(rows):
+              for j in range(cols):
+                if grid[i][j] == color and (not visited[i][j]):
+                   component = []
+                   dfs(i, j, component)
+                   if len(component) > max_size:
+                     max_size = len(component)
+                     max_component = component
+            return max_component
+         def extract_component(grid, component):
+            min_i = min((c[0] for c in component))
+                                  26
+              Learning program synthesis with self-improving language models: A case study on ARC-AGI
+            max_i = max((c[0] for c in component))
+            min_j = min((c[1] for c in component))
+            max_j = max((c[1] for c in component))
+            return [row[min_j:max_j + 1] for row in grid[min_i:max_i + 1]]
+         rect = find_largest_rectangle(grid)
+         rect_grid = extract_rectangle(grid, rect)
+         if len(rect_grid) == 2 and len(rect_grid[0]) == 4:
+            return rect_grid
+         color = grid[rect[0]][rect[1]]
+         component = find_largest_connected(grid, color)
+         component_grid = extract_component(grid, component)
+         return component_grid
+       H.3. ARCProblem1f642eb9
+       Solve the task online here, then read the program.
+       def transform(grid):
+         def dfs(x, y, component_num):
+            if x < 0 or x >= len(grid) or y < 0 or (y >= len(grid[0])) or (grid[x][y] != 5):
+              return
+            grid[x][y] = component_num
+            for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+              dfs(x + dx, y + dy, component_num)
+         component_num = 1
+         for i in range(len(grid)):
+            for j in range(len(grid[0])):
+              if grid[i][j] == 5:
+                dfs(i, j, component_num)
+                component_num += 1
+                if component_num > 4:
+                   component_num = 1
+         component_map = {i: num for i, num in enumerate(range(1, component_num), start=1)}
+         for i in range(len(grid)):
+            for j in range(len(grid[0])):
+              if grid[i][j] in component_map:
+                grid[i][j] = component_map[grid[i][j]]
+         return grid
+       H.4. ARCProblemef26cbf6
+       Solve the task online here, then read the program.
+       def transform(grid):
+         transformed_grid = [row[:] for row in grid]
+         directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+         def in_bounds(x, y):
+            return 0 <= x < len(grid) and 0 <= y < len(grid[0])
+         for i in range(len(grid)):
+            for j in range(len(grid[i])):
+              if grid[i][j] == 8:
+                for dx, dy in directions:
+                   ni, nj = (i + dx, j + dy)
+                   if in_bounds(ni, nj) and grid[ni][nj] != 8:
+                     if grid[ni][nj] != 0:
+                        transformed_grid[i][j] = grid[ni][nj]
+                     else:
+                        step = 1
+                        while in_bounds(ni + dx * step, nj + dy * step) and grid[ni +
+                                                   dx * step][nj +
+                                                   dy * step] == 0:
+                          step += 1
+                                  27
+              Learning program synthesis with self-improving language models: A case study on ARC-AGI
+                        if in_bounds(ni + dx * step, nj + dy * step) and grid[ni + dx
+                                                   * step][nj + dy *
+                                                    step] != 0:
+                          transformed_grid[i][j] = grid[ni + dx * step][nj + dy *
+                                                      step]
+         return transformed_grid
+       H.5. ARCProblem1f876c06
+       Solve the task online here, then read the program.
+       def transform(grid):
+         rows = len(grid)
+         cols = len(grid[0]) if rows > 0 else 0
+         transformed_grid = [row[:] for row in grid]
+         for num in range(1, 10):
+            positions = [(r, c) for r in range(rows) for c in range(cols) if grid[r][c] == num
+                                       ]
+            for i in range(len(positions) - 1):
+              r1, c1 = positions[i]
+              r2, c2 = positions[i + 1]
+              dr = 1 if r2 > r1 else -1 if r2 < r1 else 0
+              dc = 1 if c2 > c1 else -1 if c2 < c1 else 0
+              r, c = (r1 + dr, c1 + dc)
+              while r != r2 or c != c2:
+                transformed_grid[r][c] = num
+                r += dr
+                c += dc
+         return transformed_grid
+       I. History of refinement
+       I.1. ARC Problem 22168020
+       Solve the task online here, then read the programs.
+       # incorrect program
+       def transform(grid):
+         def fill_gaps(row):
+            start, end = (-1, -1)
+            for i, val in enumerate(row):
+              if val != 0:
+                if start == -1:
+                   start = i
+                end = i
+            if start != -1 and end != -1:
+              for i in range(start, end + 1):
+                if row[i] == 0:
+                   row[i] = row[start]
+            return row
+         for i in range(len(grid)):
+            grid[i] = fill_gaps(grid[i])
+         for col in range(len(grid[0])):
+            column_values = [grid[row][col] for row in range(len(grid))]
+            start, end = (-1, -1)
+            for i, val in enumerate(column_values):
+              if val != 0:
+                if start == -1:
+                   start = i
+                end = i
+            if start != -1 and end != -1:
+              for i in range(start, end + 1):
+                                  28
+              Learning program synthesis with self-improving language models: A case study on ARC-AGI
+                if column_values[i] == 0:
+                   column_values[i] = column_values[start]
+                   grid[i][col] = column_values[start]
+         return grid
+       # incorrect program
+       def transform(grid):
+         def fill_gaps(line):
+            """
+            Fill gaps between non-zero values in a single line (row or column).
+            """
+            filled_line = line[:]
+            n = len(line)
+            start = -1
+            for i in range(n):
+              if line[i] != 0:
+                if start == -1:
+                   start = i
+                end = i
+                for j in range(start + 1, end):
+                   filled_line[j] = line[start]
+                start = end
+            return filled_line
+         for i in range(len(grid)):
+            grid[i] = fill_gaps(grid[i])
+         for col in range(len(grid[0])):
+            column_values = [grid[row][col] for row in range(len(grid))]
+            filled_column = fill_gaps(column_values)
+            for row in range(len(grid)):
+              grid[row][col] = filled_column[row]
+         return grid
+       # correct program
+       def transform(grid):
+         def fill_gaps(line):
+            """
+            Fill gaps between non-zero values in a single line (row or column).
+            """
+            filled_line = line[:]
+            n = len(line)
+            i = 0
+            while i < n:
+              if line[i] != 0:
+                start_value = line[i]
+                j = i + 1
+                while j < n and line[j] == 0:
+                   j += 1
+                end_value = line[j] if j < n else 0
+                if start_value == end_value:
+                   for k in range(i + 1, j):
+                     filled_line[k] = start_value
+                i = j
+              else:
+                i += 1
+            return filled_line
+         for i in range(len(grid)):
+            grid[i] = fill_gaps(grid[i])
+         for col in range(len(grid[0])):
+            column_values = [grid[row][col] for row in range(len(grid))]
+            filled_column = fill_gaps(column_values)
+            for row in range(len(grid)):
+              grid[row][col] = filled_column[row]
+                                  29
+              Learning program synthesis with self-improving language models: A case study on ARC-AGI
+         return grid
+       I.2. ARC Problem 0d3d703e
+       Solve the task online here, then read the programs.
+       # incorrect program
+       def transform(grid):
+         transformation_mapping = {((3, 1, 2), (3, 1, 2), (3, 1, 2)): ((4, 5, 6), (4, 5, 6), (4
+                                     , 5, 6)), ((2, 3, 8), (2, 3, 8), (2, 3, 8
+                                     )): ((6, 4, 9), (6, 4, 9), (6, 4, 9)), ((
+                                     5, 8, 6), (5, 8, 6), (5, 8, 6)): ((1, 9,
+                                     2), (1, 9, 2), (1, 9, 2)), ((9, 4, 2), (9
+                                     , 4, 2), (9, 4, 2)): ((8, 3, 6), (8, 3, 6
+                                     ), (8, 3, 6)), ((8, 1, 3), (8, 1, 3), (8,
+                                     1, 3)): ((7, 5, 4), (7, 5, 4), (7, 5, 4)
+                                     )}
+         grid_tuple = tuple((tuple(row) for row in grid))
+         return list(map(list, transformation_mapping.get(grid_tuple, grid)))
+       # incorrect program
+       def transform(grid):
+         transformation_mapping = {((3, 1, 2), (3, 1, 2), (3, 1, 2)): ((4, 5, 6), (4, 5, 6), (4
+                                     , 5, 6)), ((2, 3, 8), (2, 3, 8), (2, 3, 8
+                                     )): ((6, 4, 9), (6, 4, 9), (6, 4, 9)), ((
+                                     5, 8, 6), (5, 8, 6), (5, 8, 6)): ((1, 9,
+                                     2), (1, 9, 2), (1, 9, 2)), ((9, 4, 2), (9
+                                     , 4, 2), (9, 4, 2)): ((8, 3, 6), (8, 3, 6
+                                     ), (8, 3, 6)), ((8, 1, 3), (8, 1, 3), (8,
+                                     1, 3)): ((7, 5, 4), (7, 5, 4), (7, 5, 4)
+                                     )}
+         grid_tuple = tuple((tuple(row) for row in grid))
+         transformed_grid = transformation_mapping.get(grid_tuple, grid_tuple)
+         return [list(row) for row in transformed_grid]
+       # correct program
+       def transform(grid):
+         transformation_mapping = {3: 4, 1: 5, 2: 6, 8: 9, 5: 1, 6: 2, 9: 8, 4: 3}
+         transformed_grid = [[transformation_mapping.get(grid[i][j], grid[i][j]) for j in range
+                                     (len(grid[0]))] for i in range(len(grid))
+                                     ]
+         return transformed_grid
+                                  30

@@ -1,0 +1,692 @@
+                                   Test-time Adaptation of Tiny Recursive Models
+                                                                 RonanMcGovern
+                                                                     Trelis LTD
+                                                                   Trelis.com
+                  Abstract                                                   first series of ARC tasks (ARC AGI I) was a brute
+                                                                             force search - with heuristics - through a library of
+                  Priortothecloseofthe2025ARCPrizecompetition, operations (e.g.                 flip, rotate, repattern) [1].   This
+                  the leading open source approach - known as TRM,           was outperformed by a number of entries in the
+                  or Tiny Recursive Models - involved training a 7M          2024 competition that involved pre-training a deep
+                  parameter recursive neural network on augmented            transformer model in the single billion parameter
+                  variants of ARCtasks. Thatapproachscoredapprox-            range.   Such approaches involved pre-training on
+                  imately 7.8% on the public ARC AGI II evaluation           ARC training tasks prior to the competition, fol-
+                  set, but required a level of compute far in excess of      lowed by post-training on test-time tasks within
+                  what is allowed during the competition. This paper         sandboxed competition environment with limited
+                  shows that, by starting from a tiny recursive model        compute. These approaches lifted scores on ARC
+                  that has been pre-trained on public ARC tasks, one         AGIIfromroughly20-30%upintothe40%+range.
+                  can efficiently fine-tune on competition tasks within        In2025,ARCAGIIItaskswerereleasedofsignif-
+                  the allowed compute limits. Specifically, a model          icantly higher difficulty than those in ARC AGI I. At
+                  was pre-trained on 1,280 public tasks for 700k+ op-        the time of release, previous year’s competition ap-
+                  timizer steps over 48 hours on 4xH100 SXM GPUs             proaches scored in the low single digits, and leading
+                  to obtain a 10% score on the public evaluation set.        large language models - including those far exceed-
+                  That model was then post-trained in just 12,500 gra-       ing the compute limits of the competition - struggled
+                  dient steps during the competition to reach a score        to score beyond a few percent on the updated bench-
+                  of 6.67% on semi-private evaluation tasks. Notably,        mark. Although, by late 2025, reasoning language
+                  such post-training performance is achieved by full-        models were scoring in the low double digits.
+                  fine tuning of the tiny model, not LoRA fine-tuning
+                  or fine-tuning of task embeddings alone.                   1.2   Tiny Recursive Models as a Basis for
+                                                                                   Solving ARCAGIIITasks
+                  1    Introduction                                          Compared to the 1B to 7B parameter deep trans-
+        arXiv:submit/6953871  [cs.AI]  4 Nov 20251.1Description and Brief History of the formermodelsof2024,whichemployedpre-training
+                         ARCPrize                                            followed by competition-time fine-tuning, a new re-
+                                                                             cursive model approach emerged in 2025 with the
+                  The ARC(Abstract Reasoning Challenge) Prize is a           HRMpaper[15],takinganumberofnewdirections:
+                  competition to efficiently solve unseen abstract tasks       1. A smaller model size, well less than 100M pa-
+                  using computers. ARCtasksaredesignedtobesolv-                   rameters
+                  able by humans but challenging for programmable              2. The use of recursive layers rather than a single
+                  approaches. The competition imposes a limit on the              once-through deep network
+                  amount of compute that may be used to solve tasks,
+                  which is why approaches must not just generalise to          3. Afocusontrainingfromscratchoncompetition
+                  unseen tasks but also solve them efficiently.                   tasks, rather than first pre-training on ARC-like
+                     Historically, the leading approach to solving the            tasks
+                                                                           1
+                    This approach scored 5% on ARC AGI II tasks,          ity is small relative to pre-training and competition
+                  which, while low in absolute terms, constituted the     fine-tuning approaches of 2024, whether using a pre-
+                  leading open source approach at the time, and was       trained TRM model can give a head start to fine-
+                  surprising for a model of such small size.              tuning at all?
+                    This HRM (Hierarchical Reasoning Model [15],
+                  hierarchical because it involves a hierarchy of recur-  1.4    ApproachandContribution
+                  sive loops) was soon improved on in the Tiny Recur-
+                  sive Models (TRM) [3] paper by reducing the archi-      This paper demonstrates that starting from a pre-
+                  tecture to a single neural net of 7M parameters, plus   trained tiny recursive model significantly accelerates
+                  task embeddings. Although involving fewer model         training on new, unseen tasks. The performance of
+                  parameters, this updated approach improved in per-      such a fine-tuned model trends towards that of pre-
+                  formance, reaching 7.8% on ARC AGI II tasks.            training from scratch, although has not been found
+                    While at the time the leading open source ap-         to quite reach or exceed the level of full pre-training
+                  proach, this TRM approach required pre-training on      performance - at least given the competition com-
+                  four H100GPUsforover48hours-wellinexcessof pute limits. Interestingly, the best performance was
+                  thecomputeallowedintheARCPrize2025competi- achieved by fully fine-tuning the pre-trained model,
+                  tion. This gave motivation to the question of whether   not by LoRA fine-tuning or by training the task
+                  and how the tiny recursive model approach could be      id embeddings.     Specifically, a pre-trained model
+                  improved in compute efficiency, and made suitable       achieving 10% on the ARC AGI II public evalua-
+                  for a competition entry.                                tion split was capable of achieving 6.67% when fine-
+                                                                          tuned on unseen semi-private tasks in the Kaggle
+                  1.3   Fitting a Tiny Recursive Model Ap- competitionenvironment.
+                        proach within Compute Requirements                   Attempts were also made to improve the per-
+                        for the ARC Prize 2025 Competition                formance by using a stronger pre-trained model -
+                                                                          trained on more and/or higher quality data for longer.
+                  The ARC Prize 2025 competition allows for the use       These attempts were unsuccessful, although it re-
+                  of four L4 accelerators for twelve hours. TRM pre-      mainspossible-orevenlikely-thatdifferentchoices
+                  trainingon1,280tasksfor100kepochstakesroughly of architecture, dataset or training hyperparameters
+                  48 hours on 4xH100 SXM GPUs. Accounting for a could still lead to better results.
+                  factor of roughly 8x between bf16 flops on a H100
+                  SXM versus an L4 accelerator, there is only about       2    Methods
+                  1/8 x 1/4 = 1/32th of the compute necessary to com-
+                  plete full pre-training on this model size. Cast in     A recursive transformer model was pre-trained on
+                  different terms, pretraining with the TRM paper’s       ARCAGIIItrainingtasksincloseaccordancetothe
+                  approach takes approximately 750k optimizer steps       TinyRecursiveModelpaper[3]. Duringcompetition
+                  with a global batch size of 768, while the compe-       submissions, this pre-trained model was fully fine-
+                  tition runtime allows for only about 15k optimizer      tuned on the train example pairs of the test tasks.
+                  steps at a batch size of 384, given that one must also  This fine-tuned model was then used to predict test
+                  allow time for inference/evaluation.                    example outputs, using a majority voting method.
+                    Rather than train a model from scratch, an obvi-
+                  ous approach is to instead fine-tune a model that has   2.1    Pre-training
+                  been pre-trained on public ARC tasks. There is no
+                  limit on the compute that can be used to pre-train      Three models were pre-trained. A first model was
+                  such a model in advance of submission, although,        trained almost exactly in line with the original TRM
+                  the amount of publicly available ARC tasks, in par-     paper. A second model was pre-trained with an ex-
+                  ticular tasks calibrated to ARC AGI II difficulty is    panded pre-training dataset and for double the orig-
+                  very small. The question is, given competition tasks    inal number of epochs.      A third model was then
+                  are new and unseen, and, given the model’s capac-       pre-trained with a smaller dataset, filtered for tasks
+                                                                        2
+                  matching ARC AGI II public evaluation split diffi-         In sum, this meant pre-training on:
+                  culty.                                                     • ARCAGIIITrainingsplit [1000 tasks]: train +
+                  2.1.1  Original Paper Replication - 100k epochs              test example pairs
+                  ATRMwastrainedinclosealignmentwiththeorig-                 • Concept ARC split [160 tasks]: train + test ex-
+                  inal paper, but with only 4 lower reasoning cycles           ample pairs
+                  instead of 6 reported in the paper. This deviation         • ARC AGI II Evaluation split [110 tasks]: train
+                  was unintentional and resulted from a commit in the          examplepairs from all 110 tasks and test exam-
+                  TRMGitHub repository using that same value. In-              ple pairs from 100 tasks (the other ten serve as
+                  terestingly, other ablations by Xin Gao [2] and Kon-         evaluation during pre-training)
+                             ¨
+                  stantin Schurholt [5] also use this value of 4.
+                    The data mix matched that of the original paper          • tama [50 tasks]: train + test example pairs
+                  and included:                                              While there is the advantage of a higher quality,
+                     • ARCAGIIITrainingsplit [1000 tasks]: train +        more in-distribution and larger pre-training dataset,
+                       test example pairs                                 there is a large trade-off in being able to assess
+                     • Concept ARC split [160 tasks]: train + test ex-    performance with evaluation and test hold-out sets
+                       ample pairs                                        of only 10 tasks each, particularly when assessing
+                                                                          performance with a granularity of one percent and
+                     • ARC AGI II Evaluation split [120 tasks]: train     where the anticipated score is in the region of 1-10
+                       example pairs only (test used for evaluation)      percent.
+                  2.1.2  ExtendedDatafor200kEpochs                        2.1.3   Filtered Hard Data for 1M Epochs
+                  Following the heuristic that neural nets often im-      Thisthirdpre-trainedvariantaimedtotesttheheuris-
+                  proveinperformancewithlongerpre-training, asec-         tic that it can be better to train neural nets on
+                  ond model was pre-trained for double the original       a smaller amount of higher quality data for more
+                  numberofepochs.                                         epochs than on more mixed-quality data for fewer
+                    Followingtheheuristicofmore,higherquality,in-         epochs. The same model and hyperparameters were
+                  distribution data helping the performance of neural     used but training on 110 tasks from the ARC AGI
+                  nets, the dataset was expanded in two ways:             II evaluation split and 120 hard tasks from the ARC
+                   1. Inclusion of evaluation split test example pairs:   AGI II training split.    Training tasks were deter-
+                       Concretely, train example pairs from 110 tasks     mined to be hard based on the ability of GPT-5-mini
+                       were included in pre-training and test exam-       to write a python program that successfully solved
+                       ple pairs from 100 tasks were included in pre-     all train and test example pairs.    Specifically, any
+                       training. Test example pairs from 10 tasks were    task for which GPT-5-mini could write a correct pro-
+                       withheld for evaluation during pre-training,       gram, given approximately eight attempts, was fil-
+                       while train AND test example pairs from 10         tered out. This left 137 remaining ARC AGI II train-
+                       tasks were withheld entirely for use in post-      ing tasks, from which 120 were selected as a train-
+                       training.                                          inghard split.  This filtering is somewhat arbitrary
+                                                                          andskewedbothbecauseitfiltersbasedona)python
+                   2. Inclusion of 50 tasks from Simon Strandgaard’s      programming performance and b) LLM, not human,
+                       ”tama” dataset [6].     These human-reviewed performance. The method was used because of prior
+                       tasks cover concepts typical in ARC challenges     unreported work attempting to solve ARC tasks by
+                       andareofadifficultysomewherebetweenARC writingpythonprograms. ThechoiceofGPT-5-mini
+                       AGIIandARCAGIII.Thehopeforincluding asamodelwasmadebecauseitwascapableofsolv-
+                       this data was to broaden and enhance the pre-      ing only a few ARC AGI II evaluation tasks by writ-
+                       training dataset.                                  ingpythonprograms. Assuch,ifataskcanbesolved
+                                                                        3
+                  through python program writing by GPT-5-mini this           4. Post-training was conducted only on train ex-
+                  correlates with the task being too easy for ARC AGI             amples from test tasks (either competition tasks
+                  II level tasks. The motivation for this ”hard” dataset          ORwithheld tasks from the ARC AGI II pub-
+                  split was to have tasks more representative of the              lic evaluation split).  No additional data was
+                  semi-private evaluation set on which performance is             mixedin. For competition runs, this means run-
+                  ultimately graded for the 2025 competition.                     ning on semi-private test tasks, which can only
+                     In sum, this meant pre-training on 230 tasks:                be done by making a formal submission to the
+                                                                                  ARCPrize 2025 competition. One submission
+                     • ARC AGI II Training split, filtered with GPT-              is allowed daily.
+                       5-mini program writing for ”hard” tasks [120
+                       tasks]: train + test example pairs                     5. TRM uses a majority voting method to make
+                                                                                  test output predictions, defaulting to a vote over
+                     • ARC AGI II Evaluation split [110 tasks]: train             1,000 augmented versions of each task. Since
+                       examplepairs from all 110 tasks and test exam-             computetimeislimitedduringthecompetition,
+                       ple pairs from 100 tasks (the other ten serve as           only 256 or 512 augmentations are used at eval-
+                       evaluation during pre-training)                            uation time – although 1,000 are still used dur-
+                     AlldatasplitsareavailableontheTrelisTRMfork                  ing pre- and post-training. The number of aug-
+                  on Github [14].                                                 mentationsdoesnotaffecttrainingtimebecause
+                                                                                  epochs are defined as epochs over a given task
+                                                                                  and its variants (for a given task, a variant is
+                  2.2    Post-training                                            sampled at random during each epoch).
+                  Four approaches to post-training were conducted:          2.3    Simulating       and      Measuring        Post-
+                    1. Full-fine tuning.                                           training Performance
+                    2. Fine-tuning of embeddings only.                      Simulating post-training performance is difficult, as
+                                                                            there are only 120 public evaluation tasks for ARC
+                    3. Full-fine tuning, but training only embeddings       AGI II, and - if one is to post-train on those tasks
+                       for the first quarter of optimizer steps.            - those same tasks cannot be included in one’s pre-
+                                                                            training dataset. Three workarounds were attempted,
+                    4. LoRA+embeddingsfine-tuning.                          with varying degrees of success.
+                     All post-training runs were conducted in the same      2.3.1   Post-training an ARC AGI I pre-trained
+                  manner and with the same hyperparameters as the                   model
+                  pre-training runs, but with the following differences:
+                    1. At the start of each post-training run, the model    To assess the effectiveness of post training one can
+                       wasinitialised from a pre-trained model.             first pre-train a model on ARC AGI I tasks, i.e. the
+                                                                            train and test example pairs from the 400 task train-
+                    2. OwingtolowertotalVRAMavailableon4xL4s ing split, and the test pairs from the 400 task evalu-
+                       comparedto4xH100SXMs,aglobalbatchsize ation split. Such a model was already available on
+                       of 384 was used instead of 768 for pre-training.     HuggingFace from Xin Gao [2] and so that model
+                       Accordingly, the learning rate for the model         wasused.
+                       trunk and for the embeddings were doubled (to           This pre-trained model - which has only six tasks
+                       2e-4 and 2e-2, respectively).                        that also appear in the ARC AGI II public dataset
+                                                                            (see Appendix A) - can then be post-trained on the
+                    3. Owing to the compute limitation at competi-          train example pairs of the ARC AGI II evaluation
+                       tion time, training was run for only 15,000 op-      split, and then used to make predictions of the cor-
+                       timizer steps, rather than ∼750k in the original     responding test example pairs. Note that, for post-
+                       pre-training.                                        training to be effective, it is not a necessary con-
+                                                                          4
+                  dition that this approach show positive results, be-            10 tasks were withheld during pretraining.
+                  cause ARC AGI I tasks are significantly easier than             Here, post-training was simulated, but was too
+                  ARCAGIIItasks. Assuch,amodelpre-trainedwith                     noisy to be informative given only 10 withheld
+                  ARCAGIImaybetooweaktoprovideaheadstart                          tasks.
+                  to post-training on ARC AGI II level tasks. As it            3. An ARC AGI II pre-trained model (for 1M
+                  turns out, the ARCAGIIpre-trainedmodelISstrong                  epochs, and with a dataset filtered to include
+                  enough to meaningfully help with post-training for              only 230 ARC AGI II difficulty tasks) - from
+                  ARCAGIIIgradetasks.                                             which 10 tasks were withheld during pretrain-
+                  2.3.2   Post-training an ARC AGI II pre-trained                 ing. Again, post-training was simulated but too
+                          model, but with 10 public eval tasks with-              noisy to be informative.
+                          held as a test set                                   Since all three pre-trained models were submitted
+                  As an attempt at simulating post-training perfor-          to the competition for pre-training, semi-private re-
+                  manceonanARCAGIIIpre-trainedmodel,onecan sultsarereportedforeach.
+                  run pretraining on ARC AGI II data, but, withhold-
+                  ing 10 evaluation tasks as a test set for post-training.   2.4   Post-training Methods
+                     This was done, but the signal from only ten test        Fourpost-trainingmethodsareconsideredandevalu-
+                  tasks is weak, noisy and uninformative.                    ated on an ARC AGI I pre-trained model using ARC
+                  2.3.3   Post-training an ARC AGI II pre-trained AGI II tasks. Based on those results, the chosen ap-
+                          model via a formal ARC AGI 2025 Sub- proach for competition submissions was to fine-tune
+                          mission                                            embeddings for one quarter of post-training epochs
+                                                                             and then fully fine-tuning for the remaining epochs.
+                  A positive result from pre-training an ARC AGI I
+                  modelonARCAGIIIdatamotivatestakinganARC 2.4.1 Fullfine-tuning
+                  AGI II pre-trained model (pre-trained on data in-          Full fine-tuning involved updating all model param-
+                  cluding ARC AGI II public eval training tasks) and         eters, as in pre-training.
+                  submitting that for post-training on the semi-private
+                  tasks in the competition. The assumption is that an
+                  ARCAGIIIpre-trained model (i.e. trained on ARC             2.4.2   Fine-tuning of embeddings only.
+                  AGI II public eval data) is more in-distribution for       In TRM,eachtaskandanyaugmentedvariantofthat
+                  the semi-private eval tasks than a model pre-trained       task is assigned a task id and has its own trainable
+                  only on what are much easier ARC AGI I tasks. Un-          embedding. At the start of post-training, the model
+                  fortunately, one cannot take an ARC AGI II pre-            sees a new set of tasks and variants, and so a new
+                  trained model and easily simulate post-training be-        set of task ids and set of embeddings are initialised.
+                  cause the train example pairs from evaluation tasks        Theseembeddingsstartthepost-training process un-
+                  are already within the pre-training data.                  trained, while the rest of the model parameters (at-
+                     For the purpose of the competition, there were          tention, MLPs and heads) start in a pre-trained state.
+                  three pre-trained models submitted (the same three           As such, at the start of post-training, the task em-
+                  listed in the pre-training section):                       beddings-whichmightbethoughtofasadescription
+                    1. The ARC AGI II pre-trained model (for 100k            of the transformation involved in a given task variant
+                       epochs). Here, post-training could not be simu-       - are out of sync with the model’s trunk. With this
+                       lated as it had been pre-trained on ARC AGI II        as motivation, it appears reasonable to train only the
+                       evaluation train examples.                            embeddings to see whether they might be adapted
+                                                                             by post-training in a manner that allows the model
+                    2. An ARC AGI II pre-trained model (for 200k trunk to ”execute” a program described by a newly
+                       epochs, and with expanded data) - from which          trained task id.   Were the training of embeddings
+                                                                           5
+                  sufficient, this might suggest that the trunk has the                        ARC Evaluation Accuracy
+                  required tools to solve ARC tasks and the embed-              0.20     pass@2
+                  ding need only be trained to signal to the trunk what                  pass@1000
+                  tools should be used for the task at hand. There is           0.15
+                  a close analogy here with the Searching Latent Pro-
+                  grams Spaces approach of Bonnet and MacFarlane               Accuracy0.10
+                  [4], and more is discussed on that below.
+                                                                                0.05
+                  2.4.3   Fine-tuningofembeddingsfollowedbyfull                        100    200    300    400    500    600
+                          fine-tuning                                                             Training step (×10³)
+                  Asit turns out, post-training only of the embeddings     Figure    1:      ARC evaluation        pass@2     and
+                  results in a score of near zero on held out tasks. This  pass@1000 accuracies throughout training for
+                  motivates the idea of first training only the embed-     the pretrain att arc2concept 4 replication
+                  dings for some epochs (one quarter of total post-        run.
+                  training epochs) followed by full fine-tuning for the
+                  remainder of epochs.
+                                                                           set of ten tasks in the extended runs is too small to
+                  2.4.4   LoRAfine-tuningofthetrunkplusembed- provide statistically meaningful insights on perfor-
+                          dings fine-tuning                                mance.
+                                                                              Figure 1 shows the evolution of pass@2 and
+                  Rather than train all parameters in the trunk (every-    pass@1000 accuracy on the 120 ARC AGI II pub-
+                  thing but the embeddings) one might instead train a      lic eval tasks during the training run, reaching a final
+                  set of low rank adapters for linear layers in the trunk. pass@2scoreof 10%,whichishigherthantheorig-
+                  Thisreducesthenumberofparametersthataretrain- inally reported score of 7.8% in the TRM paper, pre-
+                  able. The motivation is potentially to avoid overfit-    sumablyassociated with stochastic behaviour during
+                  ting by training all parameters. However, TRMs are       training. Figure 2 shows the per-example-pair exact
+                  already low in parameter count, and the use of LoRA      accuracy (i.e. percentage of training pairs the model
+                  may reduce the ability of the model to adapt to the      gets correct within a training batch of 768 example
+                  newly presented tasks. This appears to be the case.      pairs) over the course of training. It is clear that the
+                                                                           model heavily overfits the data, although continued
+                  3    Results                                             training gradually brings up the exact accuracy on
+                                                                           the evaluation set, although still far below 100% by
+                  3.1   Pre-Training                                       the end of training.
+                  All    results   for    the    TRM Paper         ARC 3.2 Post-Training
+                  AGI     II    Replication     Run     are    available   3.2.1   Post-training of the ARC AGI I Pre-
+                  at               https://wandb.ai/trelis/                        trained Model
+                  Arc2concept-aug-1000-ACT-torch,
+                  see pretrain att arc2concept 4, and the Post-training sweeps were conducted on the
+                  associated pre-trained model checkpoint is released      ARC AGI I checkpoint released by Xin
+                  at [11].                                                 Gao [2].        All experiments were logged in
+                    Results for the extended training runs are the                    Arc-eval2-aug-1000-ACT-torch
+                  available   at   https://wandb.ai/trelis/ Weights & Biases project [8].                         Figure 3 com-
+                  Arc2-pretrain-final-ACT-torch,andthe pares evaluation pass@2 during the first 6k
+                  released checkpoints are [12] and [13].                  optimisation    steps  for   five  adaptation    strate-
+                    Select results are shown here from the replication     gies:   full fine-tuning (posttrain aa1 aa2e),
+                  rather than the extended runs, because the evaluation    embeddings-only       (posttrain aa1 aa2e fe),
+                                                                         6
+                                              Exact Accuracy During Training                          Table 1: Semi-private evaluation accuracy achieved
+                             1.0
+                                                                                                      after post-training ARC AGI II checkpoints within
+                             0.8                                                                      the competition environment.
+                             0.6                                     Evaluation exact accuracy            Pre-trained model                             Accuracy (%)
+                             0.4                                     Train exact accuracy                 TRMpaperreplication                                  6.67
+                            Exact accuracy0.2                                                             Expandeddata, 200k epochs                            4.25
+                                                                                                          Filtered hard data, 1M epochs                        1.27
+                             0.0
+                                     100       200       300       400       500      600
+                                                      Training step (×10³)
+                                                                                                      3.2.2     Post-training of ARC AGI II pre-trained
+                        Figure        2:          Evaluation          and       train      exact                modelsduringcompetition submissions
+                        accuracies           throughout            training         for       the     Post-training models pre-trained on ARC AGI II
+                        pretrain att arc2concept 4                                 replication        evaluation data provides limited insight because the
+                        run.                                                                          ten evaluation tasks held out provided too small a
+                                                                                                      sample to estimate performance reliably. The results
+                                        ARC Evaluation pass@2 During Post-training                    are recorded at [9] and show 0% pass@2 scores on
+                                          Full fine-tune                                              the 10 task hold-out split after post-training on their
+                                          Embeddings only                                             train examples.
+                              0.03        Embed+full (quarter)
+                                          Embed+full (half)                                              The three pre-trained models were submitted to
+                                          LoRA
+                              0.02                                                                    the 2025 ARC Prize for post-training in the compe-
+                                                                                                      tition environment. All submissions reused the con-
+                             Evaluation pass@20.01                                                    figuration in Section 2, with the baseline TRM repli-
+                                                                                                      cation fine-tuned for 12.5k steps and the extended
+                              0.00                                                                    variants for 15k steps to stay within the twelve-
+                                             2           3            4           5            6
+                                                       Training step (×10³)                           hour budget. Table 1 summarises the resulting semi-
+                                                                                                      private evaluation scores. Re-submitting the same
+                        Figure 3: ARC evaluation pass@2 for the ARC AGI                               pre-trained model (the replication of the original
+                        I post-training sweeps logged in [8].                     Each curve TRM paper) yielded scores ranging from 3.33 to
+                        shows the first 6k optimisation steps for a different                         6.67 depending on minor procedural tweaks (for ex-
+                        adaptation strategy.                                                          ample,adjustingthedurationoffrozentrunkupdates
+                                                                                                      or adding brief continued pre-training), underscoring
+                                                                                                      the high stochastic variance inherent in pre-training,
+                        embeddings-only             followed        by full fine-tuning               post-training and evaluation processes.
+                        after     a   quarter       (posttrain aa1 aa2e feq)
+                        or           half           (posttrain aa1 aa2e feh) 4                               Discussion
+                        of       the        steps,         and        LoRA+embeddings
+                        (posttrain aa1 aa2e lora).                                 Note      that     4.1     Pre-training TRMs from scratch does
+                        these evaluations are on the full ARC AGI II                                          not fit within competition compute lim-
+                        evaluation split, which unfortunately includes six                                    its
+                        contaminated tasks that also appear within the
+                        pre-training dataset - meaning that relative trends are                       Figure 1 shows the pass@2 and pass@1000 perfor-
+                        perhaps of more significance than absolute pass@2                             manceofapre-trained-fromscratch-tinyrecursive
+                        values.                                                                       model evaluated on the ARC AGI II public evalua-
+                           Note that while only 6k optimizer steps were used                          tion set of 120 tasks. For the purpose of the ARC
+                        for the above sweeps, competition submissions used                            Prize 2025 competition, it is the pass@2 score that
+                        either 12,000 or 15,000 optimizer steps.                                      counts. Entrants are allowed to submit two output
+                                                                                                   7
+                  grid predictions per test example, and the best output  dings) lead to low accuracy. There is a significant
+                  grid is the one that counts.                            level of noise involved in these results. For exam-
+                    If one were to naively approach the pre-training-     ple, LoRA+embeddings fine-tuning looks inferior to
+                  from-scratch approach of Fig. 1 in the competition,     fine-tuning embeddings only in the pass@2 metrics
+                  there would only be sufficient compute to conduct       of Fig. 3.   However, looking at a broader set of
+                  about 10-20k optimizer steps. This corresponds to       results - available in Weights and Biases [8] - re-
+                  the very left of the plot, where the pass@2 score       veals that LoRA+embeddings slightly outperforms
+                  nears zero.  Granted, the compute required scales       embeddings-only when looking at pass@1000, a
+                  with epochs over the data and the number of tasks       somewhatless noisy indicator of performance.
+                  in the dataset. While the TRM paper trains on 1,280        Clearly - and even with independent ARC tasks
+                  tasks, one might consider pre-training - at competi-    - it is possible to pre-shape the neural network in a
+                  tion time - on only the 240 competition tasks. This     mannerthat accelerates tuning on unseen tasks. This
+                  would reduce compute requirements by about 5x,          raises the question of what types of tasks are best
+                  although there are no guarantees of similar perfor-     used in pretraining to optimally shape the network
+                  mance if the training data is reduced in diversity.     for adaptation at competition time.
+                  Moreover, even a 5x reduction in the necessary opti-
+                  mizerstepsperepochwithasmallernumberoftasks 4.3                It remains unclear what diversity of
+                  - assuming one holds epochs constant - would result            pre-training tasks best shapes a net-
+                  in needing 150k+ optimizer steps, still well beyond            workforpost-training on unseen tasks
+                  the 10-20k possible in the limited compute environ-
+                  ment.                                                   One heuristic in machine learning is that it can be
+                    As such, the plot of pre-training performance in      better to train for longer on higher quality data than
+                  Fig. 1 tells us that pre-training from scratch requires to expend that same amount of compute training for
+                  too much compute for the competition environment,       fewer epochs on a broader dataset of mixed quality.
+                  if one is to follow the recipe of the TRM paper.           Given ARC AGI II tasks are significantly harder
+                  Of course, one could try to find a different model,     than ARCAGIItasks,andgivenARCAGIII’spub-
+                  dataset or pre-training recipe that performs as well    lic evaluation set is closely calibrated in difficulty to
+                  andworkswithmuchlesscompute. Someeffortwas the semi-private and private evaluation sets, it was
+                  spent on this, and is described in Section 5, but it    worth trying to pre-train only on ARC AGI II dif-
+                  was generally hard to match or exceed performance       ficulty tasks, rather than the larger dataset of 1,000
+                  of the original TRM design, not to mention doing so     ARC AGI II training tasks, most of which are far
+                  with less compute.                                      easier.
+                                                                             In practise, training for longer on this smaller
+                  4.2   Fine-tuning a Pre-trained Model Sig- but harder dataset (Filtered hard data, 1M epochs in
+                        nificantly Accelerates Test-time Adap- Tab. 1) resulted in worse performance than pretrain-
+                        tation                                            ing on the larger original training dataset (TRM pa-
+                                                                          per replication in Tab. 1). It is hard to know exactly
+                  Figure 3 is the fine-tuning analog of Fig. 1 for pre-   whythisis the case, and noise cannot be ruled out as
+                  training. Notice how the number of optimizer steps      a cause, but it suggests the ARC AGI II training set
+                  to achieve an improvement in performance is orders      and/or the Concept ARCsplit of 160 tasks bring use-
+                  of magnitude lower when starting from a pre-trained     ful diversity or relevant concepts to the pre-training.
+                  modelthan when pre-training from scratch.                  The other pre-training approach shown in Tab. 1,
+                    The highest gains in accuracy are achieved by         ”Expanded data, 200k” involved training for longer
+                  full fine-tuning OR by training only embeddings         than the original TRM paper, including test exam-
+                  for a first portion of epochs (either half or one       ples from ARC AGI II public evaluation tasks, and
+                  quarter), followed by full fine-tuning for the rest.    including additional concepts from the tama dataset
+                  Fine-tuning embeddings only OR LoRA fine-tuning         [6], all in the hope that added data diversity and train-
+                  (which additionally includes fine-tuning of embed-      ing time might help with performance. Here, the dif-
+                                                                        8
+                  ference in performance with the original TRM base-        2. it would be more efficient to use the same
+                  line (4.25%vs6.67%)islikelywithinnoise. Perhaps              task id/embedding for all variants of a given
+                  it is not surprising there is little improvement due         task OR whether treating variants as indepen-
+                  to the expanded dataset because the dataset is only          dent tasks provides the model with some use-
+                  50 tasks larger than the original TRM paper. Tama            ful form of regularisation/generality during pre-
+                  dataset concepts may overlap with concepts already           training.
+                  present in ARC AGI II training data, and the inclu-
+                  sion of test examples from ARC AGI II evaluation        4.5.1   Using cosine similarity to measure the
+                  data does not add new tasks, but only adds more ex-             model’s ability to encode related tasks
+                  amples per task.
+                                                                          Asameasureoftaskrelationshiplearning,onemight
+                  4.4   On the continued pre-training of pre- look at the cosine of the angle between task em-
+                        trained models                                    beddings for i) variants of the same task and ii) be-
+                                                                          tween the base/original/unvaried form of different
+                  Thetrendofpass@2andpass@1000scoresinFig.1 tasks. If the TRM learns to encode task variants
+                  suggests that simply training for longer could lead to  similarly, perhaps one should expect a rise in the
+                  improved results. There is an important nuance with     cosine between embeddings during pre- and post-
+                  TRM’sdesign,wherebytaskembeddingsaretrained training. With this as motivation, these measures
+                  for an index of tasks. If one does not save that map-   were recorded during the pretraining of the TRM for
+                  ping of tasks to embeddings, then one has no choice     200kepochsontheextendeddataset(extendedtoin-
+                  but to reinitialise and re-train the embeddings. Un-    clude ’tama’ and ARC EVAL II evaluation test ex-
+                  fortunately, for the replication run (although not for  amples).
+                  the expanded data or filtered hard data pretraining        Figure 4 shows the evolution of the cosine of the
+                  runs)theembeddingtotaskmappingswerenotsaved angle between task embeddings of variants of the
+                  (which involves saving the task and task augmenta-      same task (averaged across tasks in a given batch),
+                  tion dataset), and strict continued pre-training was    for training and evaluation sets. Note that the an-
+                  not possible.                                           gle between task id embeddings is reported as zero
+                    Nonetheless, continued pre-training was tried for     at most steps because there is at most one variant
+                  a further 72k optimizer steps (roughly 10% more         of each task per batch of 768 example pairs. If one
+                  steps) - with reinitialisation of embeddings - but this looksingreatergranularityatthedatainWeightsand
+                  led to lower submission performance of 3.33% com-       Biases [10], there are timesteps reaching cosine sim-
+                  pared to 6.67%. As such, reinitialisation of embed-     ilarity of up to about 0.1 . This is more apparent in
+                  dingsmayleadtopartialmodelcollapseand/orover- the training of the third model on the subset of hard
+                  fitting, perhaps as the embeddings learn more grid      tasks (not shown in these plots), since there are only
+                  specifics rather than the general transformations.      230 base task ids and every batch therefore includes
+                                                                          morethanonevariantforeachtask. Nonetheless,the
+                  4.5   On the use of augmentation-specific cosine similarity of task id embeddings for variants
+                        task embeddings                                   of the same task is low when measured on the train-
+                  Both HRM and TRM assign a unique embedding ing set. The cosine similarity is higher, and rising
+                  not just to each task, but to every augmented vari-     throughout training, when measured on the evalua-
+                  ant (flips, rotations, re-colours) of each task. From   tion set. It is not obvious why training and evaluation
+                  the model’s perspective, each task variant is an en-    sets diverge here and why the model might adapt to
+                  tirely separate task. The model may or may not learn    developmoresimilarityonevaluationexamplepairs.
+                  that these tasks are related.                              Figure 5 illustrates the evolution - over the course
+                    It is interesting to ask whether:                     of training - of the cosine of the angle between the
+                                                                          base variants of different tasks within the same train-
+                   1. the model does learn that variants of the same      ing batch. Although there is some gap between the
+                       task are related,                                  cosine on training and evaluation examples, both rise
+                                                                        9
+                              Embedding Cosine Similarity Within Task Variants       mightbuildalook-uptablecoveringthecolourmap-
+                                  Evaluation                                         ping pairs and train embeddings for that look-up ta-
+                        0.20      Training                                           ble. In principle, this level of entropy can be cap-
+                        0.15                                                         tured in a single low-dimension embedding, perhaps
+                                                                                     no larger than 256, or even 128 dimensions.
+                        0.10                                                            This approach has the benefit of greatly reduc-
+                       Cosine similarity0.05                                         ing the number of model parameters by avoiding the
+                                                                                     need for a 512-dimension embedding for each task.
+                        0.00                                                         While the TRM paper model has 7M parameters in
+                             0     100   200    300   400   500    600   700
+                                              Training step (×10³)                   its trunk, there are 2.5 GB of parameters required
+                                                                                     to capture 1,000 augmentations of 1,000 tasks (1k
+                    Figure 4: Embedding cosine similarity among aug-                 tasks x 1k augs/task x 512 dimensions = 512 M pa-
+                    mented variants of the same task during extended                 rameters). As such, when encoding each task aug-
+                    pre-training.                                                    mentation individually, the TRM is more a 500M+
+                                                                                     parameter model than a 7M parameter model. With
+                                  Embedding Cosine Similarity Across Tasks           explicit augmentation encodings, the size of the em-
+                                  Evaluation                                         beddings drops to 1k tasks x 512 dimensions = 512k
+                        0.20      Training                                           parameters.
+                        0.15                                                            One might further expect that explicitly encod-
+                                                                                     ing augmentations makes it easier for the model
+                        0.10                                                         to learn, and potentially require less compute to
+                       Cosine similarity0.05                                         reach convergence.        However, this proved not to
+                                                                                     be the case, and the performance of models trained
+                        0.00                                                         with explicit encodings for embeddings (detailed
+                             0     100   200    300   400   500    600   700         in the slim-in and base-in branches of the Trelis
+                                              Training step (×10³)
+                                                                                     fork of TRM [14]) was inferior to augmentation
+                    Figure 5: Embedding cosine similarity across base                specific task embeddings (see Weights and Bi-
+                    tasks for the extended pre-training runs.                        ases Project: https://wandb.ai/trelis/Arc2ethard-aug-
+                                                                                     1000-ACT-torch).
+                                                                                        Perhaps the use of augmentation-specific task em-
+                    together, although the measurement seems to asymp-               beddings forces the model to generalise in a useful
+                    tote more on the training examples. Interestingly,               manner, but, then why isn’t there stronger evidence
+                    comparing Fig. 5 and 4, task id embeddings appear                ofthisinrisingcosinesimilaritybetweenin-taskem-
+                    similarly distant within tasks as between tasks, sug-            beddings during pre-training?
+                    gesting the relationship between variants of the same
+                    task are not clearly expressed - at least within the             4.6    Post-training Tiny Recursive Models as
+                    embeddings alone.                                                       a Variant of Searching Latent Program
+                                                                                            Space(SLPS)
+                    4.5.2    Pre-training a model with explicitly en-                In their paper, Searching Latent Program Spaces,
+                             codedembeddings                                         McFarlane and Bonnet [4] describe an approach not
+                    Ratherthanassignanindependenttaskidembedding dissimilar to that involved in post-training a tiny re-
+                    to each augmented version of a task, one might in-               cursive model.      They cast the problem of solving
+                    stead assign the same task id to all variants of a given         ARCtasks as a search for a vector embedding that
+                    task, but then encode the augmentation type.                     describes the transformation involved in an ARC
+                       For example, one might simply encode flips and                task, that program (or instruction) then being fed to
+                    rotations by enumerating and embedding the 8 dihe-               a neural net and executed on a grid input.
+                    dral (d4 group) variants. To encode re-colours, one                 All of the steps of post-training a TRM are there
+                                                                                  10
+                  in Searching Latent Program Space:                         The closest approximation of this would perhaps
+                   1. There is the pretraining of a neural net on ARC     have been to pre-train on 60 of the 120 public eval
+                       tasks, to establish a landscape for that category  tasks, and post-train on the other 60. However, this
+                       of problems.                                       has two drawbacks:
+                   2. There is the post-training/fine-tuning on train        • Statistical power, already small at just 120
+                       examples from the test tasks, involving the             tasks, is even smaller when one takes a subsplit.
+                       search for the best latent (embedding) to de-         • Modelperformanceissensitivetotheamountof
+                       scribe the transformation at hand.                      data that must be encoded. For the same model
+                    Perhaps the performance gap between SLPS and               size, one cannot directly compare the perfor-
+                  TRMwithpost-training can be attributed to:                   mance pre or post training on 120 tasks versus
+                                                                               60 tasks.
+                   1. The more complete set of augmentations used
+                       byTRM(dihedralgroupvariants,recoloursand 5              OtherAblations
+                       translational augmentations).
+                   2. ThefactthatSLPSsearchesonlyforthebestla- Other ablations are reported here, rather informally.
+                       tent (i.e. trains only what might be thought of as Whereavailable, links to Weights and Biases reports
+                       the embeddings in TRM, but not other parame-       are provided.
+                       ters). As such, SLPS finds the best combination
+                       ofpre-trainedprimitives, but cannot add/encode     5.1    Onthemethodofembedding initialisa-
+                       newprimitives.                                            tion in post-training
+                   3. The recursive nature of the TRM’s neural net,       When faced with unseen tasks, the TRM code base
+                       which allows for greatly increased effective       bydefault initialises new embeddings to the mean of
+                       depth while maintaining stability during train-    pre-trained embeddings.
+                       ing.                                                  An ablation was run to instead initialise embed-
+                                                                          dings to a Gaussian norm with the mean and vari-
+                  4.7   OnthedistributionofARCAGIIItasks ance of the pre-trained embeddings. The hope was
+                                                                          that by adding noise to the initialisation, the model
+                  Amajorchallenge in ARC AGI II is that there is lit-     may overfit less during post-training. However, this
+                  tle public data that is clearly in the distribution of  hurt performance.
+                  the eventual ARC AGI II semi-private dataset. It
+                  is known that any approach scores remarkably sim-       5.2    On the variation of batch size during
+                  ilarly on the ARC AGI II public evaluation set and             post training
+                  ontheARCAGIIIsemi-private(andlikelyprivate?)
+                  dataset. This means that those datasets are closely     Another heuristic in machine learning is that reduc-
+                  in-distribution. By contrast, the ARC AGI II training   ing batch size can sometimes introduce favourable
+                  dataset (and the hard split) appears not to be in dis-  noise and regularization that improves test perfor-
+                  tribution as scores do not correlate closely with ARC   mance.
+                  AGIIIevaluation sets.                                      While the TRM pre-training replication was run
+                    For the purpose of research, it would have been       with the same batch size (768) as the original paper
+                  highly useful to have an ARC AGI II training split      andon4xH100SXM,theothertwopre-trainingruns
+                  of 120 tasks in the same distribution as the public     were conducted at a global batch size of 1536 and
+                  eval and semi-private eval set. This would have al-     with the learning rate doubled in order to make full
+                  lowed for pre-training on such a set, followed by       use of 8xH100 compute cores, and cut training time
+                  post-training on the public eval set to accurately as-  in half. It is possible this had an adverse effect on
+                  sess performance.                                       pass@2performance.
+                                                                        11
+                    For post-training, ablations were run at smaller     themselves.
+                 batch sizes of 96 and 32 (compared to 384) in the
+                 hope of improving regularisation. However, perfor-      6    On the use of smaller or larger
+                 mance was not improved, and, post-training takes
+                 longer per epoch as CUDA core utilisation is de-             modelparametercounts
+                 graded.    A selection of post-training results are
+                 visible here:   https://wandb.ai/trelis/Arc-eval2-aug-  In the hope of reducing pre-training requirements,
+                 1000-ACT-torch .                                        ablations were run where the characteristic dimen-
+                                                                         sion of the model, and of task id embeddings, was
+                 5.3    Onimprovementstomajorityvoting                   reduced from 512 down to 256 - resulting in a
+                                                                         model of roughly one quarter of the original pa-
+                 The TRM code base uses a simple form of majority        rameter count. The code is available in the ’slim’
+                 votingamongaugmentationsforagiventaskinorder branch of the Trelis TRM fork [14], and results
+                 to rank top predictions for a task example. TRM in-     are shown in https://wandb.ai/trelis/Arc2ethard-aug-
+                 cludes a halting head designed to indicate whether a    1000-ACT-torch . Smaller models were capable of
+                 task has been solved (which primarily serves to stop    scoringinthelowsingledigitsonARCAGIIIevalu-
+                 recursions early during training). However, for ARC     ation tasks, when compared on an iso-compute basis
+                 AGI II tasks, although the halting head does learn      to the base model. However, there was not enough
+                 to detected solved train examples, it does not learn    clear advantage to justify pursuing the direction fur-
+                 to effectively detect solved evaluation test examples.  ther.
+                 For this reason, unlike in Sudoku tasks, the halting       One ablation with a larger (1024 characteristic
+                 head cannot (yet) be effectively used to improve vot-   dimension) model was also run and is reported
+                 ing among predictions from augmentations.               here: https://wandb.ai/trelis/Arc2concept-aug-1000-
+                                                                         ACT-torch. It appeared to trend similarly in pass@2
+                 5.4    Onthebenefit of joint training on mul- evaluationscoretothebasemodelonaniso-compute
+                        tiple tasks for compute efficiency               basis, but a longer and more thorough run is required
+                                                                         to make firm conclusions.
+                 If post training requires fewer optimizer steps than       Thelimitedablationsconductedleaveunanswered
+                 training from scratch – to reach the same perfor-       the question of what the optimal model dimension
+                 mance – then clearly there is meaningful inter-task     should be, and what the optimal ratio of task embed-
+                 learning OR at least there are shared concepts in-      ding dimension relative to model trunk dimension
+                 volved in training TRM.                                 (default ratio of 1) should be.
+                    The effect can also be understood by pretraining        Intuitively, the size of the task embeddings relative
+                 onasingletaskversus8versus120tasksonamodel to the model trunk dimension should be reflective of
+                 ofthesamesize. Whileitappearspossibletoachieve          the relative entropy within task transformations ver-
+                 similar performance when training on a task individ-    susthatrequiredto”execute”suchtasksinthemodel
+                 ually, or combined with other tasks, it is more effi-   trunk. Certainly the TRM design is heavily weighted
+                 cient – again for a model of fixed size – to jointly    towards storing information in the task embeddings
+                 train on multiple tasks [7], showing that decompos-     because there is a 512 dimension embedding not just
+                 ing a post-training run into separate batches of post-  for every task but also for every augmentation. For
+                 training and inference does not materially improve      1k tasks one has 500M+ parameters for embeddings
+                 performance but does increase total training time.      and just 7M for the trunk.
+                 Saiddifferently, one can reach the same performance
+                 with less compute if one jointly trains on multiple
+                 tasks. As such, there appears to be joint concepts to   7    Conclusion and future work
+                 be learned. It is possible of course that much of this
+                 joint learning involves primitive concepts relating to  Full fine-tuning allowed a pre-trained tiny recursive
+                 grid sizes and colours, as opposed to transformations   transformer model to be efficiently adapted in the
+                                                                       12
+                   compute-limited environment of the ARC AGI II                  3. For a constant size model hidden dimension,
+                   competition. Effective adaptation appears to require               doesincreasingordecreasingtheembeddingdi-
+                   updating both task id embeddings AND the trunk of                  mensionimproveperformance. Currently,itap-
+                   the model at competition time.                                     pears that the embedding dimension is not cap-
+                      Currently, the use of tiny recursive models has                 turing similarities between task variants. Does
+                   been limited to single or low double-digit scores on               this suggest the task id embedding is too large
+                   ARC AGI II tasks. While post-training of a pre-                    or too small?
+                   trained TRM is much more compute efficient than
+                   pre-training from scratch, it has not been shown that          4. Improved optimisation of hyperparameters, es-
+                   post-training can exceed or reach the performance                  pecially the number of higher and lower loops
+                   achieved in pre-training. That pass@1000 metrics                   that control effective model depth.        Does in-
+                   reach well above pass@2 metrics, often above 20%                   creasing the level of recursion increase or de-
+                   on ARC AGI II difficulty tasks, suggests that per-                 crease compute efficiency when holding the ef-
+                   formanceimprovementsarepossiblewithbetterpre-                      fective depth constant?
+                   training. It remains an open question how far perfor-          5. Currently, at test time, the halting signal is in-
+                   mance could be pushed through model size or hyper                  effective, i.e.  while the model learns to halt
+                   parameterimprovementswithorwithoutfurtherdata                      at early iterations on training data, it does not
+                   additions or augmentations.                                        effectively halt on evaluation data. Are there
+                      Future work may consider:                                       ways to improve the halting behaviour OR are
+                     1. Closer visual inspection of the tasks solved ver-             the tasks fundamentally too hard, perhaps sug-
+                         sus not solved by TRM-type approaches. Is it                 gesting that an even larger effective depth is re-
+                         conceivable that tasks are solved owing to the               quired for training?
+                         types of augmentations (rotate, flip, translate,
+                         re-colour) that are applied? If so, are there other
+                         augmentations (e.g.      shearing, re-patterning)      8     Acknowledgements
+                         that might assist in solving more tasks?
+                     2. What size model (specifically, size of hidden           This work was supported by Runpod, which pro-
+                         dimension) is most compute efficient for pre-          vided $15k of compute, and by Lambda Labs, which
+                         training on a fixed number of tasks? Chinchilla        provided $1k of compute. Thanks to Lewis Hemens
+                         laws for LLMs suggest that larger models may           for months of collaboration on ARC Prize research
+                         be more compute efficient (on a training com-          and support for compute costs. Thanks to Jack Boy-
+                         pute basis) than smaller models. Such ablations        lan for assistance in running the pre-training replica-
+                         weretried but, given the compute budget, it was        tion.
+                         not possible to reach a firm conclusion on the
+                         best model size. Note that - at the current TRM        References
+                         model size - inference/evaluation accounts for
+                         roughly 1 hour out of the 12 hours of compute            [1] Francois Chollet, Mike Knoop, Gregory Kam-
+                         time allowed. There is perhaps room for model                radt, and Bryan Landers. Arc prize 2024: Tech-
+                         size to be increased a little and evaluation pro-            nical report. 2024. doi: 10.48550/arXiv.2412.
+                         longed at the expense of shorter post training.              04604. URL https://arxiv.org/abs/
+                         As it is, either 256 or 512 augmentations are                2412.04604.
+                         used for inference, and there is little difference
+                         in performance between the two. As such, for             [2] Xin     Gao.            Tiny     recursive     mod-
+                         the current model size competition-time train-               els    –    arc     agi    1.           https://
+                         ing and inference are possibly not too far from              huggingface.co/Sanjin2024/
+                         optimal. The optimal split for larger, or smaller            TinyRecursiveModels-ARC-AGI-1,
+                         models, needs more analysis.                                 2025. Accessed: 2025-11-03.
+                                                                              13
+                   [3] Alex Jolicoeur-Martineau.        Less is more:           TRM-ARC-AGI-II, 2025.                  Accessed:
+                       Recursive    reasoning    with   tiny  networks.         2025-11-03.
+                       2025. doi: 10.48550/arXiv.2510.04871. URL [12] Trelis.             Tiny recursive models – arc agi ii
+                       https://doi.org/10.48550/arXiv.                          (all-200k).  https://huggingface.co/
+                       2510.04871.                                              Trelis/TRM-ARC-AGI-II-all-200k,
+                                                         ´                      2025. Accessed: 2025-11-03.
+                   [4] Matthew V. Macfarlane and Clement Bonnet.
+                       Searching latent program spaces. 2024. doi:         [13] Trelis.   Tiny recursive models – arc agi ii
+                       10.48550/arXiv.2411.08706. URL https://                  (hard-1m). https://huggingface.co/
+                       arxiv.org/abs/2411.08706. Accepted                       Trelis/TRM-ARC-AGI-II-hard-1M,
+                       as Spotlight at NeurIPS 2025.                            2025. Accessed: 2025-11-03.
+                                        ¨
+                   [5] Konstantin Schurholt and ARC Prize Team. [14] Trelis                Research.              Tinyrecursive-
+                       The hidden drivers of hrm’s performance                  models      (trelis   fork).            https:
+                       on arc-agi.      https://arcprize.org/                   //github.com/TrelisResearch/
+                       blog/hrm-analysis, August 2025. Ac-                      TinyRecursiveModels, 2025. Accessed:
+                       cessed: 2025-11-03.                                      2025-11-03.
+                   [6] Simon      Strandgaard.            Arc    dataset   [15] Guanzhi Wang, Jianing Li, Yuxiao Sun,
+                       collection:      Tama     split.        https:           Xi Chen, Chuhan Liu, Yuan Wu, Mingyu Lu,
+                       //github.com/neoneye/                                    Shuran Song, and Yasin Abbasi-Yadkori. Hier-
+                       arc-dataset-collection/tree/                             archical reasoningmodel. 2025. doi: 10.48550/
+                       main/dataset/arc-dataset-tama,                           arXiv.2506.21734.       URL https://doi.
+                       2024. Accessed: 2025-11-03.                              org/10.48550/arXiv.2506.21734.
+                   [7] Trelis.    Arc joint training ablations (arc-
+                       eval2clean).           https://wandb.ai/
+                       trelis/arc-eval2clean, 2025.                 Ac-
+                       cessed: 2025-11-03.
+                   [8] Trelis.            Arc     prize    post-training
+                       sweeps           (arc-eval2-aug-1000-act-torch).
+                       https://wandb.ai/trelis/
+                       Arc-eval2-aug-1000-ACT-torch,
+                       2025. Accessed: 2025-11-03.
+                   [9] Trelis.     Arc prize post-training hold-out
+                       diagnostics (arc-evaluation2test-aug-1000-act-
+                       torch).     https://wandb.ai/trelis/
+                       Arc-evaluation2test-aug-1000-ACT-torch,
+                       2025. Accessed: 2025-11-03.
+                  [10] Trelis.     Arc prize extended pre-training
+                       runs              (arc2-pretrain-final-act-torch).
+                       https://wandb.ai/trelis/
+                       Arc2-pretrain-final-ACT-torch,
+                       2025. Accessed: 2025-11-03.
+                  [11] Trelis.   Tiny recursive models – arc agi ii.
+                       https://huggingface.co/Trelis/
+                                                                        14
+                                           Table 2: Raw dataset splits used across experiments.
+                       Challenges file                                 Puzzles   Avg. train inputs Avg. test inputs
+                       arc-agi concept challenges.json                     160               2.67             3.00
+                       arc-agi training2 challenges.json                  1000               3.23             1.08
+                       arc-agi evaluation2 challenges.json                 120               2.98             1.43
+                       arc-agi tama challenges.json                         50               3.18             1.52
+                       arc-agi test challenges.json                        240               3.20             1.08
+                                Table 3: Derived splits constructed for extended pre-training and evaluation.
+                    Challenges file                                       Puzzles   Avg. train inputs  Avg. test inputs
+                    arc-agi evaluation2train challenges.json                  100               2.96             1.44
+                    arc-agi evaluation2eval challenges.json                    10               2.90             1.60
+                    arc-agi evaluation2test challenges.json                    10               3.30             1.20
+                    arc-agi traininghard challenges.json                      120               2.98             1.09
+                    arc-agi evaluation2clean challenges.json                  114               2.97             1.46
+                A ARCTaskExampleDataSplits
+                Notes on derived splits.   Theevaluation2train,evaluation2eval,andevaluation2test
+                files are all sampled from the ARC AGI II evaluation split. These subsets supply the pre-training and post-
+                training tasks for the second model configuration.
+                Side notes.
+                   • Six tasks in the ARC AGI II evaluation split also appear in ARC AGI I. When adapting models pre-
+                     trained on ARCAGII,thearc-agi evaluation2clean challenges.jsonsplitfiltersthese
+                     duplicates to avoid contamination.
+                   • The placeholder arc-agi test challenges.json split contains fewer test examples than the
+                     evaluation set. Inference on this set is roughly 33% faster than the final competition rerun and can
+                     under-estimate runtime, risking notebook timeouts during submission tests.
+                   All data is available in the Trelis TRM fork on Github [14]
+                                                                   15

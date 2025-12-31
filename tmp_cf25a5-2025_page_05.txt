@@ -1,0 +1,62 @@
+                                                                       Test-Time Learning for Large Language Models
+                   related manner, which can be described as follows:
+                   Assumption1(Autoregressive Property): The LLM gen-                                              0.6
+                   erates each token yt based on the input x and previously                                                                                           Origin LLM
+                   generated tokens y               : P(y |x,y            ; Θ). The standard                                                                          Full-Param
+                                             1:t−1          t      1:t−1                                          EM0.4                                               LoRA
+                   next-token prediction objective makes model predictions
+                   inherently conditional on previous context quality.                                             0.2
+                   Assumption 2 (Shared Parameter Influence): LLM pa-
+                   rameters Θ influence both the input perplexity P(x;Θ) and                                       0.0
+                   the conditional output perplexity P(y|x;Θ). This assump-                                         Geography        Agriculture        Medicine           Finance
+                   tion is valid across various LLM architectures, such as                               Figure 2. Comparison of prevent forgetting on DomainBench un-
+                   encoder-only and decoder-only models.                                                 der Llama3.1-8B-Instruct. This observation reveals that LoRA (Hu
+                   Reducing Output Perplexity through Input Perplexity                                   et al., 2022) prevents catastrophic forgetting more effectively than
+                   Minimization. Minimizing the perplexity to the input                                  Full-Param updates across DomainBench (see Supp. B).
+                   P(x;Θ)is equivalent to maximizing the input generation
+                   probability P(x;Θ). We employ a gradient-based theo-
+                   retical analysis to formalize the intuition that question-                            ing degrees of training (for ease of presentation, we show
+                   conditioned updates benefit answer predictions, based on                              the normalized results here). As shown in Figure 1b, the
+                                                     ′
+                   a key assumption. Let Θ = Θ−η∇Θ(−logP(x;Θ))de-                                        relationship between input perplexity P(x;Θ) and output
+                   note the updated parameters after a single TTL step. Using                            perplexity P(y|x;Θ) demonstrates a strong positive corre-
+                   a first-order Taylor expansion:                                                       lation across all four vertical domains. This indicates that
+                                                2                                                        reducing output perplexity is possible by minimizing input
+                    logP ′(y|x) ≈O(η )+logP (y|x)                                               (4)
+                            Θ                                 Θ                                          perplexity in LLMs.
+                                                                        ⊤
+                                          +η[∇ logP(x;Θ)] ∇ logP (y|x),
+                                                | Θ                    {z     Θ         Θ       }
+                                                               Cross-gradient term                       4.2. Sample Efficient Learning Strategy
+                   whereyistheanswertothequestionx. Ourcoreassumption                                    Minimizing input perplexity P(x;Θ) can enhance the per-
+                                                                      ⊤
+                   is that ⟨∇ ,∇ ⟩ = [∇ logP(x;θ)] ∇ logP (y|x) ≥                                        formance of LLMs on target distribution data, as shown in
+                                 x     y           Θ                        Θ         Θ
+                   0for question-answer pairs with strong semantic alignment.                            Sec. 4.1. However, ourintuitionisthatdifferenttestsamples
+                   Under this condition, the cross-gradient term becomes non-                            mayproducevaryingeffects during Test-Time Learning. To
+                   negative, guaranteeing: logP ′(y|x) ≥ logP (y|x) for                                  investigate this, we conduct a preliminary study, leading to
+                                                             Θ                       Θ
+                   small η (We compute the gradient inner product using 400                              the following observation:
+                   batches (batch size = 50) of QA pairs from the Domain-                                Observation2: High-perplexitysamplescontributemore
+                   Bench on LLaMA3.1-8B. Results show 98.75% of batch-                                   to LLMupdatesthanlow-perplexity ones. We select dif-
+                   samples satisfy the non-negativity condition, with average                            ferent proportions of samples (the samples are pre-sorted
+                   ⟨∇ ,∇ ⟩ = +5.60).
+                        x     y                                                                          according to their perplexity values P(x;Θ)) for Test-Time
+                   This form is consistent with the autoregressive property in                           Learning, and the resulting model is evaluated on all test
+                   Assumption 1. Naturally, based on the Shared Parameter                                samples. As shown in Figure 1c, we find that: 1) training
+                   Influence in Assumption 2, minimizing P(x;Θ) enhances                                 the test samples with high-perplexity makes more contri-
+                   the model’s overall understanding and representation of                               bution than low-perplexity ones, and 2) training on test
+                   x. This improved representation facilitates more accurate                             samples with very low-perplexity may hurt performance.
+                   and confident next-token predictions, which is expected to                            The possible reason is that low-perplexity samples are al-
+                   reduce P(y|x;Θ). To further investigate this, we conduct a                            ready well-modeled by the pre-trained LLMs, offering little
+                   preliminary study, leading to the following observation:                              newinformation for further learning, which could lead to
+                   Observation 1: Trend of LLM’s perplexity to the in-                                   overfitting or a lack of generalization. In contrast, high-
+                   put P(x;Θ) and perplexity to the output P(y|x;Θ) is                                   perplexity samples present more challenging data, driving
+                   the same. In the context of LLMs, it is observed that                                 greater adaptation during Test-Time Learning.
+                   the perplexity associated with the input P(x;Θ) and the                               Based on Observation 2, we propose a Sample Efficient
+                   perplexity of the output P(y|x;Θ) exhibit similar trends.                             Learning Strategy to actively select samples for backprop-
+                   Specifically, we compute the trends of the perplexity of the                          agation, thereby enabling efficient Test-Time Learning.
+                   input P(x;Θ) and the perplexity of the output P(y|x;Θ)                                Specifically, we design an active sample selection score
+                   on the four collected vertical domain datasets (see Supp. B)                          for each sample, denoted as S(x). The criterion is that a
+                   using Llama3.1-8b-Instruct (Dubey et al., 2024) with vary-                            sample should be informative for Test-Time Learning, pro-
+                                                                                                      5

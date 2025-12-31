@@ -1,0 +1,660 @@
+                                                       This CVPRpaperisthe Open Access version, provided by the Computer Vision Foundation.
+                                                                          Except for this watermark, it is identical to the accepted version;
+                                                                   the final published version of the proceedings is available on IEEE Xplore.
+                      Relation3D: Enhancing Relation Modeling for Point Cloud Instance Segmentation
+                                                                                                                                                                           *
+                                                          Jiahao Lu                                                                               Jiacheng Deng
+                         University of Science and Technology of China                                               University of Science and Technology of China
+                                                         Abstract
+                      3D instance segmentation aims to predict a set of object
+                      instances in a scene, representing them as binary fore-
+                      ground masks with corresponding semantic labels. Cur-
+                      rently, transformer-based methods are gaining increasing
+                      attention due to their elegant pipelines and superior predic-
+                      tions. However, these methods primarily focus on modeling
+                      the external relationships between scene features and query
+                                                                                                                                    Maft                                         Ours
+                      features through mask attention. They lack effective mod-
+                      eling of the internal relationships among scene features as                                    Figure 1. T-SNE visualization of the superpoint-level feature
+                      well as between query features. In light of these disadvan-                                    distributions on ScanNetV2 validation set. Different colors rep-
+                      tages, we propose Relation3D: Enhancing Relation Mod-                                          resent different instances. Our method highlights better inter-object
+                      eling for Point Cloud Instance Segmentation. Specifically,                                     diversity and intra-object similarity.
+                      we introduce an adaptive superpoint aggregation module
+                      and a contrastive learning-guided superpoint refinement                                                  Point feature variation (Maft)            1.8603 (Excessive)
+                      module to better represent superpoint features (scene fea-                                             Setting    Maft    Ours (Stage 1)    Ours (Stage 2)    Ours (Stage 3)
+                      tures) and leverage contrastive learning to guide the updates                                           L        1.057        0.7255            0.5841            0.5739
+                                                                                                                               cont
+                      of these features. Furthermore, our relation-aware self-
+                      attention mechanism enhances the capabilities of modeling                                      Table 1. Excessive feature variation among points within the
+                                                                                                                     samesupepointandcomparisonofL                             in different settings.
+                      relationships between queries by incorporating positional                                                                                          cont
+                                                                                                                     Theexperiment is conducted on ScanNetV2 validation set. L
+                      and geometric relationships into the self-attention mecha-                                                                                                                      cont
+                      nism. Extensive experiments on the ScanNetV2, ScanNet++,                                       measures the consistency of superpoint features within the same
+                      ScanNet200 and S3DIS datasets demonstrate the superior                                         instance and the differences between features of different instances.
+                                                                                                                     DetailedinformationaboutL                  canbefoundinEquation5. Stage
+                      performanceofRelation3D.Codeisavailableatthiswebsite.                                                                               cont
+                                                                                                                    1 represents the features output by ASAM, while stages 2 and 3
+                                                                                                                     represent the features after refinement by CLSR.
+                                                                                                                     distribution of objects and the numerous categories in real-
+                      1. Introduction                                                                               world applications, presents unique challenges for effective
+                                                                                                                     point cloud analysis. To tackle these challenges, early ap-
+                      Point cloud instance segmentation aims to identify and seg-                                    proaches mainly concentrated on accurately generating 3D
+                      mentmultiple instances of specific object categories in 3D                                     bounding boxes (top-down) [13–15] or effectively grouping
+                      space. With the rapid development of fields such as robotic                                    the points into instances with clustering algorithms (bottom-
+                      grasping [1], augmented reality [2, 3], 3D/4D reconstruc-                                      up) [16–18]. However, these methods have limitations: they
+                      tion [4–8], and autonomous driving [9, 10], as well as the                                     either heavily rely on high-quality 3D bounding boxes, or
+                      widespread application of LiDAR and depth sensor technolo-                                     require manual selection of geometric attributes.
+                      gies [11, 12], point cloud instance segmentation has become                                        Recently, researchers start to focus on the design of
+                      a core technology for achieving efficient and accurate scene                                   transformer-based methods [19–23]. These methods adopt
+                      understanding. However, the unordered, sparse, and irregu-                                     an encoder-decoder framework (end-to-end), where each
+                      lar nature of point cloud data, combined with the complex                                      object instance is represented by an instance query. The
+                                                                                                                     encoder is responsible for learning the point cloud scene
+                          *Corresponding Author                                                                      features, while the transformer decoder [24] iteratively at-
+                                                                                                             8889
+                tends to the point cloud scene features to learn the instance      and geometric relationships effectively.
+                queries. Ultimately, the instance queries can directly gener-         Inspired by the above discussion, we propose Rela-
+                ate the masks for all instances in parallel. Current main-         tion3D: Enhancing Relation Modeling for Point Cloud In-
+                stream transformer-based methods commonly use mask-                stance Segmentation, which includes an adaptive superpoint
+                attention [25] to effectively model the external relationships     aggregation module (ASAM), a contrastive learning-guided
+                between scene features and query features. However, they           superpoint refinement module (CLSR), and relation-aware
+                lack effective modeling for the internal relationships among       self-attention (RSA). To address the first issue, we propose
+                scene features and between query features. As shown in Ta-         an adaptive superpoint aggregation module and a contrastive
+                ble 1 and the left panel of Figure 1, we observe insufficient      learning-guided superpoint refinement module. In the adap-
+                consistency in superpoint features within the same instances,      tive superpoint aggregation module, we adaptively calculate
+                inadequate differentiation between features of different in-       weights for all points within each superpoint, emphasizing
+                stances, and excessive feature variation among points within       distinctive point features while diminishing the influence
+                the same superpoint. These erroneous relationships between         of unsuitable features. In the contrastive learning-guided
+                scene features undoubtedly increase the difficulty of instance     superpoint refinement module, we first adopt a dual-path
+                segmentation. Besides, the effectiveness of self-attention         structure in the decoder, with bidirectional interaction and
+                lies in its establishment of relationships between query fea-      alternating updates between query features and superpoint
+                tures. However, simply computing similarity between query          features. This design enhances the representation ability of
+                features is too implicit and lacks adequate spatial and geo-       superpoint features. Furthermore, to optimize the update
+                metric relationship modeling, whose importance has been            direction of superpoint features, we introduce contrastive
+                demonstrated in [26–28]. Although position embeddings              learning [29–31] to provide contrastive supervision for su-
+                are used to guide self-attention in transformer-based meth-        perpoint features, reinforcing the consistency of superpoint
+                ods, the spatial information position embeddings provide           features within instances and the differences between fea-
+                is typically imprecise. For instance, SPFormer’s [20] po-          tures of different instances, as is shown in Figure 1. To
+                sition embeddings are learnable and lack concrete spatial          address the second issue, in relation-aware self-attention, we
+                meaning, and in methods like Mask3D [19], Maft [22], and           first model the explicit relationships between queries. By ob-
+                QueryFormer[21], discrepancies exist between the positions         taining the mask and its bounding box corresponding to each
+                indicated by position embeddings and the actual spatial loca-      query, we can model the positional and geometric relation-
+                tions of each query’s corresponding mask. This limitation          ships between queries. Next, we embed these relationships
+                in conventional self-attention prevents effective integration      into self-attention as embeddings. Through this approach,
+                of implicit relationship modeling with spatial and geometric       weachieve an effective integration of implicit relationship
+                relationship modeling.                                             modeling with spatial and geometric relationship modeling.
+                   Basedontheabovediscussion,wesummarizetwocoreis-                    The main contributions of this paper are as follows: (i)
+                sues that need to be considered and addressed in point cloud       WeproposeRelation3D: Enhancing Relation Modeling for
+                instance segmentation: 1) How to effectively model the rela-       Point Cloud Instance Segmentation, which achieves accurate
+                tionships between scene features? Most previous methods            and efficient point cloud instance segmentation predictions.
+                use pooling operations to obtain superpoint features [20, 22],     (ii) The adaptive superpoint aggregation module and the
+                but this pooling operation introduces unsuitable features and      contrastive learning-guided superpoint refinement module
+                blurs distinctive features when there are large feature differ-    effectively enhances the consistency of superpoint features
+                ences between points within a superpoint. Therefore, we            within instances and the differences between features of dif-
+                needanewwaytomodelsuperpointfeaturestoemphasizing                  ferent instances. The relation-aware self-attention improves
+                the distinctive point features. Additionally, considering the      the relationship modeling capability between queries by in-
+                significant feature differences between superpoints within         corporating the positional and geometric relationships into
+                the same instance, we need to introduce scene feature rela-        self-attention. (iii) Extensive experimental results on four
+                tion priors to guide the superpoint features and model better      standard benchmarks, ScanNetV2 [32], ScanNet++ [33],
+                superpoint relationships. 2) How to better model the relation-     ScanNet200 [34], and S3DIS [35], show that our proposed
+                ships between queries? Current self-attention designs rely         model achieves superior performance compared to other
+                onasimplecomputationofsimilarity between queries, but              transformer-based methods.
+                this implicit relationship modeling often requires extensive       2. Related Work
+                data and prolonged training to capture meaningful informa-
+                tion. Therefore, integrating explicit spatial and geometric        Proposal-basedMethods. Existingproposal-basedmethods
+                relationships is crucial, as it can refine attention focus areas   are heavily influenced by the success of Mask R-CNN [36]
+                and accelerate convergence. This motivates us to introduce         for 2D instance segmentation. The core idea of these meth-
+                instance-related biases to enhance the modeling of spatial         ods is to first extract 3D bounding boxes and then use a
+                                                                              8890
+                 mask learning branch to predict the mask of each object                gregation module and the contrastive learning-guided super-
+                 withintheboxes. GSPN[13]adoptsananalysis-by-synthesis                  point refinement module, we progressively enhance the rela-
+                 strategy to generate high-quality 3D proposals, refined by             tionships among scene features. Additionally, relation-aware
+                 a region-based PointNet [37].        3D-BoNet [15] employs             self-attention improves the relationships among queries.
+                 PointNet++[38] for feature extraction from point clouds and
+                 applies Hungarian Matching[39] to generate 3D bounding                 3. Method
+                 boxes. These methods set high expectations for proposal
+                 quality.                                                               3.1. Overview
+                    Grouping-basedMethods. Grouping-basedmethodsfol-                    The goal of 3D instance segmentation is to determine the
+                 lowabottom-upprocessingflow, first generating predictions              categories and binary masks of all foreground objects in
+                 for each point (such as semantic mapping and geometric                 the scene. The architecture of our method is illustrated
+                 displacement), and then grouping the points into instances             in Figure 2. Assuming that the input point cloud has N
+                 based on these predicted attributes. PointGroup [40] seg-              points, each point contains position (x,y,z), color (r,g,b)
+                 ments objects on original and offset-shifted point clouds              and normal (n ,n ,n ) information. Initially, we utilize a
+                 and employs ScoreNet for instance score prediction. Soft-                              x   y    z
+                 Group [18] groups on soft semantic scores and uses a top-              Sparse UNet [45] to extract point-level feature F ∈ RN×C.
+                 downrefinementstagetorefinethepositivesamplesandsup-                   Next, we perform adaptive superpoint aggregation mod-
+                 press false positives. ISBNet [41] introduces a cluster-free           ule (Section 3.3) to acquire the superpoint-level features
+                                                                                        F        ∈ RM×C. Subsequently, we initialize several in-
+                 approach utilizing instance-wise kernels. Recently, Spher-               super
+                                                                                        stance queries Q ∈ RK×C and input Q and F                into the
+                 ical Mask [42] has addressed the low-quality outcomes of                                                                  super
+                 coarse-to-fine strategies by introducing a new alternative             transformer decoder. To improve the relationship modeling
+                 instance representation based on spherical coordinates.                capability between queries, we propose the relation-aware
+                                                                                        self-attention (Section 3.5). To update the features of F        ,
+                    Transformer-based Methods. Following 2D instance                                                                                super
+                                                                                        wedesignasuperpoint refinement module (Section 3.4) in
+                 segmentation techniques [24, 43, 44], in the 3D field, each            the decoder, which is also a cross attention operation. How-
+                 object instance is represented as an instance query, with              ever, unlike conventional cross-attention, the scene features
+                 query features learned through a vanilla transformer decoder.          F       act as the Q, while the instance queries Q serve as the
+                 Transformer-based methods require the encoder to finely en-              super
+                 code the point cloud structure in complex scenes and use the           KandV. Toguidetheupdatedirectionofthesuperpointfea-
+                                                                                        tures Fsuper, we implement a contrastive learning approach,
+                 attention mechanism in the decoder to continuously update              whichenhancestheconsistencyofsuperpointfeatureswithin
+                 the features of the instance queries, aiming to learn the com-         instances and increases the differences between features of
+                 plete structure of the foreground objects as much as possible.         different instances.
+                 Mask3D[19]andSPFormer[20]arepioneeringworksuti-
+                 lizing the transformer framework for 3D instance segmenta-             3.2. Backbone
+                 tion, employing FPS and learnable queries, respectively, for           Weemploy Sparse UNet [45] as the backbone for feature
+                 query initialization. QueryFormer [21] and Maft [22] build             extraction, yielding features F, which is consistent with
+                 on Mask3D [19] and SPFormer [20] by improving query                    SPFormer[20] and Maft [22]. Next, we aggregate the point-
+                 distribution. However, these works have not thoroughly                 level features F into superpoint-level features F             via
+                 explored the importance of internal relationships between                                                                      super
+                 scene features and between query features. Our method aims             adaptive superpoint aggregation module, which will be in-
+                 to enhance relation modeling for both scene features and               troduced in the subsequent section.
+                 query features to achieve better instance segmentation.                3.3. Adaptive Superpoint Aggregation Module
+                    Relation modeling. Many 2D methods have demon-
+                 strated the importance of relation modeling. CORE [26]                 Thepurpose of this module is to aggregate point-level fea-
+                 first leverages a vanilla relation block to model the relations        tures into superpoint-level features. To emphasize distinctive
+                 amongall text proposals and further enhances relational rea-           and meaningful point features while diminishing the influ-
+                 soning through instance-level sub-text discrimination in a             ence of unsuitable features, we design the adaptive super-
+                 contrastive manner. RE-DETR [28] incorporates relation                 point aggregation module, as shown in Figure 2 (b). Specif-
+                 modeling into component detection by introducing a learn-              ically, we first perform max-pooling and mean-pooling on
+                 able relation matrix to model class correlations. Relation-            the point-level features F according to the pre-obtained su-
+                 DETR[27]exploresincorporating positional relation priors               perpoints, resulting in F       and F        respectively. Next,
+                                                                                                                   max         mean
+                 as attention biases to augment object detection. Our method            wecalculate the difference between the superpoint-level fea-
+                 is the first to explore the significance of relation priors in 3D      tures and the original point-level features F. We then utilize
+                 instance segmentation. Through the adaptive superpoint ag-             twonon-shared weight MLPs to predict the corresponding
+                                                                                   8891
+                              (a) Framwork
+                                                                                                                             Transformer Decoder
+                                                                                                                           Relation-aware Self-attention
+                                                                                                                 Query
+                                                                                                                                 Mask Attention
+                                                                                                                                      FFN
+                                                                                                                                                     Contrastive 
+                                                                                             Superpoint 
+                                                                                                                                                       Learning
+                                                                                                                                                                  Superpoint’s
+                                                                                                                              Superpoint Refinement
+                                                                                                                                    Module
+                                                                                                                                                                  Relation Prior
+                                                                           Point-level 
+                                                                                        Adaptive Superpoint
+                                                                             feature
+                                                                                                                                                   ×N
+                                                                                        Aggregation Module
+                                                                                                           Contrastive 
+                                                                                                            Learning
+                                       Input                  Sparse UNet
+                                                                                                                                   Prediction
+                              (b) Adaptive Superpoint Aggregation Module
+                                                                                                                            (c) Relation-aware Self-attention
+                                                                                                                                       Mask
+                                                                                        Softmax & 
+                                                                           Weight
+                                                                                                                            Query
+                                             Max-pooling
+                                                                                                                                                                           n
+                                                                                      Feature Weighting
+                                                                            MLP
+                                                                                                                                                                           o
+                                                                                                                                                                           i
+                                                                                                                                                                           t
+                                                                                                                                                                           n
+                                                                                                                                                                           e
+                             Point-level 
+                                                                                                                                       Bbox
+                                                                                                                                                                           t
+                                       Superpoint
+                                                                                                                                                                           t
+                                                                                                                                                                           A
+                               feature
+                                                                                                                                                                            
+                                                                                                                                                Calculate 
+                                                                                                                                                                           f
+                                                                                                                                                                           l
+                                                                                                                                     Copy
+                                                                                                                                                                           e
+                                                                                        Softmax & 
+                                                                           Weight
+                                                                                                                                                Relation
+                                                                                                                                                                           S
+                                            Mean-pooling
+                                                                                      Feature Weighting
+                                                                            MLP
+                                                                                                                                       Bbox
+                    Figure 2. (a) The overall framework of our method Relation3D. (b) The details of our proposed adaptive superpoint aggregation module. (c)
+                    Thedetails of our proposed relation-aware self-attention.
+                    weights,
+                                                                                                                               Superpoint Refinement Module
+                                        W =MLP(F −F),                                          (1)
+                                           max              1    max
+                                                                                                                                   n
+                                                                                                                                   o
+                                                                                                                                   i
+                                                                                                                                   t                           m
+                                      W          =MLP (F                −F).                   (2)                                           m
+                                          mean              2    mean
+                                                                                                                                                               o
+                                                                                                                                             o
+                                                                                                                                   n
+                                                                                                                                                               r
+                                                                                                                                             r
+                                                                                                                                   e
+                                                                                                                                                     P
+                                                                                                                                   t
+                                                                                                                                                               N
+                                                                                                                                             N
+                                                                                                                                   t
+                                                                                                                                                     L
+                                                                                                                                                               r
+                                                                                                                                             r
+                                                                                                                                   a
+                                                                                                                                                               e
+                                                                                                                                             e
+                                                                                                                                   -
+                                                                                                                                                     M
+                                                                                                                                   s
+                                                                                                                                                               y
+                    Getting the corresponding weights W                      and W          , we                                             y
+                                                                       max            mean
+                                                                                                                                   s
+                                                                                                                                                               a
+                                                                                                                                             a
+                                                                                                                                   o
+                                                                                                                                                               L
+                                                                                                                                             L
+                    apply a softmax operation to them in each superpoint. In                                                       r
+                                                                                                                                   C
+                    this way, we can obtain the contribution of each point to its
+                    corresponding superpoint. We then use these weights, which
+                    sumto1ineachsuperpoint, to perform feature weighting                                                       Query
+                    on F, resulting in F′            and F′        . It’s worth noting that               Figure 3. The superpoint refinement module. Superpoint-level
+                                               max           mean                                         features F        serve as the Q in cross-attention, while the instance
+                    the computation for each superpoint can be parallelized with                                      super
+                    point-wise MLP and torch-scatter extension library [46], so                           queries Q serve as the K and V.
+                    this superpoint-level aggregation is actually efficient. Finally,
+                    weconcatenate F′             and F′         to [F′      , F′    ] and input           reduce computational and memory costs, we do not perform
+                                           max           mean          max     min                        self-attention for self-updating F                  .  Furthermore, the
+                    themintoanMLPtoreducethe2C channelstoC,obtaining                                                                                   super
+                    the final superpoint-level features F                 ∈RM×C.                          superpoint refinement module is not applied at every decoder
+                                                                   super                                  layer. Instead, we perform the refinement of F                      every r
+                    3.4. Contrastive Learning-guided Superpoint Re-                                                                                                    super
+                            finement Module                                                               layers to reduce computational resource consumption .
+                                                                                                              Furthermore, to guide the update direction, we have de-
+                    In the previous section, we introduce the adaptive superpoint                         signed a contrastive learning mechanism, which constrains
+                    aggregation module to emphasize distinctive point features                            the consistency of superpoint features within the same in-
+                    within superpoints. Next, to further enhance the expres-                              stance and enlarge the differences between features of differ-
+                    siveness of superpoints, we will leverage query features to                           ent instances First, we can obtain the superpoint’s relation
+                    update superpoint features within the transformer decoder.                            prior RGT        based on instance annotations. If the current
+                                                                                                                    super
+                    This design, in conjunction with the original mask attention,                         scene has M superpoints, then RGT                  is an M ×M binary
+                    forms a dual-path architecture, enabling direct communica-                                                                        super
+                                                                                                          matrix defined as follows,
+                    tion between query and superpoint features. This approach
+                    accelerates the convergence speed of the iterative updates.                               GT                (1, ifiandj areinthesameinstance;
+                        Specifically, the superpoint refinement module employs                              R        (i,j) =
+                    a cross-attention mechanism for feature interaction. Here,                                super                0,   otherwise,
+                    weusethesuperpoint-level features F                       as the Q in the                                                                                       (3)
+                                                                       super
+                    cross attention, while the instance queries Q serve as the K                          where i and j represent two different superpoints. Next, we
+                    and V. The specific structure is illustrated in Figure 3. To                          will compute the similarity between F                    features, defined
+                                                                                                                                                           super
+                                                                                                   8892
+                                                                                                           ′
+               as follows,                                                       Finally, the embedding T undergoes a linear transformation
+                                                                                 to obtain R ∈ RK×K×H,whereHdenotesthenumberof
+                         S =Norm(F           )@Norm(F          )T.       (4)                 q
+                                        super             super                  attention heads.
+                                                                                    After obtaining R , we incorporate it into the traditional
+               Here, S represents the similarity matrix where each ele-                                q
+               ment quantifies the relationship between pairs of superpoint      self-attention mechanism. The specific formula is as follows,
+               features. Finally, we will apply contrastive learning by com-                                           T
+               paring S and RGT      as follows,                                                                   QK
+                               super                                                        RSA(Q)=Softmax( √             +Rq)V.           (7)
+                                             S+1 GT                                                                   C
+                              Lcont = BCE(          , R     ),           (5)
+                                                       super                     In this formulation, we have Q = QW , K = QW , and
+                                                2                                                                         q            k
+                                                                                 V =QW ,whereW ,W ,andW denotethelineartrans-
+               where Lcont is the contrastive loss computed using binary                   v           q   k         v
+               cross-entropy (BCE). This loss will encourage the model           formation matrices for query, key, and value respectively.
+               to enhance the consistency of superpoint features within          3.6. Model Training and Inference
+               the same instance while reinforcing the differences between       Apart from Maft’s losses [22], our method includes an addi-
+               features of different instances. Notably, we also add this loss   tional contrastive loss L    ,
+               function after the adaptive superpoint aggregation module,                                 cont
+               which can guide ASAM to focus on meaningful features                           L =λL +λL +λL
+               within the superpoint that help enhance the consistency of                       all     1 ce     2 bce     3 dice          (8)
+                                                                                             +λ L         +λ L        +λ L       ,
+               superpoint features within the same instance.                                    4 center      5 score     6 cont
+               3.5. Relation-aware Self-attention                                where λ , λ , λ , λ , λ , λ are hyperparameters. During
+                                                                                          1   2   3   4   5   6
+               Previous methods use traditional self-attention to model the      the model inference phase, we use the predictions from
+               relationships between queries, where each query contains          the final layer as the final output. In addition to the normal
+               a content embedding and a position embedding. They first          forwardpassthroughthenetwork,wealsoemployNMS[47]
+               addtheposition embedding to the content embedding before          onthe final output as a post-processing operation.
+               computingtheattentionmap. However,inmostmethods[19–               4. Experiments
+               22], the position embedding does not accurately match the
+               actual position of the mask predicted by the corresponding        4.1. Experimental Setup
+               query, leading to imprecise implicit modeling of positional       Datasets and Metrics. We conduct our experiments on
+               relationships. More explanation can be found in the sup-          ScanNetV2 [32], ScanNet++ [33], ScanNet200 [34], and
+               plemental materials. Inspired by Relation-DETR [27], to           S3DIS [35] datasets. ScanNetV2 comprises 1,613 scenes
+               enhance the self-attention’s ability to model positional rela-    with 18 instance categories, of which 1,201 scenes are used
+               tionships and to improve geometric relationship modeling,         for training, 312 for validation, and 100 for testing. Scan-
+               weproposearelation-aware self-attention (RSA).                    Net++contains 460 high-resolution (sub-millimeter) indoor
+                  Tobespecific, we calculate the binary mask M for each          scenes with dense instance annotations across 84 unique
+               instance query Q. Next, we calculate the bounding box             instance categories. ScanNet200 uses the same point cloud
+               (bbox) corresponding to each mask, including its center           data, but it enhances annotation diversity, covering 200
+               point and scale: x,y,z,l,w,h. With the bbox calculated,           classes, 198 of which are instance classes. S3DIS is a large-
+               we compute the relative relationships between queries as          scale indoor dataset collected from six different areas, con-
+               follows,                                                          taining 272 scenes with 13 instance categories. Following
+                  i. Positional Relative Relationship:
+                   |x −x |           |y −y |          |z −z |            previous works [22], we use the scenes in Area 5 for val-
+                 log   i    j +1 ,log      i    j +1 ,log      i   j  +1 ;       idation and the remaining areas for training. AP@25 and
+                         l                  w                   h
+                          i                   i                  i               AP@50 represent the average precision scores with IoU
+                  ii. Geometric Relative Relationship:                           thresholds of 25% and 50%, respectively. mAP is the mean
+                              l         w         h 
+                            log   i   , log    i  , log    i    ,                of all AP scores, calculated with IoU thresholds ranging
+                                  l          w            h                      from 50% to 95% in 5% increments. On ScanNetV2, we
+                                  j            j           j
+               wherei,j represents two different queries. Next, we concate-      report mAP, AP@50, and AP@25. Additionally, we report
+               nate these two sets of relationships to form an embedding,        BoxAP@50andAP@25results,asdoneinSoftGroup[18]
+               denoted as T ∈ RK×K×6. Then, following past methods,              and Maft [22]. For ScanNet200 and ScanNet++, we report
+               we use conventional sine-cosine encoding to increase the          mAP,AP@50,andAP@25. OnS3DIS,wereportAP@50
+               dimensionality of T ∈ RK×K×6d,                                    and AP@25.
+                                                                                    Implementation Details.         We build our model on
+                                       ′
+                                     T =sincos(T).                       (6)     PyTorch framework [46] and train our model on a single
+                                                                            8893
+                                                        ScanNetV2validation                  ScanNetV2test
+                             Method        mAP AP@50 AP@25 BoxAP@50 BoxAP@25 mAP AP@50 AP@25
+                           3D-SIS [14]       /    18.7    35.7       22.5        40.2     16.1   38.2    55.8           ScanNetV2
+                          3D-MPA[16]       35.3   51.9    72.4       49.2        64.2     35.5   61.1    73.7
+                          DyCo3D[49]       40.6   61.0      /        45.3        58.9     39.5   64.1    76.1
+                         PointGroup [40]   34.8   56.9    71.3       48.9        61.5     40.7   63.6    77.8
+                         MaskGroup[50]     42.0   63.3    74.0        /            /      43.4   66.4    79.2
+                          OccuSeg[51]      44.2   60.7      /         /            /      48.6   67.2    74.2
+                                                                                                                         ScanNet++
+                            HAIS[52]       43.5   64.4    75.6       53.1        64.3     45.7   69.9    80.3
+                           SSTNet[17]      49.4   64.3     74        52.7        62.5     50.6   69.8    78.9
+                          SoftGroup [18]   45.8   67.6    78.9       59.4        71.6     50.4   76.1    86.5                         Input            Baseline               Ours                   GT
+                           DKNet[53]       50.8   66.9    76.9       59.0        67.4     53.2   71.8    81.5
+                           ISBNet [41]     54.5   73.1    82.5       62.0        78.1     55.9   75.7    83.5           Figure 4. Visualization of instance segmentation results on Scan-
+                       Spherical Mask [42] 62.3   79.9    88.2        /            /      61.6   81.2    87.5           NetV2 and ScanNet++ validation set. The red boxes highlight
+                          Mask3D[19]       55.2   73.7    82.9       56.6        71.0     56.6   78.0    87.0           the key regions.
+                        QueryFormer [21]   56.5   74.2    83.3       61.7        73.4     58.3   78.7    87.4
+                          SPFormer[20]     56.3   73.9    82.9        /            /      54.9   77.0    85.1
+                            Maft [22]      58.4   75.9    84.5       63.9        73.5     57.8   77.4      /
+                            Maft‡ [22]     59.9   76.5      /         /            /      59.6   78.6    86.0
+                              Ours         62.5   80.2    87.0       66.7        75.3     62.2   81.6    90.1                  Method             ScanNet++validation                 ScanNet++test
+                                                                                                                                                mAP AP@50 AP@25 mAP AP@50 AP@25
+                      Table 2. Comparison on ScanNetV2 validation and hidden test                                         PointGroup [40]          /         /           /        8.9      14.6        21.0
+                       set. The second and third rows are the non-transformer-based and                                       HAIS[52]             /         /           /       12.1      19.9        29.5
+                       transformer-based methods, respectively. ‡ denotes using surface                                    SoftGroup [18]          /         /           /       16.7      29.7        38.9
+                       normal.                                                                                                Maft [22]          23.1      32.6        39.7      20.9      31.3        40.4
+                                                                                                                                 Ours            28.2      39.3        46.1      24.2      35.5        44.0
+                       RTX4090withabatchsizeof6for512epochs. Weemploy                                                   Table 3. Comparison on ScanNet++ validation and hidden test
+                       Maft [22] as the baseline. We employ AdamW [48] as the                                           set. ScanNet++ contains denser point cloud scenes and wider
+                       optimizer and PolyLR as the scheduler, with a maximum                                            instance classes than ScanNetV2, with 84 distinct instance classes.
+                       learning rate of 0.0002. Point clouds are voxelized with a
+                       size of 0.02m. For hyperparameters, we tune K,r as 400,                                                                                      ScanNet200 validation
+                       3 respectively. λ ,λ ,λ ,λ ,λ ,λ in Equation 8 are set                                                                 Method              mAP AP@50 AP@25
+                                                 1    2     3    4     5     6
+                       as 0.5, 1, 1, 0.5, 0.5, 1. Since ScanNet++ and ScanNet200                                                          SPFormer[20]            25.2        33.8         39.6
+                       have more categories and instances, we set K as 500. All                                                            Mask3D[19]             27.4        37.0         42.3
+                       the other hyperparameters are the same for all datasets.                                                         QueryFormer [21]          28.1        37.1         43.4
+                                                                                                                                             Maft [22]            29.2        38.2         43.3
+                       4.2. Comparison with existing methods.                                                                                   Ours              31.6       41.2          45.6
+                       Results on ScanNetV2. Table 2 reports the results on Scan-                                       Table 4. Comparison on ScanNet200 validation set. ScanNet200
+                       NetV2validation and hidden test set. Due to our focus on                                         employs the same point cloud data as ScanNetV2 but enhances
+                       modeling the internal relationships between the scene fea-                                       moreannotation diversity, with 198 instance classes.
+                       tures and between the queries, our approach outperforms
+                       other transformer-based methods, achieving an increase in                                                                   Method               AP@50 AP@25
+                       mAPby2.6,AP@50by3.7,AP@25by2.5,BoxAP@50
+                       by 2.8 and Box AP@25 by 1.8 in the validation set, and                                                                 PointGroup [40]             57.8           /
+                       a rise in mAP by 2.6, AP@50 by 3.0 and AP@25 by 4.1                                                                   MaskGroup[50]                65.0           /
+                       in the hidden test set. To vividly illustrate the differences                                                          SoftGroup [18]              66.1           /
+                                                                                                                                                SSTNet[17]                59.3           /
+                       between our method and others, we visualize the qualita-                                                                SPFormer[20]               66.8           /
+                       tive results in Figure 4. From the regions highlighted in                                                               Mask3D[19]                 68.4         75.2
+                       red boxes, it is evident that our method can generate more                                                           QueryFormer [21]              69.9           /
+                       accurate predictions.                                                                                                      Maft [22]               69.1         75.7
+                                                                                                                                           Spherical Mask [42]            72.3           /
+                           Results on ScanNet++. Table 3 presents the results on                                                                     Ours                 72.5         78.5
+                       ScanNet++validationandhiddentestset. Thenotableperfor-
+                       manceenhancementunderscores the efficacy of our method                                           Table 5. Comparison on S3DIS Area5. S3DIS contains 13 in-
+                       in handling denser point cloud scenes.                                                           stance categories.
+                           Results on ScanNet200. Table 4 reports the results on
+                       ScanNet200 validation set. The significant performance
+                       improvement demonstrates the effectiveness of our method                                         ing Area 5 in Table 5. Our proposed method achieves better
+                       in handling complex and challenging scenes with a broader                                        performance compared to previous methods, with gains in
+                       range of categories.                                                                             both AP@50andAP@25,demonstratingtheeffectiveness
+                           Results on S3DIS. We evaluate our method on S3DIS us-                                        and generalization of our method.
+                                                                                                                 8894
+                                ASAM CLSR RSA mAP AP@50 AP@25                                                        Setting          mAP AP@50 AP@25
+                         [A]      ✗         ✗        ✗     59.8      77.4      85.4                            W/ocontrastive loss    60.1      77.9       85.6
+                         [B]      ✓         ✗        ✗     60.1      77.9      85.6                             Wcontrastive loss     60.5      78.4       85.9
+                         [C]      ✗         ✓        ✗     60.9      78.7      86.2
+                         [D]      ✓         ✓        ✗     61.5      78.8      86.3                       Table 7. Effectiveness of contrastive loss to ASAM.
+                         [E]      ✗         ✗       ✓      61.0      78.5      86.0
+                         [F]      ✓         ✓       ✓      62.5      80.2      87.0
+                                                                                                                     Setting                mAP AP@50 AP@25
+                   Table 6. Evaluation of the model with different designs on                                    Wmax-pooling               62.2      79.9       86.7
+                   ScanNetV2validationset. ASAMreferstotheadaptivesuperpoint                                    Wmean-pooling               62.3      79.7       86.7
+                   aggregationmodule. CLSRreferstothecontrastivelearning-guided                         Wmax-pooling&mean-pooling           62.5      80.2       87.0
+                   superpoint refinement module. RSA refers to the relation-aware
+                   self-attention.                                                                                 Table 8. Ablation study on ASAM.
+                   4.3. Ablation Studies                                                           the network learn and converge more easily by focusing on
+                                                                                                   more relevant queries, compared to purely implicit model-
+                   Evaluation of the model with different designs. To fur-                         ing. II: ASAM and CLSR are essentially a unified entity
+                   ther study the effectiveness of our designs, we conduct ab-                     (designed to solve the same problem: better modeling of
+                   lation studies on ScanNetV2 validation set. As shown in                         scene relationships). We separated them only for clarity in
+                   Table 6, [A] represents the baseline of our method, which                       description. Both I and II are equally important for instance
+                   is Maft [22] using surface normals and NMS. [B] demon-                          segmentation, and their contributes comparably to the final
+                   strates that with the assistance of ASAM, which aims to                         performance.
+                   better aggregate point-level features into superpoint-level                         Ablation study on the adaptive superpoint aggrega-
+                   features and emphasize distinctive and meaningful point fea-                    tion module. In this section, we conduct experiments on the
+                   tures while diminishing the influence of unsuitable features,                   adaptive superpoint aggregation module (ASAM). First, we
+                   there is a performance improvement: mAP increases by 0.3,                       performanablationstudyonmax-poolingandmean-pooling,
+                   AP@50by0.5, and AP@25 by 0.2. However, due to the                               as shown in Table 8, where “W max-pooling” indicates that
+                   lack of guidance from contrastive loss (introduced in the                       ASAMincludesonlythemax-poolingbranch. Theresults
+                   CLSR),theaggregation direction of superpoints cannot be                         showthat both mean-pooling and max-pooling contribute to
+                   effectively controlled as expected, so the performance gain                     performance gains. Furthermore, to illustrate the characteris-
+                   is limited. To validate this point, as shown in Table 7, adding                 tics of the learned weight distribution in ASAM, we present
+                   contrastive loss to guide ASAM leads to further performance                     correspondingvisualization in Figure 6. From the figure, it is
+                   enhancement.                                                                    evident that ASAMplacesgreateremphasisontheedgesand
+                      [C] shows that with the help of CLSR, we can interac-                        corner regions of objects—areas that are typically distinctive
+                   tively update superpoint features, and the use of contrastive                   for each instance. Therefore, with the assistance of ASAM
+                   learning guides the update direction by enforcing consis-                       andcontrastive learning, the model is able to aggregate more
+                   tency of superpoint features within the same instance and                       discriminative superpoint features.
+                   increasing the difference between features of different in-                         Effectiveness of the relation-aware self-attention. As
+                   stances. Compared to the baseline [A], the performance                          showninFigure5, we compare the attention maps and atten-
+                   improves significantly, with mAP increasing by 1.1, AP@50                       tion weight distributions between traditional self-attention
+                   by1.3, and AP@25by0.8. [D]combinesASAMandCLSR.                                  andrelation-aware self-attention. From Figure 5(a), it can be
+                   In this design, not only the contrastive learning embedded                      observed that our proposed relation-aware self-attention has
+                   within CLSR provides ASAM with a clear direction for fea-                       more high-weight focal points in its attention map, which
+                   ture aggregation but also ASAM can offer better-initialized                     is further supported by the data in Figure 5(b). Notably, we
+                   superpoint features to CLSR. This synergistic design co-                        have excluded points with attention values ranging from 0
+                   operates well and results in a 0.6 mAP improvement. [E]                         to 0.03 from our statistical analysis, as these account for
+                   demonstrates the effectiveness of RSA, which enhances the                       the vast majority (approximately 99%) of the attention map
+                   self-attention mechanism’s ability to model positional re-                      and would otherwise obscure the meaningful patterns in our
+                   lationships and improves geometric relationship modeling.                       study. Furthermore, we substantiate this from a visualization
+                   Comparedto[A],RSAleadstoanimprovementof1.2mAP                                   perspective. As demonstrated in Figure 5(c), with the aid of
+                   and 1.1 AP@50. Finally, in [F], we present the perfor-                          RSA, the representative query can forge connections with
+                   mance of the complete model, underscoring the essential                         a broader set of relevant queries, in contrast to traditional
+                   roles played by each module in 3D instance segmentation.                        attention mechanisms that concentrate on a limited number
+                      Importance of different designs. I: RSA incorporates                         of specific queries. This enhancement facilitates the genera-
+                   explicit relationship modeling between queries, which helps                     tion of superior instance masks. These observations indicate
+                                                                                             8895
+                     Traditional 
+                    Self-attention
+                    Relative-aware 
+                    Self-attention
+                     Traditional 
+                    Self-attention
+                    Relative-aware 
+                    Self-attention
+                                       (a) Attention Map                           (b) Attention Weights Distribution               (c) Query (yellow bbox) with its highly related
+                                                                                                                                                        queries
+                    Figure 5. (a) Comparison of attention maps for traditional self-attention vs. relation-aware self-attention. We display the progression
+                    of attention maps from layer 1, 3, 5. (b) Comparison of attention weight distributions for traditional self-attention vs. relation-aware
+                    self-attention. The attention weight distributions are also shown from layer 1, 3, 5. (c) Query (yellow bbox) with its highly related
+                    queries.
+                                                                                                        position and geometric relation priors for query features,
+                                                                                                        enhancing self-attention. Additionally, the superpoint re-
+                                                                                                        finement module in CLSR forms a dual-path architecture,
+                                                                                                        enabling direct communication between query features and
+                                                                                                        superpoint features, speeding up the convergence.
+                          Input               Superpoint         Weight (max)     Weight (mean)         Figure 7. The convergence curve on ScanNet-v2 validation set.
+                    Figure 6. Visualization of weights in the adaptive superpoint
+                    aggregation module. A deeper red color indicates a higher weight                    5. Conclusion
+                    assigned to point feature during the “Softmax & Feature Weighting”
+                    stage (Figure 2 (b)).                                                               In this paper, we propose a novel 3D instance segmentation
+                                                                                                        methodcalled Relation3D. We focus on modeling the inter-
+                                                                                                        nal relationships among scene features as well as between
+                    that relation-aware self-attention achieves a more focused                          queryfeatures, an aspect that past methods have not explored
+                    attention when modeling position and geometric relation-                            sufficiently. Specifically, we introduce an adaptive super-
+                    ships. Unlike traditional self-attention, which has relatively                      point aggregation module to better represent superpoint fea-
+                    dispersed attention without any specific focal query, relation-                     tures andacontrastivelearning-guidedsuperpointrefinement
+                    aware self-attention selectively emphasizes relevant queries,                       module that updates superpoint features in dual directions
+                    resulting in a more precise and meaningful representation.                          while guiding the direction of these updates with the help
+                        Contribution to the convergence speed. As shown in                              of contrastive learning. Additionally, our proposed relation-
+                    Figure 7, our method demonstrates a faster convergence                              aware self-attention mechanism enhances the modeling of
+                    speed compared to the baseline. This improvement can be                             relationships between queries by improving the representa-
+                    attributed to the relation priors introduced by CLSR and                            tion of positional and geometric relationships. Extensive
+                    RSA:contrastive learning provides relation priors for super-                        experiments conducted on the several datasets demonstrate
+                    points to guide feature aggregation, while RSA introduces                           the effectiveness of Relation3D.
+                                                                                                  8896
+                6. Acknowledgements                                                     scans. In Proceedings of the IEEE/CVF International Confer-
+                This work was partially supported by Wenfei Yang and                    ence on Computer Vision, pages 2541–2550, 2019.
+                Tianzhu Zhang.                                                    [13] Li Yi, Wang Zhao, He Wang, Minhyuk Sung, and Leonidas J
+                                                                                        Guibas. Gspn: Generative shape proposal network for 3d
+                References                                                              instance segmentation in point cloud. In Proceedings of
+                                                                                        the IEEE/CVF Conference on Computer Vision and Pattern
+                 [1] Chungang Zhuang, Shaofei Li, and Han Ding. Instance seg-          Recognition, pages 3947–3956, 2019.
+                     mentationbased6dposeestimationofindustrialobjectsusing       [14] Ji Hou, Angela Dai, and Matthias Nießner. 3d-sis: 3d seman-
+                     point clouds for robotic bin-picking. Robotics and Computer-       tic instance segmentation of rgb-d scans. In Proceedings of
+                     Integrated Manufacturing, 82:102541, 2023.                         the IEEE/CVF conference on computer vision and pattern
+                 [2] Kyeong-Beom Park, Minseok Kim, Sung Ho Choi, and                   recognition, pages 4421–4430, 2019.
+                     Jae Yeol Lee. Deep learning-based smart task assistance      [15] Bo Yang, Jianan Wang, Ronald Clark, Qingyong Hu, Sen
+                     in wearable augmented reality.  Robotics and Computer-            Wang,AndrewMarkham,andNikiTrigoni. Learning object
+                     Integrated Manufacturing, 63:101887, 2020.                         bounding boxes for 3d instance segmentation on point clouds.
+                 [3] Alessandro Manni, Damiano Oriti, Andrea Sanna, Francesco          Advances in neural information processing systems, 32, 2019.
+                     DePace, and Federico Manuri. Snap2cad: 3d indoor environ-    [16] Francis Engelmann, Martin Bokeloh, Alireza Fathi, Bastian
+                     mentreconstruction for ar/vr applications using a smartphone       Leibe, and Matthias Nießner. 3d-mpa: Multi-proposal aggre-
+                     device. Computers & Graphics, 100:116–124, 2021.                   gation for 3d semantic instance segmentation. In Proceedings
+                 [4] Guanjun Wu, Taoran Yi, Jiemin Fang, Lingxi Xie, Xiaopeng           of the IEEE/CVF conference on computer vision and pattern
+                     Zhang, Wei Wei, Wenyu Liu, Qi Tian, and Xinggang Wang.             recognition, pages 9031–9040, 2020.
+                     4dgaussian splatting for real-time dynamic scene rendering.  [17] Zhihao Liang, Zhihao Li, Songcen Xu, Mingkui Tan, and
+                     In Proceedings of the IEEE/CVF Conference on Computer              KuiJia. Instance segmentation in 3d scenes using semantic
+                     Vision and Pattern Recognition, pages 20310–20320, 2024.           superpoint tree networks. In Proceedings of the IEEE/CVF
+                 [5] Ruijie Zhu, Yanzhe Liang, Hanzhi Chang, Jiacheng Deng, Ji-         International Conference on Computer Vision, pages 2783–
+                     ahao Lu, Wenfei Yang, Tianzhu Zhang, and Yongdong Zhang.           2792, 2021.
+                     Motiongs: Exploringexplicitmotionguidancefordeformable       [18] Thang Vu, Kookhoi Kim, Tung M Luu, Thanh Nguyen, and
+                     3dgaussiansplatting. arXiv preprint arXiv:2410.07707, 2024.        Chang D Yoo. Softgroup for 3d instance segmentation on
+                 [6] Jiahao Lu, Tianyu Huang, Peng Li, Zhiyang Dou, Cheng Lin,          point clouds. In Proceedings of the IEEE/CVF Conference on
+                     Zhiming Cui, Zhen Dong, Sai-Kit Yeung, Wenping Wang,              Computer Vision and Pattern Recognition, pages 2708–2717,
+                     and Yuan Liu. Align3r: Aligned monocular depth estimation          2022.
+                     for dynamic videos. arXiv preprint arXiv:2412.03079, 2024.   [19] Jonas Schult, Francis Engelmann, Alexander Hermans,
+                 [7] Jiahao Lu, Jiacheng Deng, Ruijie Zhu, Yanzhe Liang, Wenfei         Or Litany, Siyu Tang, and Bastian Leibe.        Mask3d
+                     Yang, Tianzhu Zhang, and Xu Zhou. Dn-4dgs: Denoised                for 3d semantic instance segmentation.   arXiv preprint
+                     deformable network with temporal-spatial aggregation for           arXiv:2210.03105, 2022.
+                     dynamic scene rendering. arXiv preprint arXiv:2410.13607,    [20] Jiahao Sun, Chunmei Qing, Junpeng Tan, and Xiangmin Xu.
+                     2024.                                                              Superpointtransformerfor3dsceneinstancesegmentation. In
+                 [8] Jonathon Luiten, Georgios Kopanas, Bastian Leibe, and Deva        ProceedingsoftheAAAIConferenceonArtificialIntelligence,
+                     Ramanan. Dynamic 3d gaussians: Tracking by persistent              pages 2393–2401, 2023.
+                     dynamic view synthesis. arXiv preprint arXiv:2308.09713,     [21] Jiahao Lu, Jiacheng Deng, Chuxin Wang, Jianfeng He, and
+                     2023.                                                             Tianzhu Zhang. Query refinement transformer for 3d instance
+                 [9] Davy Neven, Bert De Brabandere, Stamatios Georgoulis,              segmentation. In Proceedings of the IEEE/CVF International
+                     Marc Proesmans, and Luc Van Gool. Towards end-to-end              Conference on Computer Vision, pages 18516–18526, 2023.
+                     lane detection: an instance segmentation approach. In 2018   [22] Xin Lai, Yuhui Yuan, Ruihang Chu, Yukang Chen, Han Hu,
+                     IEEE intelligent vehicles symposium (IV), pages 286–291.           andJiayaJia. Mask-attention-free transformer for 3d instance
+                     IEEE, 2018.                                                        segmentation. In Proceedings of the IEEE/CVF International
+                [10] Ekim Yurtsever, Jacob Lambert, Alexander Carballo, and            Conference on Computer Vision, pages 3693–3703, 2023.
+                     KazuyaTakeda. Asurvey of autonomous driving: Common          [23] Jiahao Lu, Jiacheng Deng, and Tianzhu Zhang. Beyond
+                     practices and emerging technologies. IEEE access, 8:58443–         the final layer: Hierarchical query fusion transformer with
+                     58469, 2020.                                                       agent-interpolation initialization for 3d instance segmentation.
+                                                             ¨                          arXiv preprint arXiv:2502.04139, 2025.
+                [11] Ville V Lehtola, Harri Kaartinen, Andreas Nuchter, Risto Kai-
+                     jaluoto, Antero Kukko, Paula Litkey, Eija Honkavaara, Tomi   [24] Bowen Cheng, Alex Schwing, and Alexander Kirillov. Per-
+                     Rosnell, Matti T Vaaja, Juho-Pekka Virtanen, et al. Compar-        pixel classification is not all you need for semantic segmen-
+                     ison of the selected state-of-the-art 3d indoor scanning and       tation. Advances in Neural Information Processing Systems,
+                     point cloud generation methods. Remote sensing, 9(8):796,          34:17864–17875, 2021.
+                     2017.                                                        [25] BowenCheng,IshanMisra,AlexanderGSchwing,Alexander
+                [12] Maciej Halber, Yifei Shi, Kai Xu, and Thomas Funkhouser.           Kirillov, and Rohit Girdhar. Masked-attention mask trans-
+                     Rescan: Inductive instance segmentation for indoor rgbd            former for universal image segmentation. In Proceedings of
+                                                                             8897
+                      the IEEE/CVF Conference on Computer Vision and Pattern             [39] Harold W Kuhn. The hungarian method for the assignment
+                      Recognition, pages 1290–1299, 2022.                                     problem. Naval research logistics quarterly, 2(1-2):83–97,
+                 [26] Jingyang Lin, Yingwei Pan, Rongfeng Lai, Xuehang Yang,                  1955.
+                      HongyangChao,andTingYao. Core-text: Improving scene                [40] Li Jiang, Hengshuang Zhao, Shaoshuai Shi, Shu Liu, Chi-
+                      text detection with contrastive relational reasoning. In 2021           Wing Fu, and Jiaya Jia. Pointgroup: Dual-set point group-
+                      IEEE International Conference on Multimedia and Expo                    ing for 3d instance segmentation. In Proceedings of the
+                      (ICME), pages 1–6. IEEE, 2021.                                          IEEE/CVFconference on computer vision and Pattern recog-
+                 [27] Xiuquan Hou, Meiqin Liu, Senlin Zhang, Ping Wei, Badong                 nition, pages 4867–4876, 2020.
+                      Chen, and Xuguang Lan. Relation detr: Exploring explicit           [41] Tuan Duc Ngo, Binh-Son Hua, and Khoi Nguyen. Isbnet: a
+                      position relation prior for object detection. arXiv preprint            3dpoint cloud instance segmentation network with instance-
+                      arXiv:2407.11699, 2024.                                                 aware sampling and box-aware dynamic convolution. In Pro-
+                 [28] Xixuan Hao, Danqing Huang, Jieru Lin, and Chin-Yew Lin.                 ceedings of the IEEE/CVF Conference on Computer Vision
+                      Relation-enhanced detr for component detection in graphic               and Pattern Recognition, pages 13550–13559, 2023.
+                      design reverse engineering. In Proceedings of the Thirty-          [42] Sangyun Shin, Kaichen Zhou, Madhu Vankadari, Andrew
+                      Second International Joint Conference on Artificial Intelli-            Markham,andNikiTrigoni. Spherical mask: Coarse-to-fine
+                      gence, pages 4785–4793, 2023.                                           3d point cloud instance segmentation with spherical repre-
+                 [29] Prannay Khosla, Piotr Teterwak, Chen Wang, Aaron Sarna,                 sentation. In Proceedings of the IEEE/CVF Conference on
+                      Yonglong Tian, Phillip Isola, Aaron Maschinot, Ce Liu, and              Computer Vision and Pattern Recognition, pages 4060–4069,
+                      Dilip Krishnan. Supervised contrastive learning. Advances               2024.
+                      in neural information processing systems, 33:18661–18673,          [43] Sixiao Zheng, Jiachen Lu, Hengshuang Zhao, Xiatian Zhu,
+                      2020.                                                                   ZekunLuo,YabiaoWang,YanweiFu,JianfengFeng,TaoXi-
+                 [30] Ting Chen, Simon Kornblith, Mohammad Norouzi, and Ge-                   ang, Philip HS Torr, et al. Rethinking semantic segmentation
+                      offrey Hinton. A simple framework for contrastive learning              from a sequence-to-sequence perspective with transformers.
+                      of visual representations. In International conference on               In Proceedings of the IEEE/CVF conference on computer
+                      machine learning, pages 1597–1607. PMLR, 2020.                          vision and pattern recognition, pages 6881–6890, 2021.
+                 [31] Jiahao Lu, Jiacheng Deng, and Tianzhu Zhang. Bsnet: Box-           [44] Feng Li, Hao Zhang, Huaizhe Xu, Shilong Liu, Lei Zhang,
+                      supervised simulation-assisted mean teacher for 3d instance             Lionel MNi,andHeung-YeungShum. Maskdino: Towardsa
+                      segmentation. arXiv preprint arXiv:2403.15019, 2024.                    unified transformer-based framework for object detection and
+                 [32] Angela Dai, Angel X Chang, Manolis Savva, Maciej Hal-                   segmentation. In Proceedings of the IEEE/CVF Conference
+                      ber, Thomas Funkhouser, and Matthias Nießner. Scannet:                  on Computer Vision and Pattern Recognition, pages 3041–
+                      Richly-annotated 3d reconstructions of indoor scenes. In                3050, 2023.
+                      Proceedings of the IEEE conference on computer vision and          [45] Spconv Contributors.    Spconv: Spatially sparse convolu-
+                      pattern recognition, pages 5828–5839, 2017.                             tion library. https://github.com/traveller59/
+                 [33] Chandan Yeshwanth, Yueh-Cheng Liu, Matthias Nießner,                    spconv,2022.
+                      and Angela Dai. Scannet++: A high-fidelity dataset of 3d           [46] Adam Paszke, Sam Gross, Francisco Massa, Adam Lerer,
+                      indoor scenes. In Proceedings of the IEEE/CVF International             James Bradbury, Gregory Chanan, Trevor Killeen, Zeming
+                      Conference on Computer Vision, pages 12–22, 2023.                       Lin, Natalia Gimelshein, Luca Antiga, et al. Pytorch: An
+                 [34] David Rozenberszki, Or Litany, and Angela Dai. Language-                imperative style, high-performance deep learning library. Ad-
+                      grounded indoor 3d semantic segmentation in the wild. In                vances in neural information processing systems, 32, 2019.
+                      European Conference on Computer Vision, pages 125–141.             [47] Alexander Neubeck and Luc Van Gool.           Efficient non-
+                      Springer, 2022.                                                         maximumsuppression. In 18th international conference on
+                 [35] Iro Armeni, Ozan Sener, Amir R Zamir, Helen Jiang, Ioannis              pattern recognition (ICPR’06), volume 3, pages 850–855.
+                      Brilakis, Martin Fischer, and Silvio Savarese. 3d semantic              IEEE, 2006.
+                      parsing of large-scale indoor spaces. In Proceedings of the
+                      IEEEconference on computer vision and pattern recognition,         [48] Ilya Loshchilov and Frank Hutter. Decoupled weight decay
+                      pages 1534–1543, 2016.                                                  regularization. arXiv preprint arXiv:1711.05101, 2017.
+                                                                  ´                      [49] Tong He, Chunhua Shen, and Anton Van Den Hengel.
+                 [36] Kaiming He, Georgia Gkioxari, Piotr Dollar, and Ross Gir-
+                      shick. Mask r-cnn. In Proceedings of the IEEE international             Dyco3d: Robust instance segmentation of 3d point clouds
+                      conference on computer vision, pages 2961–2969, 2017.                   through dynamic convolution.        In Proceedings of the
+                 [37] Charles R Qi, Hao Su, Kaichun Mo, and Leonidas J Guibas.                IEEE/CVFconference on computer vision and pattern recog-
+                      Pointnet: Deep learning on point sets for 3d classification             nition, pages 354–363, 2021.
+                      and segmentation. In Proceedings of the IEEE conference            [50] Min Zhong, Xinghao Chen, Xiaokang Chen, Gang Zeng,
+                      oncomputervision and pattern recognition, pages 652–660,                and Yunhe Wang. Maskgroup: Hierarchical point grouping
+                      2017.                                                                   and masking for 3d instance segmentation. In 2022 IEEE
+                 [38] Charles Ruizhongtai Qi, Li Yi, Hao Su, and Leonidas J                   International Conference on Multimedia and Expo (ICME),
+                      Guibas. Pointnet++: Deep hierarchical feature learning on               pages 1–6. IEEE, 2022.
+                      point sets in a metric space. Advances in neural information       [51] Lei Han, Tian Zheng, Lan Xu, and Lu Fang. Occuseg:
+                      processing systems, 30, 2017.                                           Occupancy-aware 3d instance segmentation. In Proceedings
+                                                                                   8898
+         of the IEEE/CVF conference on computer vision and pattern
+         recognition, pages 2940–2949, 2020.
+       [52] Shaoyu Chen, Jiemin Fang, Qian Zhang, Wenyu Liu, and
+         Xinggang Wang. Hierarchical aggregation for 3d instance
+         segmentation. In Proceedings of the IEEE/CVF International
+         Conference on Computer Vision, pages 15467–15476, 2021.
+       [53] Yizheng Wu, Min Shi, Shuaiyuan Du, Hao Lu, Zhiguo Cao,
+         and Weicai Zhong. 3d instances as 1d kernels. In Computer
+         Vision–ECCV 2022: 17th European Conference, Tel Aviv,
+         Israel, October 23–27, 2022, Proceedings, Part XXIX, pages
+         235–252. Springer, 2022.
+                                  8899

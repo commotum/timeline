@@ -1,0 +1,91 @@
+                 Article
+                                                            World model learning                                                                                                      Actor–critic learning
+                                                                                                                                                          v       a                  r        v        a                  r        v
+                                                                                                                                                           1       1                  2        2        2                  2        2
+                                           a                                   a
+                                            1                                   2
+                                h                                    h                                    h                                              h                                    h                                    h
+                                  1                                   2                                    3                                               1                                   2                                    3
+                       z                                    z                                    z                                                                                    ˆ                                   ˆ
+                        1                                    2                                    3                                              z                                   z                                    z
+                                                                                                                                                  1                                   2                                    3
+                       enc              dec                 enc              dec                enc               dec                                   enc
+                     q                q                  q                q                   q                q                                      q
+                      1                1                   1                1                  1                1                                      1
+                      ...              ...                ...               ...                ...              ...                                    ...
+                     q                q                  q                q                   q                q                                      q
+                      N                N                  N                 N                  N                N                                      N
+                                          ˆ                                    ˆ                                   ˆ
+                         x                x                  x                 x                  x                x                                      x
+                          1                1                  2                 2                  3                3                                      1
+                 Fig. 1 | Training process of Dreamer. The world model encodes sensory inputs                                   reconstructed as x̂ using the decoder (dec) to shape the representations.  
+                                                                                                                                                         t
+                 x using the encoder (enc) into discrete representations z  that are predicted                                  The actor and critic predict actions a  and values v and learn from trajectories 
+                   t                                                                         t                                                                                   t                t
+                 by a sequence model with recurrent state h  given actions a . The inputs are                                   of abstract representations ẑ and rewards r predicted by the world model.
+                                                                          t                     t                                                                      t                  t
+                 outcomes. The components are trained concurrently from replayed                                                loss          , the dynamics loss                  and the representation loss                      with 
+                                                                                                                                       Lpred                               Ldyn                                              Lrep
+                 experience while the agent interacts with the environment. To succeed                                          correspond ing loss weights β                       = 1, β      = 1 and β        = 0.1:
+                                                                                                                                                                              pred         dyn               rep
+                 across domains, all three components need to accommodate different 
+                 signal magnitudes and robustly balance terms in their objectives. This                                                                   T                                                                   
+                                                                                                                                         LL()ϕE≐                ((βϕ)+βϕLL()+(βϕ)),
+                 is challenging as we are not only targeting similar tasks within the same                                                            qϕ ∑        pred pred              dyn dyn              rep rep         
+                                                                                                                                                          t=1                                                                 
+                 domain but also aiming to learn across diverse domains with fixed                                                                                                                                            
+                 hyperparameters. This section introduces the model components and                                              where E  is the expected value.
+                                                                                                                                            qϕ
+                 their robust loss functions.                                                                                       The prediction loss trains the decoder and reward predictor via the 
+                                                                                                                                symlog squared loss described later, and the continue predictor via 
+                 World model learning                                                                                           logistic regression. The dynamics loss trains the sequence model to 
+                 The world model learns compact representations of sensory inputs                                               predict the next representation by minimizing the Kullback–Leibler 
+                 through autoencoding24 and enables planning by predicting future                                               (KL) divergence between the predictor p (z∣h) and the next stochas-
+                                                                                                                                                                                               ϕ t t
+                 representations and rewards for potential actions. We implement the                                            tic representation q (z∣h, x). The representation loss, in turn, trains 
+                                                                                                                                                               ϕ t t t
+                                                                                     25
+                 world model as a recurrent state-space model , shown in Fig. 1. First, an                                      the representations to become more predictable, allowing us to 
+                 encoder maps sensory inputs x to stochastic representations z for each                                         use a factorized dynamics predictor for fast sampling during imagi-
+                                                               t                                              t
+                 time step t in the training sequence. Then, a sequence model with recur-                                       nation training. The two losses differ in the stop-gradient operator 
+                 rent state h  predicts the sequence of these representations given past                                        sg(⋅) and their loss scale. To avoid a degenerate solution where the 
+                                  t
+                 actions a . The concatenation of h and z forms the model state from                                            dynamics are trivial to predict but contain no information about 
+                               t−1                                     t        t
+                 which we predict rewards r and episode continuation flags c ∈ {0, 1}                                           the input, we employ free bits26 by clipping the dynamics and repre-
+                                                           t                                                   t
+                 and reconstruct the inputs to ensure informative representations:                                              sentation losses below the value of 1 nat ≈ 1.44 bits. This disables them  
+                                                                                                                                while they are already minimized well to focus learning on the predic-
+                                   Sequence model:=hf(,hz,)a                                                                    tion loss:
+                                                                            t    ϕ     tt−1    −1    t−1
+                                   Encoder:                               zq~(zh,)x
+                                                                            t    ϕ ttt                                                    L      ()ϕp≐−log          (|xz,)hp−log             (|rz,)hp−log           (|cz,)h
+                                                                                                                                            pred                  ϕ ttt                    ϕ ttt                   ϕ ttt
+                                                                            ̂̂
+                                   Dynamics predictor:~zp()zh                                                                             L ()ϕq≐∥max(1,KL[sg( (|zh,)xp)(zh|)])
+                                                                            t    ϕ tt                                                        dyn                              ϕ ttt              ϕ tt
+                                                                            ̂̂
+                                   Reward predictor:~rp(,rhz)                                                                             L ()ϕq≐∥max(1,KL[(zh|,xp)sg( (|zh))])
+                                                                           t    ϕ ttt                                                        rep                         ϕ ttt                  ϕ tt
+                                                                            ̂̂
+                                   Continue predictor:~cp(,chz )
+                                                                            t    ϕ ttt
+                                                                            ̂̂                                                      Previous world models require scaling the representation loss 
+                                   Decoder:                               xp~(xh,)z
+                                                                            t    ϕ ttt                                                                                                                                                 22
+                                                                                                                                differently based on the visual complexity of the environment . 
+                                                                                                                                Complex scenes contain details unnecessary for control and thus 
+                     Here, the tilde (~) indicates random variables sampled from their                                          prompt a stronger regularizer to simplify the representations and 
+                 corresponding distribution. Figure 3 visualizes long-term video pre-                                           make them easier to predict. Simple graphics where individual pix-
+                 dictions of the world model. Additional video predictions are shown                                            els matter for the task require a weaker regularizer to extract fine 
+                 in Extended Data Fig. 1. The encoder and decoder use convolutional                                             details. We find that combining free bits with a small representation 
+                 neural networks for image inputs and multilayer perceptrons (MLPs)                                             loss scale resolves this dilemma, allowing for fixed hyperparameters 
+                 for vector inputs. The dynamics, reward and continue predictors are                                            across domains. Moreover, transforming vector observations using 
+                 also MLPs. The representations are sampled from a vector of softmax                                            the symlog function described later prevents large inputs and large 
+                 distributions and we take straight-through gradients through the                                               reconstruction gradients, further stabilizing the trade-off with the 
+                                       23
+                 sampling step . Given a sequence batch of length T with inputs x1:T,                                           representation loss.
+                 actions a1:T, rewards r1:T and continuation flags c1:T, the world model                                            We occasionally observed spikes in the Kullback–Leibler losses 
+                 parameters ϕ are optimized end-to-end to minimize the prediction                                               in earlier experiments, consistent with reports for deep variational 
+                 648 | Nature | Vol 640 | 17 April 2025

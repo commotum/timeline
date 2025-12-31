@@ -1,0 +1,664 @@
+
+
+===== Page 1 =====
+                                   SparseVoxFormer:SparseVoxel-basedTransformerfor
+                                                    Multi-modal 3D Object Detection
+                                        1            2                     1                2                      2                    1
+                    Hyeongseok Son           Jia He       Seung-In Park         Ying Min         YunhaoZhang            ByungIn Yoo
+                                                  1SamsungElectronics, AI Center, South Korea
+                                              2SamsungR&DInstitute China Xi’an (SRCX), China
+                         {hs1.son, jia01.he, si14.park ying.min, yunhao.zhang, byungin.yoo}@samsung.com
+                                        Abstract                                 to their ability to provide accurate localization. However,
+                                                                                 LiDAR sensors have clear limitations; the density of the
+               Most previous 3D object detection methods that leverage           point cloud significantly decreases as the distance from the
+               the multi-modality of LiDAR and cameras utilize the Bird’s        sensor increases, leading to a considerable drop in accuracy
+               Eye View (BEV) space for intermediate feature represen-           for objects at long range [13]. Given that employing high-
+               tation. However, this space uses a low x, y-resolution and        specification LiDAR sensors is cost-inefficient, a plausible
+               sacrifices z-axis information to reduce the overall feature       solution would be to incorporate a camera modality.
+               resolution, which may result in declined accuracy. To tackle         Recent multi-modal approaches [1, 8, 22, 24, 30, 42, 43]
+               the problem of using low-resolution features, this paper fo-      combining LiDAR and camera data have achieved new
+               cuses on the sparse nature of LiDAR point cloud data. From        state-of-the-art performances in 3D object detection for au-
+               ourobservation,thenumberofoccupiedcellsinthe3Dvox-                tonomous driving. These approaches typically use a BEV
+               els constructed from a LiDAR data can be even fewer than          space to fuse multi-modal features from LiDAR and cam-
+               the number of total cells in the BEV map, despite the vox-        era data, primarily due to the significant computational de-
+               els’ significantly higher resolution. Based on this, we intro-    mandsofdirectly utilizing high-resolution 3D features. De-
+               duce a novel sparse voxel-based transformer network for           spite their practical achievements, these methodspotentially
+               3D object detection, dubbed as SparseVoxFormer. Instead           lose 3D geometric information due to lower resolution and
+               of performing BEV feature extraction, we directly lever-          suppressedz-axisinformation.Webelievethatthereisroom
+               age sparse voxel features as the input for a transformer-         for improvement by exploiting the rich geometric informa-
+               baseddetector. Moreover, with regard to the camera modal-         tion present in 3D features.
+               ity, we introduce an explicit modality fusion approach that          We observe that a point cloud of LiDAR data is in-
+               involves projecting 3D voxel coordinates onto 2D images           herently sparse, as are the voxels constructed from this
+               and collecting the corresponding image features. Thanks           data. Consequently, while the raw voxels occupy a high-
+               to these components, our approach can leverage geomet-            resolution 3D space, the number of valid cells is not ex-
+               rically richer multi-modal features while even reducing the       tensive. For instance, voxel features with a resolution of
+               computational cost. Beyond the proof-of-concept level, we         360×360×11haveacomparablenumberofcellstothatof
+         arXiv:2503.08092v1  [cs.CV]  11 Mar 2025further focus on facilitating better multi-modal fusion andBEVfeatures with a lower resolution of 180 × 180, result-
+               flexible control over the number of sparse features. Finally,     ing in 32,400 cells. This is surprising given that the voxel
+               thorough experimental results demonstrate that utilizing a        features originally have a total cell count 41 times greater
+               significantly smaller number of sparse features drastically       than that of the BEV features. This suggests that by utiliz-
+               reduces computational costs in a 3D object detector while         ing the sparsity of data, we can fully leverage the benefits of
+               enhancing both overall and long-range performance.                3Dvoxelfeaturesandrichergeometricinformation,achiev-
+                                                                                 ing better performance while using fewer computational re-
+                                                                                 sources than when using BEV features.
+               1. Introduction                                                      Basedonthisimportantobservation, we propose a novel
+                                                                                 multi-modal 3D object detection framework directly us-
+               3Dobject detection is a critical task in real-world applica-      ing sparse voxel features, dubbed as SparseVoxFormer. To
+               tions such as autonomous driving. A prominent approach to         this end, we employ a transformer decoder architecture like
+               3D object detection in autonomous driving involves using          DETR[4]forourdetectorbecausethisstructure can accept
+               LiDAR sensors [14, 19, 27, 28, 36, 40], primarily thanks          the sparse 3D voxel features intactly thanks to the nature of
+
+
+===== Page 2 =====
+                this architecture to receive 1D serialized inputs. The conver-        computation cost,
+                sion of dense voxel features into sparse representations can        • An accurate, explicit multi-modal fusion approach, real-
+                beachievedthroughstraightforwardfilteringofzero-valued                ized by the benefit of 3D voxel features carrying 3D po-
+                features. Obtaining voxel features with a higher resolution           sitional coordinates,
+                is done by deriving intermediate features from a conven-            • Multi-modal feature refinement and additional feature
+                tional LiDARbackbone,whichimplyingthatweratheruses                    sparsification for more sparse yet well-fused multi-modal
+                a less computational cost than that of BEV features.                  features, which also enable flexible control over the num-
+                   Utilizing 3D voxel features has another benefit in multi-          ber of sparse features.
+                modal fusion with a image modality. 3D positional coor-
+                dinates of all voxels are embedded to the voxel features            2. Related Work
+                so that each voxel feature can be explicitly and accurately         Typically, 3D object detection approaches for autonomous
+                projected to a corresponding image feature. By simply con-          driving utilize datasets such as KITTI [9], Waymo Open
+                catenating each voxel and the corresponding image feature,          Dataset [31], and nuScenes [3]. Given the differences in
+                we can perform explicit and accurate multi-modal feature            view coverage and multi-modality among these datasets,
+                fusion. On the other hand, previous approaches depend on            mostapproachesfocusononespecificdataset.Inthispaper,
+                depth estimation for explicit fusion [17, 24, 42] or implicit       wetarget multi-modal 3D object detection and thus specifi-
+                fusion via transformer attention [39], which can eventually         cally focus on the nuScenes dataset, which is unique in that
+                lead to erroneous multi-modal alignment and weak multi-
+                modal information fusion.                                           it is the only one to provide 360◦ view coverage and full
+                   While our fundamental design has already successfully            multi-modality with LiDAR and camera sensors.
+                improved the performance of previous BEV-based models
+                whilesignificantly reducing the numberofmulti-modalfea-             3D object detection with a single modality            3D ob-
+                tures used, further enhancements can be achieved through            ject detection with a camera modality is a common set-
+                the utilization of sparse feature-specific operations. Firstly,     ting in computer vision and has been extensively studied.
+                the majority of parameters in a previous LiDAR backbone             In a standard 3D object detection task from a single im-
+                are used for processing dense features and are thus not uti-        age [2, 25, 29, 35, 37], the input camera space could be
+                lized in our architecture, implying that our basic detector         sufficient for detection outputs. However, in autonomous
+                could use incompletely encoded features. To address this,           driving, the output space needs to be a 3D world space sur-
+                we employ a recently proposed sparse feature refinement             rounding the ego-vehicle, covered by multiple images with
+                module [33] to fully encode the geometric information in            normal field-of-views. This introduces a representation gap
+                our sparse voxel features. We also discover that this refine-       between the input and output spaces. For this reason, sev-
+                ment can be more effectively applied to our multi-modal             eral works [11, 18] use a BEV space for their representation
+                fusedfeaturesratherthansolelytotheLiDARfeatures.Sec-                space. However, transforming image features to a 3D world
+                ondly, a problem arises due to the varying number of trans-         space or BEV space requires additional depth information.
+                former tokens from LiDAR samples, which is caused by                   In the field of 3D object detection for autonomous driv-
+                differing levels of sparsity. To address this, we implement         ing, using a LiDAR modality [19, 28, 40] is another main-
+                an additional feature elimination technique. This not only          stream area of research. Given that LiDAR data takes the
+                reduces the computational cost but also maintains a consis-         form of point clouds, it provides high localization accuracy
+                tent number of transformer tokens, irrespective of the spar-        for objects. Unlike the camera modality, the LiDAR space
+                sity variations in the LiDAR data.                                  can be considered as a unified space for both input and out-
+                   Extensive experimental results validate that sparse but          put modalities. However, 3D voxel features of LiDAR data
+                accurately fused multi-modal features can effectively de-           require significant computational resources due to the num-
+                tect long-range objects by exploiting fine-level geomet-            berofcells.Hence,toreducethecomputationalcomplexity,
+                ric features inherent in high-resolution 3D voxels. Finally,        recent works [14, 27, 36] also adopt a BEV space instead
+                our approach achieves state-of-the-art performance on the           of a 3D space. As a result, recent approaches with either
+                nuScenes dataset [3] with a faster inference speed.                 a LiDAR or camera [20, 41] modality tend to use a BEV
+                   Tosummarize, our contributions include:                          space for feature representation. However, this may result
+                • A novel multi-modal 3D object detection framework,                in overlooking 3D geometric information in high-resolution
+                  breaking the current paradigm to use a BEV space and              features, especially information along the z-axis.
+                  achieving a state-of-the-art performance in 3D object de-            More recently, Chen et al. [6] and Zhang et al. [45]
+                  tection on the nuScenes dataset,                                  present frameworks for fully sparse 3D object detection
+                • Direct utilization of sparse 3D voxel features to exploit a       based on a LiDAR modality, which uses sparse voxel fea-
+                  higher-resolution geometric information while reducing a          tures in 3D object detection heads. However, there are three
+
+
+===== Page 3 =====
+                                          Figure 1. Architecture comparison between CMT [39] and our SparseVoxformer.
+                significant distinctions from our approach. Firstly, they em-      However, these methods still utilize a BEV space for their
+                ploy a sparse height compression module that suppresses            multi-modal fusion, which may result in a loss of 3D geo-
+                the z-axis of the 3D voxel features into 2D sparse voxel           metric information.
+                features prior to inputting it into a 3D object detector. This        Contrary to previous approaches, Li et al. [17] recently
+                can be regarded as using sparse BEV features. Secondly,            introduce a new approach for 3D object detection that uti-
+                they do not present a multi-modal setting incorporating a          lizes 3D voxel features. Nevertheless, this method uses
+                cameramodality,whereasoursincorporatesasimpleyetef-                dense3Dfeaturesdirectlywithoutmitigatingthelargecom-
+                fective multi-modal fusion approach suitable for sparse 3D         putational load, caused by the 3D resolution. Distinct from
+                voxel features. Finally, we employ a Transformer-based de-         all the previous approaches, to the best of our knowledge,
+                tector for exploiting sparse 3D voxel features, which is also      wearethefirst to adopt sparse 3D voxel features for 3D ob-
+                a novel concept that has not been explored in previous liter-      ject detection. Our approach capitalizes on 3D geometric
+                ature.                                                             information while maintaining a low computational cost.
+                Multi-modal 3D object detection for autonomous driv-               Wang et al. [34] introduce a unified backbone for embed-
+                ing   The fusion of LiDAR and camera sensors is a com-             ding multi-modal data using a transformer encoder archi-
+                                                                                   tecture. However, they ultimately employ BEV pooling for
+                monapproach in 3D object detection for autonomous driv-            the output features of the backbones, which may result in
+                ing, known for its synergistic relation. The camera modal-         the loss of 3D geometric information in multi-modal fea-
+                ity provides semantic information, supplementing the spar-         tures. A recent method, CMT [39], utilizes BEV features
+                sity at long-range distances inherent in the LiDAR modal-          for a LiDAR modality but does not explicitly transform the
+                ity. Conversely, the LiDAR modality supplies accurate lo-          image features into a BEV space. Instead, they introduce
+                calization information, which is often lacking in the cam-         a cross-modal transformer that receives image and LiDAR
+                era modality. However, merging these two types of data to          features as transformer key & value pairs, and implicitly
+                form a unified feature set for multi-modal vision tasks can        fuses them using cross-attention. However, LiDAR features
+                be challenging due to their inherent heterogeneity. To ad-         are still extracted in the BEV space.
+                dressthis,moststate-of-the-artapproachesuseaBEVspace
+                as a common ground for multi-modal fusion, following the           Feature sparsification in Transformer-based detection
+                developments in the literature regarding single modality           DETR-based architecture has emerged in 2D object detec-
+                processing. Liang et al. [22] and Liu et al. [24] transform        tion [4, 16, 26, 46, 47, 49] and has achieved state-of-the-art
+                2Dimage features into the BEV space by employing view              performance. This architecture can be readily extended to a
+                transformation based on image depth estimation and then            3Dobject detector [1, 5, 37, 39]. In the 2D object detection
+                fuse them with LiDAR BEV features. Yang et al. [42] in-            literature, several studies [26, 47] have aimed to reduce the
+                troduce a cross-modal fusion approach that utilizes blocks         number of input transformer tokens to enhance efficiency,
+                for both LiDAR-to-camera and camera-to-LiDAR fusion.               which appears to be similar with our approach. However,
+                However, the multi-modal fusion in these approaches could          these approaches reduce the number of input features by
+                be incomplete due to inaccuracies in depth distribution es-        utilizing objectness. On the contrary, our method leverages
+                timated from a single image. Additionally, the overhead of         the sparse nature of the LiDAR point cloud, which does not
+                image view transformation could be significant.                    require additional knowledge to discriminate unwanted fea-
+                   Fu et al. [8] and Song et al. [30] address the issue of in-     tures. To the best of our knowledge, this is the first work
+                accurate multi-modalfusion,whichoccursduetothenature               that employssparse3Dvoxelfeaturesdirectlyfor3Dobject
+                of depth estimation-based image projection. Yin et al. [43]        detection. Furthermore, unlike the cases of 2D object detec-
+                propose two fusion approaches: hierarchical multi-modal            tion, where detection accuracy is slightly compromised, our
+                fusion in a BEV space and instance information fusion.             approach even enhances detection accuracy, demonstrating
+
+
+===== Page 4 =====
+                Figure 2. A key idea to use sparse voxel features instead of BEV features. BEV features, obtained from lower-resolution and z-axis
+                suppressed features, rather can produce a comparable number of tokens to that of higher-resolution voxel features.
+                the effectiveness of utilizing sparse multi-modal features in      model contains more sub-modules, in this backbone equa-
+                this context.                                                      tion, for notational simplicity, we represent key modules.
+                                                                                   Theentire process will be visualized in Fig. 4.
+                3. Architecture of SparseVoxFormer
+                Asourworkpresentanewparadigmof3Dobjectdetection                    Ourapproach Distinctfromthepreviousapproachesthat
+                architecture (Fig. 1), which directly utilizes sparse voxel        useBEVfeatures,wedirectlyfeedsparse3Dvoxelfeatures
+                features instead of BEV features, for comprehensive un-            into our 3D object detector (Fig. 2a). We can easily obtain
+                derstanding, we first present our basic architecture essen-        3Dvoxelfeatureswithahigherresolutionbyomittingcom-
+                tial for handling sparse features and then describe more           putations for sparse encoding (Sparse encoderb) and BEV
+                sparsefeatures-specificarchitecture.Beforedelvingintothe           feature refinement (FCN) from Eq. 1:
+                details, we first visit the key difference between obtaining           F      =
+                                                                                        lidar                                                (2)
+                BEVfeatures and our sparse voxel features.                             ϕsparse(L) = Sparse encoder (Voxelize(L)).
+                                                                                        lidar                          f
+                Previous BEV-based approaches          As a LiDAR data for            Theextraction of sparse 3D voxel features is straightfor-
+                autonomous driving usually cover a wide area such as the           ward. The voxel features of a sparse LiDAR point cloud are
+                range of [-54m, +54m] in x-, y-axes and the range of [-5m,         also sparse, signifying that the sparse features can be ob-
+                +3m]inz-axis, raw LiDAR features need 3D voxels with a             tained by omitting zero-filled features and serializing valid
+                highresolution(e.g.1440×1440×40)toeffectivelycapture               feature cells as follows:
+                fine-level geometric details. However, utilizing such voxel                Fsparse = Flatten({f ∈ F          |f ̸= 0}).
+                                                                                             lidar                       lidar
+                features directly would be very cost-intensive, so that pre-       3.1. Transforemr Tokens from Sparse Voxel Fea-
+                vious works reduce the feature resolution by transforming                tures
+                the voxel features into BEV features with the resolution of
+                180×180(Fig. 2b). In this process, the voxel features can          Thanks to the property of transformers that accepts serial-
+                lose fine-level structural information and z-axis height in-       ized tokens from input data in any form, the transformer-
+                formation. This LiDAR backbone is described as:                    based decoder can directly process our sparse 3D features
+                                                                                   without the need for a regular topology. i.e., we can intactly
+                          ϕbev (L) = FCN(Sparse encoder (                          employ a previous DETR-like transformer architecture [4]
+                            lidar                                b        (1)
+                             Sparse encoderf(Voxelize(L)))),                       used in CMT [39]. We feed the sparse feature with posi-
+                                                                                   tional embedding to the transformer decoder of 3D object
+                where L is input LiDAR sweeps and ϕbev             denotes a       detector as:
+                                                             lidar
+                LiDAR backbone model of the previous BEV-based ap-                                  oˆ = ϕ       (F′sparse,q),               (3)
+                proach [39]. FCN denotes a fully convolutional net-                                       decoder   lidar
+                work used in [40]. For the next derivation, we divide              where F′ denotes features F that is combined with the po-
+                Sparse encoder into front and back parts and denote them           sitional embedding, and oˆand q denotes output cuboids and
+                with subscripts f and b, respectively. While the backbone          initial transformer queries, respectively.
+
+
+===== Page 5 =====
+                                                                                            where T                       and K denote 4 × 4 LiDAR-to-
+                                                                                                      LiDAR→Camera
+                                                                                            camera transform matrix and camera intrinsic parameters,
+                                                                                            respectively. This process is depicted in Fig. 3.
+                                                                                                This implies that we can obtain paired features of Li-
+                                                                                            DAR and image features (Fsparse and F(u,v) , respec-
+                                                                                                                               lidar            image
+                                                                                            tively) while preserving the sparsity by:
+                                                                                                       Fsparse      =Concat(Fsparse,F(u,v) ).                (4)
+                                                                                                         combined                  lidar     image
+                                                                                                Wefoundthatfusingthesemulti-modal features by only
+                                                                                            a simple concatenation significantly enhance detection per-
+                                                                                            formance. It does not increase a computational overhead
+                                                                                            in the transformer decoder because it does not change the
+                                                                                            numberofinput tokens while CMT does increase.
+                                                                                            3.3. Multi-modal Sparse Feature Refinement
+                 Figure 3. Explicit multi-modal fusion without image depths is              Necessity of additional feature refinement               We found
+                                                                                                         ¨
+                 available in our voxel-based approach since each valid cell in 3D          that our naıve LiDAR backbone would be insufficient to
+                 voxels already possess 3D coordinates, required for LiDAR to               fully encode fine-level geometric features as we only use
+                 camera transformation. A LiDAR point can be easily projected               partial computations (about 30%) of a LiDAR backbone, as
+                 to the camera space by a pre-defined LiDAR-camera transforma-              shown in Fig. 4 and will be analyzed in Table 4. The com-
+                 tion matrix. Similarly, each valid voxel feature has a corresponding       putations are primarily used for adjusting the 3D resolution
+                 projected image feature by the same transformation matrix.                 of voxel features in the sparse encoder, and computations
+                                                                                            for feature refinement are absent. To remedy this, we em-
+                     Unlike CMT, the positional part for keys can be directly               ploy DSVT [33] for our voxel feature refinement, which
+                 encoded into 3D positional embedding E             (x,y,z) by us-          can refine sparse features while preserving the sparsity of
+                                                                 pos                        the features. After passing DSVT blocks, the result LiDAR
+                 ing the voxel feature coordinates (x,y,z). Then, the com-                  features have richer geometric information.
+                 bined feature F′ is defined by:
+                                     F′ = F +E          (x,y,z).                            Deepfusionmodule Inourmulti-modalfusionapproach,
+                                                    pos                                     we explicitly combine LiDAR and camera features while
+                     The query q for the first transformer decoder layer is in              preserving the sparsity of the LiDAR features. In this case,
+                 the form of a learnable vector following DETR and CMT,                     wecanalsoconsiderapplyingDSVTnotonlytotheLiDAR
+                 constructed by the same positional embedding Epos of ran-                  features but to the fused features because the fused features
+                 domlyinitializedof3Dcoordinatesof(x,y,z).Thesecoor-                        now have the same form of the LiDAR features. By doing
+                 dinates are trained in the training phase and fixed in the test-           so, the additional sparse feature refinement module can fa-
+                 ing phase. In this transformer-based architecture, the com-                cilitate the multi-modal fusion as well as refine sparse fea-
+                 putational complexity is almost proportional to the number                 tures for encoding fine-level geometric information.
+                 of key & value tokens. Therefore, reducing the number of                       To this end, we introduce a deep fusion module (DFM)
+                 tokens by receiving sparse features consequently reduces                   to apply the DSVT module into the multi-modal fused fea-
+                 the computational cost.                                                    tures. Previous methods typically employ single modality-
+                 3.2. Explicit Multi-modal Fusion with Sparse Fea-                          wisefeaturerefinement,followedbymulti-modalfusionac-
+                         tures                                                              complished through concatenation of the refined features.
+                                                                                            Ontheotherhand,wedirectlyrefineourmulti-modalsparse
+                 In our sparse voxel-based approach, multi-modal fusion                     features by extending Eq. 4 to:
+                 with image features is more intuitive than in BEV-based ap-
+                 proaches. For instance, Liang et al. [21] handle the one-to-                   Fsparse      =DFM(Concat(Fsparse,F(u,v) )),                  (5)
+                                                                                                  combined                           lidar      image
+                 many mapping between a BEV point and image points by                       where DFM denotes the deep fusion module, which con-
+                 adoptingtheconceptofcontinuousfusion.Incontrast,since                      sists of a sequence of DSVT blocks [33].
+                 our 3D voxel features carry their 3D positional coordinates
+                 (x,y,z), they can be accurately projected to image feature                 3.4. Redundant Feature Elimination
+                 space by:
+                                                                                            Despite our basic voxel sparsification which removes more
+                                T                                             T
+                       (u,v,1) = K ·T                           · (x,y,z,1) ,               than 90%featuresintheoriginalvoxelfeatures, the number
+                                            LiDAR→Camera
+
+
+===== Page 6 =====
+                   Figure 4. Feature processing to produce BEV features in a LiDAR backbone in CMT [39]. Our sparse voxel features are intermediate
+                   results in this process (in 3D sparse encoder). Voxelization, voxel layer, and voxel encoder do not contain learnable parameters.
+                                    Model                 mAP         NDS           Feat. Res          #oftokens        Detector cost (GFLOPs)           Modelsize (M)
+                                 UVTR[17]                  65.4       70.2       180×180×5               162,000                      -                         88.9
+                                  CMT[39]                  70.3       72.9       180×180×1                62,400                    163.6                       83.9
+                          SparseVoxFormer-base             70.8       73.2      180×180×11                18,000                    61.3                        77.5
+                                                         Table 1. Effect of sparse multi-modal features on the nuScenes val set [3].
+                       Application of DSVT              CMT                 SparseVoxFormer               # of tokens      mAP         NDS
+                                                  mAP         NDS          mAP         NDS                    Full         72.3        74.5      Voxel size (m)    mAP      NDS
+                              None                70.3         72.9        70.8         73.2                  Half         72.2        74.4           0.20         70.5     72.7
+                              LiDAR            70.8(+0.5)   73.2(+0.3)  71.7(+0.9)   74.4(+1.2)             10,000         72.2        74.4           0.10         71.3     73.7
+                     Multi-modal (deep fusion)      -           -       72.3(+1.5)   74.5(+1.3)              7,500         72.1        74.3           0.075        72.2     74.4
+                   Table 2. Effect of sparse feature refinement via DSVT (deep fu-                           5,000         70.0        73.4           0.05         72.5     74.9
+                   sion) according to an applied modality.                                                   2,500         55.5        65.8
+                                                                                                       Table 3. Accuracy according to the number of remaining trans-
+                   of fully sparse features may still introduce redundant com-                         former tokens (left) and input voxel resolutions (right).
+                   putations, particularly since many of these features pertain
+                   in backgrounds like buildings and roads, which are irrele-                          train our models for 20 epochs, specifically with GT sam-
+                   vantfor3Dobjectdetection.Moreover,distinctfromthe2D                                 pling for first 15 epochs and without the sampling for later
+                   object detection case [26, 47], the different sparsity of Li-                       5 epochs. We use VoVNet [15] as a image backbone, and
+                   DARdata may cause computational instability by produc-                              a part of VoxelNet [48] as a LiDAR backbone as shown in
+                   ing different number of transformer tokens. To handle these                         Fig. 4. We use voxel features with the final resolution of
+                   problems,inspiredby[26,47],wepresentanadditionalfea-                                180×180×11withtheinputvoxelsizeof0.075mforthe
+                   ture elimination scheme which removes the majority of our                           following experiments unless we notify.
+                   sparse features before they are fed into the detector.
+                       Tothis end, we employ an auxiliary binary classification                        Evaluation metrics           Weusetwoevaluation metric in this
+                   head before the transformer decoder. Profiting from the na-                         paper.FirstismAP(meanAveragePrecision),whichissim-
+                   ture of our sparse features, each of which carries central co-                      ilar to 2D object detection, but defined by using an overlap
+                   ordinates (x,y,z), each feature can be directly supervised                          between3Dcuboidsofapredictionanditslabelinstead2D
+                   by whether the coordinates is belong to the cuboids of ob-                          boxesofthem.SecondisNDS(NuscenesDetectionScore),
+                   ject detection annotations. To train the auxiliary head, we                         which considers five factors: translation, scale, orientation,
+                   utilize focal loss [23] with a binary label. A label is as-                         velocity, and attribute errors of the cuboid of each instance.
+                   signed a value of 1 if a voxel feature belongs to any bound-
+                   ing cuboid of the annotations, and vice versa. To prevent                           4.1. Component Analysis
+                   a true negative case, we use more generous positive labels                          Effectiveness of using sparse voxels (baseline)                   This pa-
+                   by dilating the size of the cuboids by 50%. We can elimi-                           per presents a new paradigm to use sparse 3D voxel fea-
+                   nate redundant background features by retaining the Top-K                           tures from the multi-modal input of LiDAR and cameras
+                   features based on the confidence score of the trained head,                         for 3D object detection. Our SparseVoxFormer uses high-
+                   implying that the detector uses a fixed number of tokens.                           resolution features more effectively than UVTR [17], which
+                   4. Experimental Results                                                             utilizes full 3D voxel features, thanks to the sparse nature of
+                                                                                                       LiDARdata(refer to Table 1).
+                   Implementation details              Following to CMT, we use bi-                        Furthermore, compared to the state-of-the-art BEV-
+                   partite matching [4] for set prediction, focal loss [23] for                        based model (CMT [39]), the only modifications from the
+                   classification , L1 loss for cuboid regression, and query de-                       CMTmodeltoadopttheuseofmulti-modalsparsefeatures
+                   noising [16]. We use the nuScenes training dataset [3] and                          allow our base model to achieve higher accuracy (mAP)
+
+
+===== Page 7 =====
+                                                       LiDARbackbone            Decoder (Detector)               Total
+                                                    params          cost       params       cost      mAP NDS           cost∗
+                                 CMT[39]              8.5          155.1         4.8       163.6      70.3   72.9       318.7
+                           SparseVoxFormer-base   2.5(−71%)     50.0(−68%)       4.5    61.3(−63%)    70.8   73.2   111.3(−65%)
+                              CMTw/DSVT               18.0         347.5         4.8       163.6      70.8   73.2       511.1
+                             SparseVoxFormer      12.1(−33%)    242.4(−30%)      4.6    39.9(−76%)    72.2   74.4   282.3(−45%)
+               Table 4. Module-wise computational cost analysis. Params and cost means the number of parameters (M) and the computational cost
+               (GFLOPs), respectively. Since the camera backbone part (VoVNet [15]) is identical across all variants, the details are omitted. ∗For the
+               total cost, the common cost for camera backbone is excluded for clearer comparison.
+               while significantly reducing the number of transformer to-        enhances the practical usefulness of our approach by regu-
+               kens. These experimental results demonstrate that directly        larizing a consistent computational cost.
+               using sparse voxel features with a higher resolution is not
+               only a feasible approach for efficiently handling 3D object       Input voxel resolutions    According to input voxel resolu-
+               detection, but it can also be a more effective method than        tions, our model performance can be further improved (Ta-
+               previous BEV feature-based approaches.                            ble 3 right). A smaller voxel size means a larger input voxel
+                                                                                 resolution for a LiDAR modality.
+               Effect of sparse feature refinement      In this section, we      4.2. Computational Cost Analysis
+               show how the additional sparse feature refinement effec-
+               tively improves the detection accuracy of our models. Al-         An important benefit of our approach is its ability to ex-
+               though our approach uses fewer computations for the Li-           ploit rich geometric information in high-resolution 3D fea-
+               DARbackbone compared to previous methods, one might               tures while consuming a relatively small computational
+               still question if the benefits of using additional computa-       cost. Consequently, the computational cost analysis would
+               tions of DSVT can be applied to other approaches. To ad-          be essential to show the effectiveness of our architecture.
+               dress this question, we compare CMT models with our               For highlighting the contrast, we conduct a module-wise
+               model variants.                                                   comparisonofourmodelwithCMT[39],which,tothebest
+                  In the case of CMT, the CNNs for BEV feature refine-           of our knowledge, is one of the fastest among state-of-the-
+               ment have already processed sufficient geometric informa-         art models. CMTisalsosuitable for an apple-to-apple com-
+               tion, resulting in a relatively smaller gain when employing       parison with our method due to its similar module compo-
+               the additional DSVT compared to our model (Table 2). On           sition. We note that, for simplicity, we include the computa-
+               the other hand, as we utilize only a minor part of the pre-       tional cost of DSVT modules for sparse feature refinement
+               vious LiDAR backbone used in CMT, our sparse features             to a LiDAR backbone.
+               may not be sufficiently encoded. Therefore, sparse feature           Table 4 shows that our architecture substantially reduces
+               refinement via DSVT brings significant performance im-            computational costs while even enhancing detection perfor-
+               provement. It is noteworthy that the performance gap com-         mance. We emphasize again that merely incorporating the
+               pared to CMT becomes even larger thanks to our deep fu-           DSVTmoduleinto the existing model (CMT) is not as ef-
+               sion approach that exploits the sparse nature of our multi-       fective. The CMT model with DSVT has a cost for a Li-
+               modal fused features, realized by our explicit multi-modal        DARbackbone and a detector that is five times larger than
+               fusion. Interestingly, the deep fusion module simply relo-        our base model, yet it only shows comparable performance.
+               cates the DSVT blocks without any computational over-             Ourfinal model surpasses both CMT models and does so at
+               head, implying that our refinement of sparse features not         a lower cost. It is also noteworthy that the effect of this cost
+               only encodes rich geometric information but also facilitates      saving will be more effective in the embedded environment,
+               the multi-modal fusion.                                           which is limited to use smaller backbones.
+               Effect of feature elimination      Our feature elimination        4.3. Comparison
+               schemecaneffectivelyreducethenumberoftransformerto-               Finally, we present a comprehensive comparison (Table 5)
+               kens (from 18,000 in average) while almost preserving the         with the state-of-the-art multi-modal 3D object detection
+               original performance (Table 3 left). Specifically, the perfor-    models[1,5,7,8,17,22,24,32,34,39,42,44].Allmodels
+               mance almost never drops when we use 50% of tokens or             donotuseanytest-timeaugmentationandmodelensembles
+               the fixed number of 10,000 tokens, and we use 10,000 to-          for this evaluation.
+               kensinlaterexperiments.Wewanttonotethattheoverhead                   Although our approach pursues an efficiency-oriented
+               of an auxiliary head for the feature elimination is marginal.     design, whichfocustoreducethenumberoftransformerto-
+               It is noteworthy that the use of the fixed number of tokens       kensbasedonthesparsityofLiDARdata,ourmodelshows
+
+
+===== Page 8 =====
+                                    Methods                     Present at     Modality    mAP(val)      NDS(val)     mAP(test)     NDS(test)     latency (ms)
+                                    PointPainting [32]          CVPR’20          C+L          65.8          69.6           -             -              -
+                                    MVP[44]                    NeurIPS’21        C+L          66.1          70.0         66.4          70.5             -
+                                    TransFusion [1]             CVPR’22          C+L          67.5          71.3         68.9          71.6             -
+                                    AutoAlignV2 [7]             ECCV’22          C+L          67.1          71.2         68.4          72.4             -
+                                    UVTR[17]                   NeurIPS’22        C+L          65.4          70.2         67.1          71.1           264
+                                    BEVFusion(PKU)[22]         NeurIPS’22        C+L          67.9          71.0         69.2          71.8             -
+                                    DeepInteraction [42]       NeurIPS’22        C+L          69.9          72.6         70.8          73.4           594
+                                    FUTR3D[5]                  CVPRW’23          C+L          64.5          68.3           -             -              -
+                                    BEVFusion(MIT)[24]          ICRA’23          C+L          68.5          71.4         70.2          72.9           221
+                                    CMT[39]                     ICCV’23          C+L          70.3          72.9         72.0          74.0           180
+                                    UniTR[34]                   ICCV’23          C+L          70.5          73.3         70.9          74.5           196
+                                    ECFusion[8]                 ICRA’24          C+L          70.7          73.4         71.5          73.9             -
+                                    ISFusion [43]               CVPR’24          C+L          72.8          74.0         73.0          75.2           214
+                                    GraphBEV[30]                ECCV’24          C+L          70.1          72.9         71.7          73.6           234
+                                    SparseVoxFormer                  -           C+L          72.2          74.4         72.9          75.3           179
+                   Table 5. Performance comparison in 3D object detection on nuScenes (val and test sets) [3]. Latency (ms) is measured by averaging
+                   the inference times over first 1,000 samples of nuScenes val set using a single NVIDIA A100 GPU. Notion of modality: Camera (C),
+                   LiDAR(L).
+                              SemanticBEVFusion [13]    CMT         Ours-base       Ours             ranges (Table 6). It is noteworthy that, as shown in the
+                                mAP        NDS      mAP NDS mAP NDS mAP NDS                          comparison of CMT [39] and Ours-base, our architecture
+                     Whole      69.5       72.0      70.3   72.9   70.8   73.2   72.2   74.4         enhances a long-range performance from CMT more than
+                      Near      79.9       78.1      80.5   78.9   80.3   79.1   82.9   81.0
+                     Middle     66.1       70.2      66.5   71.0   67.3   71.1   68.3   72.0         near- and mid-range performances.
+                       Far      37.0       49.1      37.3   49.3   38.2   49.9   39.4   50.9
+                              Table 6. Range-wise performance comparison.
+                                                                                                     Smaller image backbones                In this work, we focus on
+                           Img. backbone           Model            mAP        NDS                   the LiDAR backbone and transformer decoder suitable
+                                None           VoxelNeXt [6]        60.5       66.6                  for SparseVoxformer, while adhering to the settings of
+                            (LiDARonly)          CMT[39]            62.1       68.6                  CMT [39] regarding the image backbone. However, as
+                                             SparseVoxFormer        65.7       70.9                  showninapreviousexperimentoncomputationalcostanal-
+                              ResNet-50          CMT[39]            67.9       70.8                  ysis in Table 4, the cost of an image backbone is significant
+                                             SparseVoxFormer        69.3       72.7                  in the case of using VoVNet [15]. To demonstrate the practi-
+                               VoVNet            CMT[39]            70.3       72.9                  cal utility of our approach in fields requiring lower compu-
+                                             SparseVoxFormer        72.2       74.4
+                   Table 7. Performance evaluation according to different image                      tational resources, we have prepared additional model vari-
+                   backbones on the nuScenes val set [3].                                            ants without an image backbone (LiDAR only) or with a
+                                                                                                     smaller image backbone (ResNet-50 [10]). Table 7 shows
+                   comparableorevenbetterperformancethanrecentstate-of-                              that our variants of SparseVoxFormer outperform all the
+                   the-art methods [8, 43] employing complicated multi-stage                         variants of CMT. It is noteworthy that our LiDAR-only
+                   architectures including instance-level information process-                       modelstill outperform the previous state-of-the-art LiDAR-
+                   ing for higher accuracies.                                                        based model [6].
+                   Range-wise performance               Our explicit multi-modal fu-                 5. Conclusion
+                   sion uses sparse image features instead of dense ones. As a                       This paper introduces a new architecture, referred to as
+                   result, there might be questions regarding the performance                        SparseVoxFormer, for multi-modal 3D object detection.
+                   of our models concerning long-range object detection. Gen-                        This is based on our key observation that using 3D voxel
+                   erally, it is understood that detection of long-range object                      features with higher resolution can result in smaller com-
+                   detection depends more on the camera modality, since such                         putational expenses compared to using BEV features, by
+                   objects may contain only a few LiDAR points [13]. To                              leveraging the sparse nature of LiDAR data. With our foun-
+                   address these questions, we measure the range-wise accu-                          dational designs for integrating sparse voxel features into
+                   racy of 3D object detection. Following SemanticBEVFu-                             a transformer-based detector and explicit multi-modal fu-
+                   sion [13], we divide the detection range of 0∼54m from                            sion with the sparse features, our SparseVoxFormer ex-
+                   an ego vehicle into near (0∼18m), middle (18∼36m), and                            hibits a performance comparable to previous state-of-the-
+                   far (36∼54m) ranges.                                                              art approaches, but with significantly reduced computa-
+                       Ourapproachoutperformspreviousapproachesinallthe                              tional cost. We further facilitate more sparse but well-fused
+
+
+===== Page 9 =====
+                multi-modal features through a deep fusion module and                 [15] Youngwan Lee, Joong-won Hwang, Sangrok Lee, Yuseok
+                an additional feature elimination scheme. Consequently,                    Bae, and Jongyoul Park. An energy and gpu-computation
+                our approach achieves state-of-the-art performance on the                  efficient backbone network for real-time object detection. In
+                nuScenes dataset with a faster inference speed.                            Proc. CVPRW, 2019. 6, 7, 8
+                                                                                      [16] Feng Li, Hao Zhang, Shilong Liu, Jian Guo, Lionel M Ni,
+                                                                                           and Lei Zhang. Dn-detr: Accelerate detr training by intro-
+                References                                                                 ducing query denoising. In Proc. CVPR, 2022. 3, 6, 11
+                                                                                      [17] Yanwei Li, Yilun Chen, Xiaojuan Qi, Zeming Li, Jian Sun,
+                 [1] Xuyang Bai, Zeyu Hu, Xinge Zhu, Qingqiu Huang, Yilun                  and Jiaya Jia.   Unifying voxel-based representation with
+                      Chen, HongboFu,andChiew-LanTai. TransFusion:Robust                   transformer for 3d object detection. In Proc. NeurIPS, 2022.
+                      lidar-camera fusion for 3d object detection with transform-          2, 3, 6, 7, 8
+                      ers. In Proc. CVPR, 2022. 1, 3, 7, 8                            [18] Yinhao Li, Zheng Ge, Guanyi Yu, Jinrong Yang, Zengran
+                 [2] Garrick Brazil and Xiaoming Liu. M3D-RPN:monocular3d                  Wang,YukangShi,JianjianSun,andZemingLi.BEVDepth:
+                      region proposal network for object detection. In Proc. ICCV,         Acquisition of reliable depth for multi-view 3d object detec-
+                      2019. 2                                                              tion. In Proc. AAAI, 2023. 2
+                 [3] Holger Caesar, Varun Bankiti, Alex H Lang, Sourabh Vora,         [19] Zhichao Li, Feng Wang, and Naiyan Wang. Lidar r-cnn: An
+                      Venice Erin Liong, Qiang Xu, Anush Krishnan, Yu Pan, Gi-             efficient and universal 3d object detector. In Proc. CVPR,
+                      ancarlo Baldan, and Oscar Beijbom. NuScenes: A multi-                2021. 1, 2
+                      modaldatasetforautonomousdriving. InProc.CVPR,2020.             [20] Zhiqi Li, Wenhai Wang, Hongyang Li, Enze Xie, Chong-
+                      2, 6, 8, 12                                                          hao Sima, Tong Lu, Yu Qiao, and Jifeng Dai. BEVFormer:
+                 [4] NicolasCarion,FranciscoMassa,GabrielSynnaeve,Nicolas                  Learning bird’s-eye-view representation from multi-camera
+                      Usunier, Alexander Kirillov, and Sergey Zagoruyko. End-              images via spatiotemporal transformers.    In Proc. ECCV,
+                      to-end object detection with transformers. In Proc. ECCV,            2022. 2
+                      2020. 1, 3, 4, 6                                                [21] MingLiang,BinYang,ShenlongWang,andRaquelUrtasun.
+                 [5] Xuanyao Chen, Tianyuan Zhang, Yue Wang, Yilun Wang,                   Deepcontinuousfusionformulti-sensor3dobjectdetection.
+                      and Hang Zhao. FUTR3D: A unified sensor fusion frame-                In Proc. ECCV, 2018. 5
+                      workfor 3d detection. In Proc. CVPR, 2023. 3, 7, 8              [22] Tingting Liang, Hongwei Xie, Kaicheng Yu, Zhongyu Xia,
+                 [6] YukangChen,JianhuiLiu,XiangyuZhang,XiaojuanQi,and                     Zhiwei Lin, Yongtao Wang, Tao Tang, Bing Wang, and Zhi
+                      Jiaya Jia. Voxelnext: Fully sparse voxelnet for 3d object de-        Tang. BEVFusion: A simple and robust lidar-camera fusion
+                      tection and tracking. In Proc. CVPR, 2023. 2, 8, 12                  framework. In Proc. NeurIPS, 2022. 1, 3, 7, 8
+                 [7] Zehui Chen, Zhenyu Li, Shiquan Zhang, Liangji Fang, Qin-         [23] Tsung-Yi Lin, Priya Goyal, Ross Girshick, Kaiming He, and
+                      hong Jiang, and Feng Zhao. Autoalignv2: Deformable fea-                        ´
+                                                                                           Piotr Dollar. Focal loss for dense object detection. IEEE
+                      ture aggregation for dynamic multi-modal 3d object detec-            Transactions on Pattern Analysis and Machine Intelligence,
+                      tion. arXiv preprint arXiv:2207.10316, 2022. 7, 8                    42(2):318–327, 2020. 6
+                 [8] Jiahui Fu, Chen Gao, Zitian Wang, Lirong Yang, Xiaofei           [24] Zhijian Liu, Haotian Tang, Alexander Amini, Xinyu Yang,
+                      Wang, Beipeng Mu, and Si Liu. Eliminating cross-modal                Huizi Mao, Daniela L Rus, and Song Han. BEVFusion:
+                      conflicts in bev space for lidar-camera 3d object detection.         Multi-task multi-sensor fusion with unified bird’s-eye view
+                      In Proc. ICRA, 2024. 1, 3, 7, 8                                      representation. In Proc. ICRA, 2023. 1, 2, 3, 7, 8
+                 [9] Andreas Geiger, Philip Lenz, and Raquel Urtasun. Are we          [25] Charles Ruizhongtai Qi, Wei Liu, Chenxia Wu, Hao Su, and
+                      ready for autonomous driving? the kitti vision benchmark             Leonidas J. Guibas. Frustum pointnets for 3d object detec-
+                      suite. In Proc. CVPR, 2012. 2                                        tion from RGB-D data. In Proc. CVPR, 2018. 2
+                [10] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun.           [26] Byungseok Roh, JaeWoong Shin, Wuhyun Shin, and Sae-
+                      Deep residual learning for image recognition.     In Proc.           hoon Kim. Sparse DETR: Efficient end-to-end object detec-
+                      CVPR,2016. 8                                                         tion with learnable sparsity. In Proc. ICLR, 2022. 3, 6
+                [11] Junjie Huang, Guan Huang, Zheng Zhu, Ye Yun, and Dalong          [27] Shaoshuai Shi, Chaoxu Guo, Li Jiang, Zhe Wang, Jianping
+                      Du. BEVDet:High-performancemulti-camera3dobjectde-                   Shi, Xiaogang Wang, and Hongsheng Li. PV-RCNN: point-
+                      tection in bird-eye-view. arXiv preprint arXiv:2112.11790,           voxel feature set abstraction for 3d object detection. In Proc.
+                      2021. 2                                                              CVPR,2020. 1, 2
+                [12] Junjie Huang, Yun Ye, Zhujin Liang, Yi Shan, and Dalong          [28] Shaoshuai Shi, Xiaogang Wang, and Hongsheng Li. Pointr-
+                      Du. Detecting as labeling: Rethinking lidar-camera fusion in         cnn: 3d object proposal generation and detection from point
+                      3dobject detection. arXiv preprint arXiv:2311.07152, 2023.           cloud. In Proc. CVPR, 2019. 1, 2
+                      11                                                                                                           `
+                                                                                      [29] Andrea Simonelli, Samuel Rota Bulo, Lorenzo Porzi,
+                [13] QiJiang, HaoSun,andXiZhang. SemanticBEVFusion:Re-                               ´
+                                                                                           Manuel Lopez-Antequera, and Peter Kontschieder. Disen-
+                      think lidar-camera fusion in unified bird’s-eye view repre-          tangling monocular 3d object detection.    In Proc. ICCV,
+                      sentation for 3d object detection. In Proc. IROS, 2023. 1,           2019. 2
+                      8                                                               [30] Ziying Song, Lei Yang, Shaoqing Xu, Lin Liu, Dongyang
+                [14] Alex H. Lang, Sourabh Vora, Holger Caesar, Lubing Zhou,               Xu, Caiyan Jia, Feiyang Jia, and Li Wang. GraphBEV: To-
+                      Jiong Yang, and Oscar Beijbom. PointPillars: Fast encoders           wards robust bev feature alignment for multi-modal 3d ob-
+                      for object detection from point clouds. In Proc. CVPR, 2019.         ject detection. In Proc. ECCV, 2024. 1, 3, 8
+                      1, 2
+
+
+===== Page 10 =====
+                [31] Pei Sun, Henrik Kretzschmar, Xerxes Dotiwalla, Aurelien                modalvirtual point 3d detection. In Proc. NeurIPS, 2021. 7,
+                      Chouard, Vijaysai Patnaik, Paul Tsui, James Guo, Yin Zhou,            8
+                      Yuning Chai, Benjamin Caine, Vijay Vasudevan, Wei Han,           [45] Gang Zhang, Junnan Chen, Guohuan Gao, Jianmin Li, Si
+                      Jiquan Ngiam, Hang Zhao, Aleksei Timofeev, Scott Et-                  Liu, and Xiaolin Hu. SAFDNet: A simple and effective net-
+                      tinger, Maxim Krivokon, Amy Gao, Aditya Joshi, Yu Zhang,              work for fully sparse 3d object detection. In Proc. CVPR,
+                      Jonathon Shlens, Zhifeng Chen, and Dragomir Anguelov.                 2024. 2
+                      Scalability in perception for autonomous driving: Waymo          [46] Hao Zhang, Feng Li, Shilong Liu, Lei Zhang, Hang Su, Jun
+                      open dataset. In Proc. CVPR, 2020. 2, 12                              Zhu, Lionel M. Ni, and Heung-Yeung Shum. Dino: Detr
+                [32] Sourabh Vora, Alex H Lang, Bassam Helou, and Oscar Bei-                with improved denoising anchor boxes for end-to-end object
+                      jbom. Pointpainting: Sequential fusion for 3d object detec-           detection. In Proc. ICLR, 2023. 3
+                      tion. In Proc. CVPR, 2020. 7, 8                                  [47] DehuaZheng,WenhuiDong,HailinHu,XinghaoChen,and
+                [33] Haiyang Wang, Chen Shi, Shaoshuai Shi, Meng Lei, Sen                   Yunhe Wang. Less is More: Focus attention for efficient
+                      Wang, Di He, Bernt Schiele, and Liwei Wang. DSVT: Dy-                 DETR. InProc. ICCV, 2023. 3, 6
+                      namic sparse voxel transformer with rotated sets. In Proc.       [48] Yin Zhou and Oncel Tuzel. Voxelnet: End-to-end learning
+                      CVPR,2023. 2, 5, 11, 12                                               for point cloud based 3d object detection. In Proc. CVPR,
+                [34] Haiyang Wang, Hao Tang, Shaoshuai Shi, Aoxue Li, Zhen-                 2018. 6
+                      guo Li, Bernt Schiele, and Liwei Wang. UniTR: A unified          [49] Xizhou Zhu, Weijie Su, Lewei Lu, Bin Li, Xiaogang Wang,
+                      and efficient multi-modal transformer for bird’s-eye-view             andJifengDai. DeformableDETR:deformabletransformers
+                      representation. In Proc. ICCV, 2023. 3, 7, 8                          for end-to-end object detection. In Proc. ICLR, 2021. 3
+                [35] Tai Wang, Xinge Zhu, Jiangmiao Pang, and Dahua Lin.
+                      FCOS3D:fullyconvolutionalone-stagemonocular3dobject
+                      detection. In Proc. ICCVW, 2021. 2
+                [36] Yue Wang, Alireza Fathi, Abhijit Kundu, David A. Ross,
+                      Caroline Pantofaru, Thomas A. Funkhouser, and Justin M.
+                      Solomon. Pillar-based object detection for autonomous driv-
+                      ing. In Proc. ECCV, 2020. 1, 2
+                [37] Yue Wang, Vitor Guizilini, Tianyuan Zhang, Yilun Wang,
+                      Hang Zhao, , and Justin M. Solomon. Detr3d: 3d object
+                      detection from multi-view images via 3d-to-2d queries. In
+                      Proc. CoRL, 2021. 2, 3
+                [38] Benjamin Wilson, William Qi, Tanmay Agarwal, John Lam-
+                      bert, Jagjeet Singh, Siddhesh Khandelwal, Bowen Pan, Rat-
+                      nesh Kumar, Andrew Hartnett, Jhony Kaesemodel Pontes,
+                      Deva Ramanan, Peter Carr, and James Hays. Argoverse 2:
+                      Nextgenerationdatasetsforself-drivingperceptionandfore-
+                      casting. In Proc. NeurIPS Datasets and Benchmarks, 2021.
+                      12
+                [39] Junjie Yan, Yingfei Liu, Jianjian Sun, Fan Jia, Shuailin Li,
+                      Tiancai Wang, and Xiangyu Zhang.       Cross modal trans-
+                      former: Towardsfast and robust 3d object detection. In Proc.
+                      ICCV,2023. 2, 3, 4, 6, 7, 8, 11, 12, 13
+                [40] Yan Yan, Yuxing Mao, and Bo Li. SECOND: Sparsely em-
+                      beddedconvolutional detection. Sensors, 18(10), 2018. 1, 2,
+                      4, 11
+                [41] Chenyu Yang, Yuntao Chen, Haofei Tian, Chenxin Tao,
+                      Xizhou Zhu, Zhaoxiang Zhang, Gao Huang, Hongyang Li,
+                      Y. Qiao, Lewei Lu, Jie Zhou, and Jifeng Dai. BEVFormer
+                      v2: Adapting modern image backbones to bird’s-eye-view
+                      recognition via perspective supervision.  In Proc. CVPR,
+                      2023. 2
+                [42] ZeyuYang,Jiaqi Chen, Zhenwei Miao, Wei Li, Xiatian Zhu,
+                      and Li Zhang.    DeepInteraction: 3D object detection via
+                      modality interaction. In Proc. NeurIPS, 2022. 1, 2, 3, 7,
+                      8
+                [43] Junbo Yin, Jianbing Shen, Runnan Chen, Wei Li, Ruigang
+                      Yang, Pascal Frossard, and Wenguan Wang. IS-FUSION:
+                      Instance-scene collaborative fusion for multimodal 3d object
+                      detection. In Proc. CVPR, 2024. 1, 3, 8
+                                                                ¨     ¨
+                [44] Tianwei Yin, Xingyi Zhou, and Philipp Krahenbuhl. Multi-
+
+
+===== Page 11 =====
+                 A. Additional Implementation Details                                                        Model                   mAP NDS
+                 A.1. Voxel Encoding for Rich Geometric Features                               SparseVoxFormer-base w/o mVFE         70.7    72.9
+                                                                                                    SparseVoxFormer-base             70.8    73.2
+                 Duetothenatureofourapproachthatdirectlyexploitsgeo-                                     Table 8. Effect of using mVFE.
+                 metric information in the sparse voxel features, it is impor-
+                 tant that the features encodes rich geometric information.                            Dataset       # of tokens     Feat. Resolution
+                 However, our voxel features are yielded from the interme-
+                 diate stage of a LiDAR backbone (Fig. 4 in the main paper)                 BEV            -           32,400         180×180×1
+                 so that each voxel feature may not be fully encoded. More-                           Nuscenes         18,000        180×180×11
+                 over, the current initial voxel encoding approach (Hard-                  Sparse      Waymo            9,500        180×180×11
+                 SimpleVFE [40]) averages raw LiDAR points within each                               Argoverse2         3,000        180×180×11
+                 voxel. It implies that inherent geometric information in the           Table 9. Comparison of the number of tokens for BEV features
+                 cell may be suppressed because information of point distri-            andsparsevoxelfeaturesaccordingtovariousLiDARsensors.Al-
+                 bution in the voxel would be disregarded. To alleviate this            though the sparse 3D voxel features (180×180×11) from all the
+                 problem, We present a simple modification for the initial              LiDARsensors contain geometric information at a higher resolu-
+                 voxel encoding by adding several statistics such as the stan-          tion than that of the BEV features (180×180), the number of valid
+                 dard deviation and the count of points within each cell into           Transformer tokens is much smaller than that in the BEV features.
+                 the average of them. We call this modified voxel feature en-
+                 coding approach as mVFE. This simple modification with                 empirically found that 256 channels is minimally required
+                 a marginal overhead allows the raw voxel features to carry             for effective feature encoding.
+                 richfine-levelgeometricinformation,consequentlyimprov-
+                 ing 3D object detection accuracy (Table 8).                            A.3. Additional Training Detail
+                    Specifically, original HardSimpleVFE [40] receives Li-
+                 DARpointsineachvoxel,andeachvoxelisrepresentedby                       As we base our implementation on the source code of
+                 five values (avg x, avg y, avg z, avg intensity, avg offset),          CMT[39], we follow many of the training details outlined
+                 where avg means an average value, intensity means the in-              in CMT. Specifically, we employ ground-truth sampling
+                 tensity of a LiDAR sensor, and offset means an temporal                during the training phase for the first 15 out of a total of
+                 offset among multiple sweeps. In our mVFE, the represen-               20 epochs. This is a form of curriculum learning. In the
+                 tation is modified to have 11 values (avg x, avg y, avg z,             ground-truth sampling, instances containing fewer than 5
+                 avg intensity, avg offset, std x, std y, std z, std intensity,         LiDARpointsareexcluded,i.e.,thoseinstancesthatbelong
+                 std offset, n points), where std means a standard deviation            to long-range and are difficult to detect. Also, additional fil-
+                 value, and n points means the number of points in the cell             tering by difficulty and class grouping are applied.
+                 normalized to 0∼1.                                                        For query denoising [16], we add auxiliary queries us-
+                 A.2. Additional Architecture Detail                                    ing the center coordinates of ground-truth cuboids, but only
+                                                                                        during the training phase. Specifically, we introduce noise
+                 Regarding the Transformer decoder, we use six transformer              to the coordinates and use their positional embeddings as
+                 decoder layers, each of which consists of a self-attention             the initial transformer queries. A loss function for query de-
+                 operation, a cross-attention operation, and a feed-forward             noisingensuresthattheoutputcoordinatescorrespondingto
+                 network. The number of queries used in our model is 900.               the noisy auxiliary queries align with the ground-truth co-
+                 The result of final transformer decoder layer is fed into our          ordinates. To avoid trivial shortcuts, we separate the gradi-
+                 prediction heads, and the heads predict the center, scale, ro-         ent groups for normal queries and the auxiliary queries, and
+                 tation, velocity, and class of each bounding cuboid.                   prevent the gradients from the outputs of auxiliary queries
+                    Regarding our deep fusion module, we use four                       from influencing other queries, as done in [16, 39].
+                 DSVT[33]block, each of which consists of four set atten-                  We use a pretrained image backbone but train a Li-
+                 tion layers (along x, x shift, along y, y shift). The specific         DAR backbone from scratch. Regarding the image back-
+                 hyper-parameters are set info ([72, 4]), window shape ([24,            bone, additional learning rate decays are applied for fine-
+                 24, 11]), hybrid factor ([2, 2, 1]), and shifts list ([[0, 0, 0],      tuning (0.01 for image backbone and 0.1 for image neck).
+                 [12, 12, 0]]).                                                         We use a cyclic learning rate policy with the initial learn-
+                    Whenweapplythedeepfusionmoduletoourmodel,we                         ing rate of 0.0001, but modify the target ratio of (4, 0.0001)
+                 increasethetargetnumberofchannelsofoursparseencoder                    from (8, 0.0001) in the original CMT. We follow the train-
+                 twice (128 to 256) because CMT also use 256 channels for               ing details of CMT for remaining factors (e.g. the batch size
+                 BEVfeaturerefinement as well as most recent models such                is 16). Our training time is similar to that of CMT (about 2.5
+                 as DAL[12]alsouse256channelsforsparseencoding.We                       days with eight A100 GPUs).
+
+
+===== Page 12 =====
+                                                                                           per scene compared to nuScenes’ 10 sweeps, resulting in
+                                                                                           about 3,000 (Argoverse2) and 9,500 (Waymo) valid cells in
+                                                                                           average for 180×180×11voxels,indicating rather higher
+                                                                                           sparsity than 18,000 (nuScenes). Based on the statistics, we
+                                                                                           believe that our approach is highly efficient for 3D object
+                                                                                           detection using general LiDAR sensors.
+                                                                                           B.2. Visualization of Feature Elimination
+                                                                                           Fig. 6 visualizes the voxels removed through our feature
+                 Figure 5. Histogram of valid cell counts per LiDAR sample (10             elimination scheme. As shown in the examples, the elimi-
+                 sweeps) in the nuScenes train set, implying the distribution of the       nated features are primarily placed on backgrounds such as
+                 count of valid voxel features with the voxel resolution of 180 ×          roads.
+                 180 × 11. The red arrow denotes the number of cells for BEV               B.3. Qualitative Results
+                 feature map with the resolution of 180 × 180. The average value
+                 (blue arrow) for the sparse voxel features is much smaller than the       Fig. 7 shows visual 3D object detection results from a top
+                 number of BEV features (red arrow), which is further reduced by           view. As demonstrated in the left and right examples, our
+                 our additional feature sparsification (green arrow).                      approach can detect long-range small objects. In the mid-
+                                                                                           dle example, it shows better handling of an occluded object
+                 A.4. Additional Evaluation Detail                                         compared with CMT [39].
+                 In the analysis of computational costs, we measure Flops of               C. Discussion of Limitation and Future Work
+                 multi-modal 3D object detectors. To the best of our knowl-
+                 edge, there has been no well-established approach to calcu-               Our voxel features are derived from voxels that contain at
+                 late the computational complexity of multi-modal 3D ob-                   least one point. Furthermore, our multi-modal fusion ap-
+                 ject detector and models with sparse data and sparse opera-               proach only combines LiDAR voxel features with their cor-
+                 tions to our best knowledge. Therefore, we manually com-                  responding image features, resulting in sparse data. There-
+                 puted them. Specifically, we separately inference LiDAR-                  fore, our approachmaybeunabletohandleanyregionwith-
+                 only-based and camera-only-based branches, and manually                   out LiDAR points. Nevertheless, we demonstrate that our
+                 combine their values. Furthermore, the computational cost                 approacheffectivelydetectslong-rangeobjectswithfewLi-
+                 ofsparseconvolution-basedlayerscanvaryaccordingtothe                      DARpoints,comparedtoBEV-basedapproaches,asshown
+                 sparsity of LiDAR data. We assume the number of valid in-                 in Table 6 in the main paper. Additionally, the sparsity of
+                 termediate features as 20,000 in the layers for simplicity.               LiDAR data depends on the hardware specification of the
+                                                                                           LiDAR sensor, meaning the efficiency of our model could
+                 B. Additional Experiments                                                 vary. However, we believe that our additional feature elimi-
+                 B.1. DeeperanalysisofLiDARstatisticsonVarious                             nation scheme provides a viable solution to this limitation.
+                         LiDARSensors                                                         Despite our achievements, we believe there are further
+                                                                                           future directions that could enhance this innovative ap-
+                 Ourkeymotivation is based on the statistic that the number                proach, as we have presented several sparse feature-specific
+                 of valid transformer tokens in sparse 3D voxel features is                designs. We have focused on transformer keys in this work,
+                 significantly smaller than the number of 2D dense grids in                but exploring new query designs like iterative query re-
+                 the BEVspace.Inthissection,weconfirmthatthisassump-                       finement could be interesting. Other research areas could
+                 tion generally holds across different datasets using various              include using sparse features for different 3D perception
+                 LiDARsensors.Fig. 5 visualizes the LiDAR statistics from                  tasks, not just 3D object detection.
+                 the nuScenes dataset [3], showing that sparse 3D voxel fea-
+                 tures yield fewer tokens than dense BEV features. However,                Potential negative societal impact          3D object detection
+                 in this case, the number of tokens for sparse features can                is a crucial task for autonomous driving. In the current
+                 vary due to differing sparsity in each scene. We emphasize                paradigm, the planning of autonomous vehicles often relies
+                 againthatourfeatureeliminationschemestandardizesthese                     ontheperformanceof3Dobjectdetection.Asourapproach
+                 varying numberstoaconstant,suchas10,000,whichisfur-                       enhances the performance of 3D object detection, it can be
+                 ther reduced at the same time.                                            utilized to improve the overall performance of autonomous
+                     WealsoanalyzedLiDARstatisticsfromArgoverse2[38]                       driving. However, 3Dobjectdetectionmodelsmaystillpro-
+                 andWaymoopen[31]datasets(Table.9).Weadoptedcom-                           duce errors when encountering corner cases, subsequently
+                 mon configurations of using the datasets shown in Voxel-                  posing a potential risk of influencing incorrect decisions in
+                 NeXT[6]andDSVT[33].TheyuseasingleLiDARsweep                               autonomous vehicles.
+
+
+===== Page 13 =====
+       Figure 6. Visualization of sparse features for several scenes. Blue points denote eliminated features by our feature elimination scheme,
+       which is redundant for 3D object detection.
+       Figure 7. Qualitative visualization of CMT [39] and our SparseVoxFormer-L. A blue box denotes a prediction with a confidence score
+       greater than 0.3, while a green box indicates a ground-truth bounding box. A red arrow highlights a noticeable difference in predictions
+       between CMTandourSparseVoxFormer.

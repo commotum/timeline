@@ -1,0 +1,69 @@
+                 means of a neural field representation, which encourages                  3.1. PanSt3R
+                 multi-view consistency across frames.                                     Theoverall PanSt3R architecture is illustrated in Fig. 2 and
+                     OntheGaussian Spatting side, PLGS [62] learns to em-                  detailed below. It consists of a feature extraction step that
+                 bed an additional semantic and instance probability vectors               leverages foundational models for 2D and 3D feature ex-
+                 for each Gaussian, which can be rendered on novel views                   traction, followed by instance mask proposal generation.
+                 in parallel to RGB. To handle noisy panoptic predictions,                 Featureextraction. Ournetworkstartsbyextractingdense
+                 they rely on Scaffold-GS architecture [34] where additional               semanticand3D-awarerepresentationsfromthesetofinput
+                 depth maps are provided as input and 3D Gaussians are ini-                images by leveraging two pretrained backbones. Namely,
+                 tialized with semantic anchor points used for smooth regu-                we extract DINOv2 features for each input image, which
+                 larization during training. Instead, PCF-Lift [78] addressed              have been shown to capture dense and semantically mean-
+                 the degradation of performance in complex scenes caused                   ingful representations of the scene [38]. Likewise, we ex-
+                 by noisy and error-prone 2D segmentations by introducing                  tract MUSt3R[3]featuresforeachinputimage. MUSt3Ris
+                 Probabilistic Contrastive Fusion (PCF), which learns to em-               a recent extension of DUSt3R [26, 61], a foundation model
+                 bedprobabilistic features to robustly handle inaccurate seg-              for 3D vision, excelling at reconstructing the geometry of a
+                 mentations and inconsistent instance IDs.                                 scene given only sparse views. In practice, MUSt3R pro-
+                     Alternatively, a category of methods explores joint pre-              cesses images sequentially while maintaining an internal
+                 diction of 3D geometry and panoptics of the scene. How-                   memory of the previously seen images, thereby allowing
+                 ever, these approaches are either limited to single-image in-             the encoding of multi-view-consistent representations. Like
+                 puts [10, 11, 74], or rely on posed and ordered collection of             DINOv2, MUSt3R is a Transformer-based network, but it
+                 input frames [63, 77].                                                    contains an additional decoder to leverage its internal mem-
+                     In contrast to all these methods, our approach works on               ory. This way, it can encode both local and global scene
+                 collections of unordered and unposed input images without                 geometry using its encoder and decoder, respectively.
+                 camera parameters or depth maps, and directly outputs a                                                    D           D
+                                                                                              Formally, we denote by E          = ENC (I ) the DINOv2
+                 3Dreconstructionannotatedwithpanopticlabelsinasingle                                                       n               n     M
+                                                                                                                                     M
+                                                                                           feature maps of image I        and by E       = ENC (I ) and
+                 forward pass (see examples in Fig. 1).                                                                n             n                n
+                                                                                             M               M
+                                                                                           D =DEC(E )theencoder and decoder feature maps
+                                                                                             n               n
+                 3. Method                                                                 from MUSt3R. Note that by feature maps, we refer to
+                                                                                           an array of tokens, where each token corresponds to a
+                 Problem statement. Given a set of N images I ...I                ∈        small 16 × 16 patch in the image, i.e.we have in reality
+                                                                        1      N             D M M                                                   W     H
+                                                                                           E ,E ,D multi-channel feature maps of size                   ×
+                 RW×H×3, we aim to jointly perform 3D reconstruction                         n    n      n                                           16    16
+                 and panoptic segmentation, producing a global 3D point,                   and the number of channels corresponding to the respective
+                                                                                           feature dimensions d        =d        =1024andd            =768.
+                 a semantic class, and an instance ID for every pixel in                                          ED        EM                   DM
+                 each input image. Formally, these outputs materialize as                  As shown in Fig. 2, the three token maps are concatenated
+                 3D point-maps X ∈ RN×W×H×3, semantic segmentation                         along the feature dimension and passed through an MLP to
+                            CLS               N×W×H                                        formcompactjoint3D-semantictokenrepresentations{fn}
+                 masks M        ∈ {1...C}               , and instance segmenta-                          d
+                                                                                           with f    ∈ R t, where d       = 768. The concatenated fea-
+                                  INST               N×W×H                                        n                    f
+                 tion masks M          ∈ {1...m}               , where W and H             ture maps are also used to construct high-resolution mask
+                 denote the image width and height, C the number of classes                                    W×H×d
+                                                                                           features Fn ∈ R 2       2    F used for mask prediction, with
+                 and mthemaximumnumberofinstances1 inthescene.                             d   = 256. For that, we perform a series of MLP and 2×
+                                                                                            F
+                 Summary.         Our method builds upon recent progress                   upsampling operations to gradually upscale them until we
+                 made in the 3D reconstruction community. Specifically,                    reach the output resolution.
+                 our approach is based on MUSt3R [3], a Transformer-                       3D geometry. We leverage MUSt3R’s innate capabilities
+                 based powerful and scalable 3D reconstruction method,                     to reconstruct 3D point clouds. For every image, MUSt3R
+                 which we augment with panoptic capabilities inspired by                   predicts a global point cloud in the first image’s coordinate
+                 Mask2Former [9]. In Sec. 3.1 we detail the overall archi-                 frame, a local point cloud, and a confidence map. Specif-
+                 tecture of our network. Since the network outputs raw mask                                                          M
+                                                                                           ically, given the decoder features D         , a prediction head
+                 predictions that are potentially overlapping, a merging step                     3D                                 n
+                 is necessary to select a globally optimal set of instances                HEAD regresses3Dcoordinatesandconfidencesforeach
+                                                                                           pixel, i.e.Xg,Xl ,C = HEAD3D(DM) ∈ RW×H×3.
+                 (Sec. 3.2). In order to generate panoptic segmentations for                            n    n     n                 n
+                 novel viewpoints, we optionally project the labeled point                 Mask prediction and classification.                  We follow
+                 cloud into a set of 3D Gaussians (Sec. 3.3).                              Mask2Former[15]informulatingpanopticsegmentationas
+                                                                                           abinarymaskpredictionandclassificationproblem. Weex-
+                    1In our experiments m = 200. Instance IDs are not shared between       tend this formulation to the multi-view setting, generating
+                 classes and uniquely identify each object or stuff region in the scene.   globally consistent masks for each instance, i.e., the same
+                                                                                     5858

@@ -1,0 +1,82 @@
+            Hyperparameters. Extended Data Table 5 shows the hyperparameters                 For example, a replay ratio of 32 on Atari with action repeat of 4 and 
+            of Dreamer. The same setting is used across all benchmarks, including            batch shape 16 × 64 corresponds to 1 gradient step every 128 environ-
+            proprioceptive and visual inputs, continuous and discrete actions, and           ment steps, or 1.5 million gradient steps over 200 million environment 
+            two-dimensional and three-dimensional domains. We do not use any                 steps.
+            annealing, prioritized replay, weight decay or dropout.
+                                                                                             Minecraft
+            Networks. Images are encoded using stride 2 convolutions to resolu-              Game description. With 100 million monthly active users, Minecraft is 
+            tion 6 × 6 or 4 × 4 and then flattened and decoded using transposed              one of the most popular video games worldwide. Minecraft features a 
+            stride 2 convolutions, with sigmoid activation on the output. Vec-               procedurally generated three-dimensional world of different biomes, 
+            tor inputs are symlog transformed and then encoded and decoded                   including plains, forests, jungles, mountains, deserts, taiga, snowy tun-
+            using three-layer MLPs. The actor and critic neural networks are also            dra, ice spikes, swamps, savannahs, badlands, beaches, stone shores, 
+            three-layer MLPs and the reward and continue predictors are one-layer            rivers and oceans. The world consists of 1-m-sized blocks that the player 
+            MLPs. The sequence model is a GRU57 with block-diagonal recurrent                can break and place. There are about 30 different creatures that the 
+            weights58 of eight blocks to allow for a large number of memory units            player can interact with or fight. From gathered resources, the player 
+            without quadratic increase in parameters and computation. The input              can use over 350 recipes to craft new items and progress through the 
+            to the GRU at each time step is a linear embedding of the sampled latent         technology tree, all while ensuring safety and food supply to survive. 
+            z, of the action a , and of the recurrent state to allow mixing between          There are many conceivable tasks in Minecraft and as a first step, the 
+              t                t
+            blocks.                                                                          research community has focused on the salient task of obtaining dia-
+                                                                                             monds, a rare item found deep underground and that requires progress-
+            Distributions. The encoder, dynamics predictor and actor distribu-               ing through the technology tree.
+            tions are mixtures of 99% of the predicted softmax output and 1% of 
+                                      59
+            a uniform distribution  to prevent zero probabilities and infinite log           Learning environment. We built the Minecraft Diamond environment 
+                                                                                                                       19
+            probabilities. The rewards and critic neural networks output a soft-             on top of MineRL v0.4.4 , which offers abstract crafting actions. The 
+            max distribution over exponentially spaced bins b ∈ B and are trained            Minecraft version is 1.11.2. We make the environment publicly available 
+            towards two-hot encoded targets:                                                 as a faithful version of MineRL that is ready for reinforcement learning 
+                                                                                             with a standardized action space. To make the environment usable for 
+                             
+                              |−bx|/|−bb|if=ik                             ||B               reinforcement learning, we define a flat categorical action space and 
+                              kk+1        +1    k
+                                                                                (<)
+              twohot()x ≐≐kδbx
+                              |−bx|/|−bb|if=ik+1                                             fix bugs that we discovered with the original environments via human 
+                          i   kk+1 k                                      ∑      j
+                                                                          j=1               play testing. For example, when breaking diamond ore, the item some-
+                              0else
+                             
+                                                                                             times jumps into the inventory and sometimes needs to be collected 
+               In the equation, δ refers to the indicator function. The output weights       from the ground. The original environment terminates episodes when 
+            of two-hot distributions are initialized to zero to ensure that the agent        breaking diamond ore so that many successful episodes end before 
+            does not hallucinate rewards and values at initialization. For comput-           collecting the item and thus without the reward. We remove this early 
+            ing the expected prediction of the softmax distribution under bins               termination condition and end episodes when the player dies or after 
+            that span many orders of magnitude, the summation order matters,                 36,000 steps, corresponding to 30 minutes at the control frequency 
+            and positive and negative bins should be summed up separately, from              of 20 Hz. Another issue is that the game sometimes misses the jump 
+            small to large bins, and then added. Refer to the source code for an             key when it is pressed and released quickly, which we solve by keeping 
+            implementation.                                                                  the key pressed for 200 ms. The camera pitch is limited to a 120° range 
+                                                                                             to avoid singularities.
+                                                                        60
+            Optimizer. We employ adaptive gradient clipping , which clips 
+            per-tensor gradients if they exceed 30% of the L2 norm of the weight             Observations and rewards. The agent observes a 64 × 64 × 3 first- 
+                                                                  −3
+            matrix they correspond to, with its default ϵ = 10 . Adaptive gradient           person image, an inventory count vector for the over 400 items, a 
+            clipping decouples the clipping threshold from the loss scales, allowing         vector of maximum inventory counts since episode begin to tell the 
+            to change loss functions or loss scales without adjusting the clipping           agent which milestones it has achieved, a one-hot vector indicating 
+                                                                                        61
+            threshold. We apply the clipped gradients using the LaProp optimizer             the equipped item, and scalar inputs for the health, hunger and breath 
+            with ϵ = 10−20 and its default parameters β  = 0.9 and β  = 0.99. LaProp         levels. We follow the sparse reward structure of the MineRL competition 
+                                                           1            2
+            normalizes gradients by RMSProp and then smoothes them by momen-                 environment19 that rewards 12 milestones leading up to the diamond, 
+            tum, instead of computing both momentum and normalizer on raw                    for obtaining the items log, plank, stick, crafting table, wooden pickaxe, 
+                                      62
+            gradients as Adam does . This simple change allows for a smaller epsi-           cobblestone, stone pickaxe, iron ore, furnace, iron ingot, iron pickaxe 
+            lon and avoids occasional instabilities that we observed under Adam.             and diamond. The reward for each item is given only once per episode, 
+                                                                                             and the agent has to learn to collect certain items multiple times to 
+            Experience replay. We implement Dreamer using a uniform replay                   achieve the next milestone. To make the return easy to interpret, we 
+            buffer with an online queue63. Specifically, each minibatch is formed            give a reward of +1 for each milestone instead of scaling rewards based 
+            first from non-overlapping online trajectories and then filled up with           on how valuable each item is. In addition, we give −0.01 for each lost 
+            uniformly sampled trajectories from the replay buffer. We store latent           heart and 0.01 for each restored heart, but did not investigate whether 
+            states into the replay buffer during data collection to initialize the world     this is helpful.
+            model on replayed trajectories, and write the fresh latent states of the 
+                                                                                     64                                                                            19
+            training rollout back into the buffer. Although prioritized replay  is           Action space. Although the MineRL competition environment  is an 
+                                                                                                                                     3,20
+            used by some of the expert algorithms we compare with and we found it            established standard in the literature     , it provides a complex diction-
+            to also improve the performance of Dreamer, we opt for uniform replay            ary action space that requires additional set-up to connect agents. The 
+            in our experiments for ease of implementation. We parameterize the               action space provides entries for camera movement using the mouse, 
+            amount of training via the replay ratio. This is the fraction of time steps      keyboard keys for movement, mouse buttons for mining and interact-
+            trained on per time step collected from the environment, without action          ing, and abstract inventory actions for crafting and equipping items. 
+            repeat. Dividing the replay ratio by the time steps in a minibatch and           To connect the environment to reinforcement-learning agents, we turn 
+            by action repeat yields the ratio of gradient steps to environment steps.        them into a categorical space in the simplest possible way, yielding the 

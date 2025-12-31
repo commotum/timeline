@@ -1,0 +1,753 @@
+                                   R-PRM:Reasoning-DrivenProcessRewardModeling
+                                     1∗                  1∗                1                  1                2                      1†
+                    Shuaijie She , Junxiao Liu , Yifeng Liu , Jiajun Chen , Xin Huang , Shujian Huang
+                             1 National Key Laboratory for Novel Software Technology, Nanjing University
+                                  2 China Mobile Communications Company Limited Research Institute
+                                           {shesj,junxiaoliu,yfliu}@smail.nju.edu.cn, chenjj@nju.edu.cn,
+                                                   huangxinyjy@chinamobile.com, huangsj@nju.edu.cn
+                                          Abstract                              ing ability (Lightman et al., 2023). Unlike Out-
+                                                                                come Reward Models (ORMs) that only focus
+                       Process Reward Models (PRMs) have emerged                on the final results, PRMs evaluate each reason-
+                       as a promising solution to address the reason-           ing step in a more fine-grained manner, enabling
+                       ing mistakes of large language models (LLMs).            themtobetter identify and mitigate error processes,
+                       However, existing PRMs typically output eval-            thereby improving both performance and general-
+                       uation scores directly, limiting both learning           ization (Lightman et al., 2023; Wang et al., 2024b).
+                       efficiency and evaluation accuracy. This limi-
+                       tation is further compounded by the scarcity                AprimarychallengeinPRMdevelopmentarises
+                       of annotated data. To address these issues,              from data scarcity. While human annotation can
+                       wepropose Reasoning-Driven Process Reward                provide high-quality process-level labels (Light-
+                       Modeling (R-PRM),whichactivates inherent                 man et al., 2023), it incurs substantial costs. Al-
+                       reasoning to enhance process-level evaluation.           ternative automated approaches, such as Monte
+                       First, we leverage stronger LLMs to generate             Carlo (MC) methods that estimate step correctness
+                       seed data from limited annotations, effectively          based on the probability of reaching the correct fi-
+                       activating reasoning capabilities and enabling
+                       comprehensive step-by-step evaluation. Sec-              nalanswer(Wangetal.,2024b,a;Luoetal.,2024b),
+                       ond, we explore self-improvement of our PRM              or methods that use stronger language models as
+                       through preference optimization, without re-             judges for data filtering (Zhang et al., 2025b), have
+                       quiring additional annotated data. Third, we             shown some promise. However, these methods
+                       introduce inference time scaling to fully har-           either require significant computational resources
+                       ness our model’s reasoning potential. Exten-             or still struggle with noise and bias, leaving the
+                       sive experiments demonstrate R-PRM’s effec-              challenge of sufficient high-quality training data
+                       tiveness: on ProcessBench and PRMBench, it               unresolved.
+                       surpasses strong baselines by 13.9 and 8.5 F1
+                       scores. When applied to guide mathematical                  Moreover, existing process reward models di-
+                       reasoning, R-PRM achieves consistent accu-               rectly provide evaluations based on the given steps.
+                       racy improvements of over 8.6 points across              Weargue that for challenging process-level eval-
+                       six challenging datasets. Further analysis re-           uation tasks, this direct evaluation approach con-
+                       veals that R-PRMexhibitsmorecomprehensive                strains the model’s learning process and reduces
+                       evaluation and robust generalization, indicating         learning efficiency. Furthermore, it lacks inter-
+                       its broader potential.                                   pretability, as it fails to identify why specific steps
+                   1 Introduction                                               are incorrect, making it difficult to provide con-
+                                                                                structive feedback for improvement.
+                   Recently, large language models (LLMs) have                     Toaddresstheseissues,weproposeaReasoning-
+                   demonstrated significant progress in solving chal-           Driven Process Reward Modeling (R-PRM) frame-
+                   lenging mathematical problems through chain-of-              work that leverages the inherent reasoning capa-
+                   thought reasoning (Wei et al., 2023; Yang et al.,            bilities of LLMs to conduct process-level eval-
+                   2024; Shao et al., 2024). However, LLMs still tend           uation.    The framework consists of three key
+                   to make reasoning errors, undermining the reliabil-          components: First, we construct seed data by
+                   ity of their solutions and hindering their capacity          prompting stronger LLMs based on a small set
+                   to generate correct solutions.                               of human-annotated process-level labels and sub-
+                      Therefore, Process RewardModels(PRMs)have                 sequently fine-tune Qwen2.5-Math-7B-Instruct as
+                   been proposed to further improve model reason-               a quick cold-start. Through this reasoning-centric
+                                                                           13450
+                         Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing, pages 13450–13463
+                                             November4-9,2025©2025AssociationforComputational Linguistics
+                 paradigm, our model develops the capability to per-    computational budget to enable multiple reason-
+                 form comprehensive and transparent analyses for        ing attempts, coupled with majority voting mecha-
+                 evaluating complex solution steps of challenging       nismsforanswerselection, can achieve remarkable
+                 questions. Second, we explore the self-evolution of    accuracy improvements.
+                 our model through preference optimization, which
+                 encourages the model to generate reasoning trajec-     2.2  RewardModelingofReasoning
+                 tories that yield correct evaluations. This approach   Rewardmodelsareintroduced to further improve
+                 enables our model to improve its capabilities with-    mathematical reasoning by enhancing training data
+                 out requiring additional annotated data. Finally,      quality, guiding model learning (Lightman et al.,
+                 wefurther exploit the reasoning capabilities of our    2023; Cobbe et al., 2021; Uesato et al., 2022),
+                 modelat inference time, allowing multiple evalua-      and guiding the policy model’s reasoning pro-
+                 tion trajectories to be sampled for a more compre-     cess through Best-of-N and Guided-Search meth-
+                 hensive and robust assessment without training.        ods (Wang et al., 2024b; Zhang et al., 2025b).
+                   When evaluated on ProcessBench and PRM-                Currently, reward models are typically catego-
+                 Bench, our R-PRM achieves F1 score improve-            rized into Outcome Reward Models (ORMs) and
+                 ments of 13.9 and 8.5 points, respectively, over the   Process Reward Models (PRMs) (Lightman et al.,
+                 strongestbaselinetrainedonthesamedata. Further-        2023). ORMsfocus on providing an overall evalu-
+                 more, when used to guide policy model reasoning        ation based on whether the correct answer is ulti-
+                 via Best-of-N and Guided Search strategies, our        mately obtained (Cobbe et al., 2021). In contrast,
+                 approach improves accuracy by average margins of       PRMsprovide a fine-grained evaluation for each
+                 8.6 and 8.4 points over the Pass@1 baseline across     reasoning step, and many works have shown that
+                 six challenging math datasets, outperforming both      they can achieve better results (Lightman et al.,
+                 majority voting and all existing PRM baselines.        2023; Uesato et al., 2022). Data for PRM is ex-
+                 Further analysis reveals our three key additional ad-  tremely scarce, and its annotation is costly (Light-
+                 vantages: (1) comprehensive evaluation coverage        man et al., 2023; Wang et al., 2024b; Luo et al.,
+                 through multi-dimensional analysis, (2) enhanced       2024b; Zhang et al., 2025a). Some studies ex-
+                 generalization capability across diverse datasets,     plore automatic synthesis strategies, such as us-
+                 and (3) progressive accuracy improvement with in-      ing Monte Carlo (MC) estimation methods (Wang
+                 creased reasoning budgets, suggesting significant      et al., 2024b; Luo et al., 2024b). However, MC
+                 potential for reasoning-system optimization.           methods incur a large computational cost and in-
+                 2 RelatedWork                                          evitably introduce bias and noise (Zheng et al.,
+                                                                        2024). (Zhang et al., 2025b) propose combining
+                 2.1   Mathematical Reasoning                           MCwithLLMasajudge,helpingtoreducenoise.
+                 Recent studies have demonstrated that LLMs ex-        The quality and quantity of step-level reasoning
+                 hibit enhanced reasoning capabilities when gener-      evaluation data are still limited, and this remains
+                 ating step-by-step solutions before providing the      an unsolved challenge.
+                 final answers (Wei et al., 2023). Building on this     3 Method
+                 insight, several pioneering works have focused on
+                 developing large-scale mathematical datasets with      In this section, we propose a novel reasoning-
+                 high-quality reasoning annotations for fine-tuning     driven process-level reward modeling framework.
+                 of LLMs (Luo et al., 2025; Wang et al., 2023;          Its core objective is to fully leverage the inher-
+                 Shao et al., 2024; Yang et al., 2024). However,        ent reasoning capabilities of LLMs to evaluate
+                 even when models arrive at correct final answers,      the given reasoning steps, achieved through three
+                 their intermediate reasoning steps may contain crit-   stages: cold start with limited labeled data, self-
+                 ical errors. This discrepancy undermines the re-       evolution via preference optimization, and infer-
+                 liability of their problem-solving processes and       ence time scaling.
+                 poses significant obstacles for future model im-       3.1  Reasoning for Process Reward Modeling
+                 provements (Zheng et al., 2024).
+                   Parallel advancements (Snell et al., 2024; O1,       GivenamathematicalproblemQ,thepolicymodel
+                 2023; DeepSeek-AI, 2025; QwQ, 2023) in infer-          generates a sequential chain-of-reasoning process
+                 ence time have demonstrated that increasing the        S ={s ,s ,...,s }, where each reasoning step s
+                                                                               1  2      n                               i
+                                                                   13451
+                                          Evaluation Input
+                                                                                                                 Evaluation Input
+                                                                     Label: No
+                                                            Now 
+                               Problem     Previous Steps
+                                                            Step
+                               Collect response from LLM
+                                to construct seed data
+                                                                            SFT Dataset
+                                                                                         R-PRM SFT
+                               Previous Steps Analysis: This step starts by ...
+                                                                                                                         Sampling
+                                              ......
+                               Verification: Is the step correct (Yes/No)? No
+                                                                                                                       ...
+                                                                                                                      ...
+                                                                                                             Verification: Is the step correct
+                                                                                                                    ......
+                                                                                                           Verification: Is the step correct
+                                                                                                                   (Yes/No)? No
+                                              ......
+                                                                                                          Verification: Is the step correct
+                                                                                                                  (Yes/No)? No
+                              Now Step Analysis: Now Step checks if 23 is ...
+                                                                                                                (Yes/No)? No
+                                                                              Preference 
+                               Verification: Is the step correct (Yes/No)? No
+                                                                               Dataset
+                                                                                         R-PRM DPO
+                                                                                                                  0.4 0.9 0.80.8
+                                                                                                                                Average
+                                              ......
+                               Calculation Analysis: The calculation in the...
+                               Verification: Is the step correct (Yes/No)? Yes
+                                                                                                                  Reward: 0.7
+                   Figure 1: Illustration of R-PRM framework. For brevity, only partial analytical reasoning trajectories are shown.
+                   White robots indicate initial models, while colored ones represent models after our training procedure.
+                   is generated conditioned on both the problem Q                 from PRM800K to generate (Q, s , A , J ) tu-
+                                                                                                                           1:i    i   i
+                   and all preceding steps {s1,...,si−1}. To evaluate             ples 1. We retain only those evaluation analyses
+                   the quality of each reasoning step, current process-           that produce a judgment consistent with human la-
+                   level reward models employ a direct prediction                 bel. Subsequently, we concatenate the analysis and
+                   mechanismthat assigns a score to each step. This               judgmentasthetargetsequence,whichisthenused
+                   evaluation process can be formally expressed as:               to fine-tune our PRM. Let Yi denote the evaluation
+                                                                                  trajectory for s :
+                                                                                                   i
+                                   R =M(Q,s ,...,s )
+                                      i             1      i
+                                                                                            Y =A ⊕J ={y ,y ,...,y }
+                   where M(·) represents the reward model that out-                          i      i     i       1   2        t
+                                                                                                       t
+                   puts a scalar reward R for the step s . However,                                  X
+                                              i                 i                        L     =− logp(y |Q,s ,y                    )
+                   evaluating reasoning steps on hard math questions                       SFT                    j      1:i  1:j−1
+                                                                                                     j=1
+                   is quite challenging, and direct prediction is rela-
+                   tively difficult for the reward model. Additionally,           where y denotes the j-th token in the output se-
+                                                                                           j
+                   scores generated directly often suffer from a lack             quence Yi, and t is the total length of the sequence.
+                   of explainability.                                             This is equivalent to standard instruction tuning,
+                      To solve these issues, we propose a reasoning-              where the model learns to generate both the analy-
+                   driven process reward model G that performs two                sis and the judgment in a single forward pass.
+                   phases within a single generation process as illus-            3.2   Process Reward Modeling
+                   trated in Figure 1. First, G generates a comprehen-                  Meta-Optimization
+                   sive analysis A of each reasoning step s , consist-
+                                     i                            i               Although cold start activates the model’s reason-
+                   ing of multiple analytical dimensions: examining               ing ability, it may still yield incorrect judgments.
+                   historical reasoning steps, assessing the objective            Facing the challenge of data scarcity, we further
+                   and data sources of the current step, verifying its            explore how our process reward model can self-
+                   coherence with preceding steps, and validating the             evolve without incorporating additional data. We
+                   calculations involved. Then, G generates a natural             propose Meta-Optimization, which employs prefer-
+                   language judgment J indicating the correctness of
+                                           i                                      ence optimization method to refine the reasoning
+                   the step, expressed as “Yes” or “No”.                          behavior of our R-PRM, thereby guiding it towards
+                                    A =G(Q,s ,...,s )                             making accurate judgments.
+                                      i            1       i
+                                                                                     For simplicity, we implement our approach us-
+                                  J =G(Q,s ,...,s ,A )                            ing Direct Preference Optimization (DPO, Rafailov
+                                    i            1      i    i
+                      TohelpLLMsfullyleveragetheirreasoningabil-                  et al., 2024), one of the popular preference opti-
+                   ities, we designed a quick cold-start phase. In this           mization algorithms. DPO involves an input pair
+                   phase, we prompt a stronger LLM with samples                      1The prompt we used is listed in Appendix G
+                                                                            13452
+                 (Yw,Yl), where Yw is favored over Yl. Accord-               • PRMBench (Song et al., 2025) constitutes
+                 ingly, multiple evaluation processes and their cor-           a comprehensive benchmark for evaluating
+                 responding judgments are sampled and categorized              PRMs,withparticular emphasis on granular
+                 into two groups depending on whether the judg-                error diagnosis. It assesses evaluation capabil-
+                 ments align with the annotated labels. We encour-             ities across three error dimensions: Simplicity,
+                 age our PRM to generate evaluation trajectory that            Soundness, and Sensitivity, which are further
+                 can yield correct judgments; therefore, we treat              divided into nine specific aspects 2.
+                 consistent trajectories as Y w and inconsistent ones       Furthermore, we validate the effectiveness
+                 as Y l to construct preference pairs. We copy and        of our model by employing it to guide two
+                 freeze R-PRM-SFTasthereferencepolicyπref and             distinct test-time scaling paradigm: Best-of-N
+                 optimize it using the following loss function:           and Guide Search.       Performance is evaluated
+                                                                          on MATH500 (Lightman et al., 2023), Min-
+                 L     (π ;π ) = −E         w l
+                   DPO    θ  ref        (x,Y ,Y )∼D                       erva Math (Lewkowycz et al., 2022), Olympiad-
+                                πθ(Yw | x)            πθ(Yl | x)  Bench (He et al., 2024), College Math (Tang et al.,
+                   logσ βlog πref(Yw | x) −βlog πref(Yl | x)              2024) 3, AIME24, and AMC23. Consistent with
+                                                                          previous work (Zhang et al., 2025b), we used
+                 3.3   Inference-Time Scaling Strategy                    Qwen2.5-7B-Instruct to generate eight candidate
+                 Leveraging R-PRM’scapability to generate diverse         steps with temperature T=1.0.
+                 evaluation trajectories, we explore the scalable in-        • Best-of-N: selects the response with the high-
+                 ference strategy that enhances evaluation perfor-             est score among N candidates, as evaluated
+                 mancewithout training. During inference, for each             byaPRM.
+                 reasoning step s , we sample K independent ana-             • Guide Search: at each step, the model gen-
+                                   i
+                 lytical processes as follows:                                 erates N candidate continuations and selects
+                                                                               the one with the highest reward score, as eval-
+                     (A(k),J(k)) = G(Q,s ,...,s ),k ∈ [1,K]                    uated by the PRM, to extend the reasoning.
+                        i     i              1      i
+                                                                               This process repeats until the solution is com-
+                                 (k)
+                 where each A       represents a distinct analytical           plete.
+                 reasoning process and J(k) is the corresponding          Baselines: We selected the following strong pro-
+                 judgment. This multi-trajectory approach helps           cess reward models as baselines.
+                 mitigate potential reasoning inconsistencies and            • Math-Shepherd(Wangetal., 2024b): Auto-
+                 stochastic variations inherent in LLMs. To aggre-             matically obtaining the probability of reach-
+                 gate multiple evaluations, we calculate the average           ing the correct solution as step labels based
+                 probabilityof“Yes”judgments(usingsoftmaxwith                  onMonteCarloTreeSearch(MCTS).
+                 “No”judgments) as the reward:                               • Math-PSA(Wangetal.,2024a): combining
+                            K                                                  existing automatic annotation techniques (Luo
+                         1 X        (k)                          (k)           et al., 2024a) and integrating data from Math-
+                  R =           P(J     =“Yes”|Q,s ,...,s ,A       ).
+                    i   K           i                 1      i   i             Shepherd and PRM800Kdatasets.
+                           k=1
+                 4 Experiment                                                • RLHFlow-DeepSeek/Mistral (Dong et al.,
+                                                                               2024): Similar to Math-Shepherd, but trained
+                 4.1   ExperimentSettings                                      with iterative DPO.
+                 Tasks and Benchmarks: To validate the accu-                 • Skywork-PRM-7B(o1Team,2024): based
+                 racy of our method in process reward modeling,                on Qwen2.5-Math-Instruct and recently re-
+                 weconductevaluations on two challenging bench-                leased by Skywork.
+                 marksProcessBench(Zhengetal.,2024)andPRM-                   • ReasonEval-7B (Xia et al., 2025): Evaluates
+                 Bench (Song et al., 2025).                                    mathematical problem-solving step by step,
+                     • ProcessBench (Zheng et al., 2024) assesses a            assessing validity and redundancy.
+                       model’sability to detect the first incorrect step     • Llemma-PRM800K-7B (Sun et al., 2024):
+                       in LLM-generated mathematical solutions. It             Trained exclusively on PRM800K from levels
+                       consists of 3,400 problems of varying diffi-          2See Appendix C for detailed description.
+                                                                             3Due to the large size of OlympiadBench and College
+                       culty, each paired with a step-by-step solution    Math, we randomly select 200 samples from each for evalua-
+                       and human annotation of the earliest error.        tion.
+                                                                     13453
+                       MODEL                            GSM8K                   MATH               OlympiadBench           OmniMATH          Avg. F1
+                                                  error  correct   F1    error  correct   F1    error  correct  F1    error   correct  F1
+                       LLM-as-judge, Proprietary language models
+                       GPT-4o*                    70.0    91.2    79.2   54.4    76.6    63.6   45.8    58.4    51.4   45.2    65.6    53.5    61.9
+                       o1-mini*                   88.9    97.9    93.2   83.5    95.1    88.9   80.2    95.6    87.2   74.8    91.7    82.4    87.9
+                       LLM-as-judge, Open-source language models
+                       Llama-3.3-70B-Instruct     71.0    97.9    82.3   42.8    95.3    59.0   30.7    94.1    46.3   27.4    88.8    41.9    57.4
+                       Qwen2.5-Math-72B-Instruct  51.7    95.9    67.2   36.9    94.3    53.0   18.9    96.5    31.6   19.8    95.4    32.7    46.1
+                       Qwen2.5-72B-Instruct       62.8    97.4    76.4   46.1    93.1    61.7   37.7    92.9    53.6   37.5    87.1    52.5    61.1
+                       PRMs
+                       Math-Shepherd-7B*          32.4    91.7    47.9   18.0    82.0    29.5   15.0    71.1    24.8   14.2    73.0    23.8    31.5
+                       Math-PSA-7B                48.3    88.1    62.4   29.5    72.7    41.9   20.7    65.8    31.5   15.4    68.9    25.2    40.3
+                       RLHFlow-Mistral-8B*        33.8    99.0    50.4   21.7    72.2    33.4   8.2     43.1    13.8   9.6     45.2    15.8    28.4
+                       RLHFlow-DeepSeek-8B*       24.2    98.4    38.8   21.4    80.0    33.8   10.1    51.0    16.9   10.9    51.9    16.9    26.6
+                       Llemma-PRM800K-7B          36.7    71.0    48.4   39.2    47.8    43.1   33.1    25.1    28.5   35.4    31.5    33.4    38.4
+                       Skywork-PRM-7B*            61.8    82.9    70.8   43.8    62.2    53.6   17.9    31.9    22.9   14.0    41.9    21.0    42.1
+                       ReasonEval-7B              26.1    95.3    41.0   35.7    77.6    48.9   27.5    55.2    36.7   27.0    60.6    37.4    41.0
+                       Qwen2.5-Math-7B-PRM800K*   53.1    95.3    68.2   48.0    90.1    62.6   35.7    87.3    50.7   29.8    86.1    44.3    56.5
+                       ⋆R-PRM-7B-SFT              66.2    92.7    77.2   60.3    88.2    71.6   48.6    77.3    59.6   40.1    75.5    52.3    65.2
+                       ⋆R-PRM-7B-DPO              72.0    91.7    80.7   71.2    83.5    76.9   60.2    67.8    63.8   55.5    65.6    60.1    70.4
+                     Table 1: Performance on ProcessBench. ⋆ indicates our models. Results marked with * are from Zhang et al.. Bold
+                     indicates the best within PRMs. For LLM-as-judge baselines, we sample 10 trajectories and apply majority voting
+                     to align with our method. The correct and error indicate accuracy on correct and incorrect samples, respectively.
+                      ModelName                          Simplicity                   Soundness                        Sensitivity           Overall
+                                                   NR.     NCL.    Avg.    ES     SC.    DC.     CI    Avg.    PS     DR.    MS.     Avg.
+                      LLM-as-judge, Proprietary language models
+                      GPT-4o*                      57.0    62.4    59.7   72.0    69.7   70.7   71.1   70.9    62.5   65.7   99.2    75.8     66.8
+                      o1-mini*                     65.6    63.7    64.6   74.5    67.7   73.8   72.3   72.1    61.8   64.8   100.0   75.5     68.8
+                      PRMs
+                      Math-Shepherd-7B*            44.0    50.3    47.1   49.4    44.5   41.3   47.7   45.7    47.2   48.6   86.1    60.7     47.0
+                      Math-PSA-7B                  47.6    55.1    51.3   56.5    49.4   47.1   54.2   51.8    51.7   54.1   88.9    64.9     52.3
+                      RLHFlow-Mistral-8B*          46.1    47.3    46.7   56.6    55.1   54.4   63.8   57.5    51.5   56.2   97.9    68.5     54.4
+                      RLHFlow-DeepSeek-8B*         46.4    48.9    47.6   55.7    55.0   53.2   66.2   57.5    49.0   55.4   99.8    68.1     54.2
+                      Llemma-PRM800k-7B*           49.3    53.4    51.4   56.4    47.1   46.7   53.3   50.9    51.0   53.5   93.6    66.0     52.0
+                      Skywork-PRM-7B*              35.7    41.2    38.4   36.7    29.1   30.6   34.4   32.7    36.8   37.4   88.8    54.3     36.2
+                      ReasonEval-7B*               61.0    50.1    55.5   62.1    65.9   61.5   66.0   63.9    55.6   58.0   99.5    71.0     60.0
+                      Qwen2.5-Math-7B-PRM800K      48.6    47.8    48.2   62.1    59.4   58.7   68.5   62.2    52.9   64.0   99.8    72.2     58.3
+                      ⋆R-PRM-7B-SFT                52.7    64.7    58.7   70.1    62.7   63.4   69.5   66.4    61.4   67.4   98.3    75.7     64.9
+                      ⋆R-PRM-7B-DPO                52.2    58.2    55.2   72.1    69.1   68.9   75.0   71.2    61.2   69.5   99.1    76.6     66.8
+                     Table 2: Performance on PRMBench. ⋆ represents the models we trained. Results marked with * come from Zhang
+                     et al. Bold text denotes the best results within PRM.
+                           1 through 3.                                                4.2    ExperimentResults
+                        • Qwen2.5-Math-7B-PRM800K(Zhengetal.,
+                           2024): Qwen2.5-Math-7B-Instruct fine-tuned                  R-PRMachieveshighevaluationaccuracyeffi-
+                           onthe PRM800Kdataset.                                       ciently. As detailed in Table 1 and Table 2, our
+                                                                                       SFT approach demonstrates strong performance,
+                     Implementation details: We prompt LLaMA3.3-                       achieving F1 scores of 65.2 on ProcessBench
+                     70B-Instruct to generate four evaluation trajecto-                and 64.9 on PRMBench. These results signifi-
+                     ries per PRM800K case, yielding approximately                     cantly outperform state-of-the-art baselines, includ-
+                     289kSFTand269kDPOsamples. Qwen2.5-Math-                           ing Qwen2.5-Math-7B-PRM800K (the strongest
+                     7B-Instruct is fine-tuned for one epoch with batch                PRM800K-basedmethod), by 8.7 and 6.6 points,
+                     size 128 and learning rates of 5e-6 (SFT) and 5e-7                respectively. The model’s capabilities are further
+                     (DPO). We reserve 20k samples for validation and                  elevated through meta-optimization, leading to re-
+                     select the checkpoint with the lowest validation                  markable F1 scores of 70.4 on ProcessBench and
+                     loss. Unless stated otherwise, results are reported               66.8 on PRMBench. These improvements high-
+                     using ten evaluation trajectories per step.                       light the potential of our reasoning driven evalua-
+                                                                                 13454
+                      Setting                       AIME24     AMC23 MATH500 Olympiad College               Minerva   Avg.
+                                                                                       Bench       Math      Math
+                      Pass@1                          11.2       47.8       73.0        38.0       38.6       37.2     41.0
+                      Maj@8                           20.0       57.5       79.6        47.0       41.5       42.7     48.0
+                      Pass@8(Oracle)                  33.3       82.5       88.8        58.5       47.5       57.7     61.4
+                      Math-Shepherd-7B                13.3       52.5       74.6        38.5       36.5       41.2     42.8
+                      Math-PSA-7B                     6.7        57.5       79.8        42.5       41.0       39.3     44.5
+                      RLHFlow-PRM-Mistral-8B          10.0       57.5       73.4        37.5       38.0       41.2     42.9
+                      RLHFlow-PRM-DeepSeek-8B         13.3       52.5       74.8        39.5       37.0       40.8     43.0
+                      Llemma-PRM800K-7B               13.3       57.5       73.8        40.0       36.5       38.2     43.2
+                      Skywork-PRM-7B                  10.0       57.5       77.8        41.5       39.0       43.4     44.9
+                      ReasonEval-7B                   3.3        55.0       73.0        37.5       35.5       37.9     40.4
+                      Qwen2.5-Math-7B-PRM800K         23.3       45.0       78.2        42.0       35.5       38.6     43.8
+                      ⋆R-PRM-7B-DPO                   16.7       70.0       80.0        46.5       39.5       43.4     49.4
+                  Table 3: The performance of PRM-guidedgreedysearchwiththeQwen2.5-7B-Instructpolicymodel,wheresuperior
+                  performance indicates a more accurate reward from the PRM and consequently, more effective guidance.
+                  tion paradigms and our training framework.               R-PRMdemonstrates superior generalization
+                    Impressively, R-PRM-DPO achieves F1 score              capability. As shown in Table 1, all listed open-
+                  improvements of 13.0 points over LLaMA3.3-70B-           source PRMs, except Skywork-PRM-7B for which
+                  Instruct (used for generating our synthetic cold-        the training data sources is unknown, have been
+                  start data) and 8.5 points over GPT-4o. Collectively,    trained exclusively on GSM8KandMATH.Among
+                  these findings directly demonstrate that our method      these PRMs, only Math-PSA-7B and Qwen2.5-
+                  extends beyond simple distillation and maximizes         Math-7B-PRM800KachieveF1scoresabove60on
+                  the utility of human-annotated data.                     certain ProcessBenchsubsets, whileothersperform
+                    Wealsoconductedadditionalexperimentstoval-             relatively poorly, particularly on out-of-domain
+                  idate the effectiveness of continuous self-evolution     datasets such as OmniMATH and OlympiadBench.
+                  through two rounds of iterative training. After the      Bycontrast, R-PRM not only performs well on the
+                  second iteration, our model achieved an average          MATHdatasetbutalso achieves F1 scores above
+                  F1 score of 74.1 on ProcessBench, these results          60onallout-of-domaindatasets. Thissuggeststhat
+                  demonstrate the significant potential of our method.     R-PRMacquiresageneralizable reasoning pattern,
+                  Please refer to Appendix 5.1 for comprehensive           enabling it to perform well across datasets with
+                  results.                                                 varying difficulty.
+                                                                           R-PRM guides policy model to reach correct
+                  R-PRMprovidescomprehensiveevaluationsin                  answer effectively. As shown in Table 3 and Ta-
+                  multiple dimensions.      In rigorous benchmark-         ble 4, our method achieves 8.4 and 8.6 average
+                  ing with PRMBench, R-PRM-DPOdemonstrates                 accuracy improvements over the Pass@1 baseline
+                  advantages over Qwen2.5-Math-7B-PRM800K,                 in the Guide Search and Best-of-N settings, re-
+                  achieving improvements of 7.0, 9.0, and 4.4 points       spectively.  It also achieves state-of-the-art per-
+                  across the three evaluation dimensions. Notably, it      formance by outperforming Qwen2.5-Math-7B-
+                  surpasses GPT-4o in both soundness and sensitivity       PRM800Kby5.6and1.9points, and surpassing
+                  metrics, establishing itself as a more comprehen-        Majority Voting in both settings. Moreover, on the
+                  sive assessment paradigm.                               AIME24 benchmark, R-PRM boosts DeepSeek-
+                    R-PRMespecially excels in soundness evalua-            R1-Distilled-Qwen-7B’sPass@1from54.5to60.8,
+                  tion through its reasoning paradigm for empirical        demonstrating its effectiveness even for advanced
+                  validity, step consistency, and domain consistency.      reasoners (see Appendix B for details). These re-
+                  This structural evaluation paradigm enables supe-        sults directly demonstrate that our method’s ac-
+                  rior detection of logical errors by analyzing each       curate reward evaluation at each reasoning step
+                  reasoning step in context of previous ones. More-        effectively guides the policy model to arrive at cor-
+                  over, R-PRM even outperforms o1-mini in prereq-          rect solutions. Furthermore, we believe our ap-
+                  uisite sensitivity, effectively identifying reasoning    proach holds greater potential for integration with
+                  steps that appear superficially valid but contain        backtracking-enabled strategies like Monte Carlo
+                  logical flaws—precisely the type that conventional       Tree Search and multi-candidate strategies such as
+                  evaluation systems frequently fail to detect.            BeamSearch,whichfurther boost the performance
+                                                                      13455
+                                             Setting                                                         AIME24                 AMC23 MATH500 Olympiad College                                                                   Minerva                Avg.
+                                                                                                                                                                                         Bench                    Math                  Math
+                                             Pass@1                                                              11.2                   47.8                     73.0                      38.0                    38.6                  37.2               41.0
+                                             Maj@8                                                               20.0                   57.5                     79.6                      47.0                    41.5                  42.7               48.0
+                                             Pass@8(Oracle)                                                      33.3                   82.5                     88.8                      58.5                    47.5                  57.7               61.4
+                                             Math-Shepherd-7B                                                    16.7                   42.5                     76.0                      42.0                    37.0                  39.3               42.3
+                                             Math-PSA-7B                                                         20.0                   55.0                     80.8                      47.5                    39.5                  40.1               47.2
+                                             RLHFlow-Mistral-8B                                                  10.0                   55.0                     76.8                      42.0                    39.5                  37.1               43.4
+                                             RLHFlow-DeepSeek-8B                                                 13.3                   57.5                     76.2                      40.0                    39.0                  39.7               44.3
+                                             Llemma-PRM800K-7B                                                   10.0                   52.5                     76.6                      42.5                    39.0                  42.7               43.9
+                                             Skywork-PRM-7B                                                      16.7                   55.0                     81.2                      44.0                    40.5                  44.5               47.0
+                                             ReasonEval-7B                                                        6.7                   55.0                     75.2                      41.0                    40.0                  40.4               43.1
+                                             Qwen2.5-Math-7B-PRM800K                                             13.3                   57.5                     80.0                      44.5                    43.5                  43.0               47.7
+                                             ⋆R-PRM-7B-DPO                                                       20.0                   62.5                     82.2                      48.0                    41.0                  44.1               49.6
+                                     Table 4: Performance comparison on the Best-of-8 strategy of the policy model Qwen2.5-7B-Instruct, where
+                                     superior performance indicates a more accurate reward from the PRM and consequently, more effective guidance.
+                                             85
+                                                                82.0                                                             R-PRM-SFT                             70                                                                                 R­PRM­DPO
+                                                             81.9                                                                R-PRM-DPO
+                                             80          80.7                      80.1                                          R-PRM-DPO-Iter1
+                                                                               78.8                                              R-PRM-DPO-Iter2                                                                     R­PRM­SFT
+                                                     77.2                  76.9
+                                             75                                                                                                                        60                                                                           LLaMA3.3­70B­Instruct
+                                                                                                                                          74.1
+                                                                                                                                      72.6
+                                                                        71.6                                                                                                                            Qwen2.5­PRM800K
+                                            e70                                                      70.1                          70.4
+                                                                                                  67.2                                                                 50
+                                             65                                                                                65.2
+                                            F1 Scor                                           63.8                      64.1                                                                                                                        Math­Shepherd
+                                                                                                                    62.6                                            F1 Score
+                                                                                                                                                                                                                                                    RLHFlow­DeepSeek
+                                             60                                           59.6                  60.1                                                   40                                                                           RLHFlow­Mistral
+                                                                                                                                                                                                                                                    Llemma­PRM800K
+                                             55                                                                                                                                                                                                     Qwen2.5­PRM800K
+                                                                                                             52.3                                                      30                                                                           ReasonEval
+                                             50                                                                                                                                                                                                     R­PRM
+                                                         GSM8K              MATH          OlympiadBench        OmniMATH           Average
+                                                                                           Datasets                                                                       0            100           200           300           400          500           600           700
+                                                                                                                                                                                                        Training Data Amount (K)
+                                     Figure 2: Performance of R-PRM on ProcessBench
+                                     across self-improving iterations.                                                                                         Figure 3: Average F1 score on ProcessBench with dif-
+                                                                                                                                                               ferent training data scales.
+                                     of policy model.
+                                                                                                                                                               erative DPO progressively enhances the model’s
+                                     5 Analysis                                                                                                                reasoning capabilities for tackling more challeng-
+                                     In this section, we further delve into our R-PRM’s                                                                        ing evaluation tasks.
+                                     core strengths: impressive self-evolution, remark-                                                                        5.2          Effective Data Scaling
+                                     able data efficiency, and efficient inference-time
+                                     scaling, culminating in a case study that demon-                                                                          Figure 3 visualizes the F1 performance on Process-
+                                     strates its practical efficacy.                                                                                           Bench versus the data scale. With 12.8k training
+                                                                                                                                                               samples, our R-PRM already surpasses most open-
+                                     5.1          Self-Improve Further Boosts Performance                                                                      source PRMs. Notably, with only 64k samples, R-
+                                     Toinvestigate the potential for self-improvement,                                                                         PRMoutperformsQwen2.5-Math-7B-PRM800K
+                                     weexplore an iterative refinement strategy. In the                                                                        (trained on 265k samples) by 3.6 points. Further
+                                     first iteration, we employ the R-PRM-DPO model                                                                            scaling to the full 285k-sample dataset yields con-
+                                     to sample trajectories from the PRM800K dataset,                                                                          tinued gains, reaching an F1 score of 65.2, clearly
+                                     from which we construct a new preference dataset                                                                          demonstrating the strong data efficiency and scala-
+                                     of 30k examples. Fine-tuning on this data for one                                                                         bility of our approach.
+                                     epoch yields R-PRM-DPO-Iter1. As shown in Fig-                                                                                  Moreover, our proposed meta-optimization,
+                                     ure 2, this iterative process leads to consistent per-                                                                    without requiring any additional labeled data, fur-
+                                     formance gains across all benchmarks. Notably,                                                                            ther boosts performance to an impressive F1 score
+                                     R-PRM-DPO-Iter1improvestheperformanceon                                                                                   of 70.4. Even more notably, R-PRM also exceeds
+                                     OlympiadBench by 3.4 points to 67.2 and achieves                                                                          the Llama3.3-70B-Instruct model used for cold-
+                                     an average improvement of 2.2 points on Process-                                                                          start data construction, demonstrating that our ap-
+                                     Bench. A second iteration (R-PRM-DPO-Iter2)                                                                               proach is not merely a distillation of the teacher
+                                     continues this upward trend, demonstrating that it-                                                                       modelbutameaningfuladvancementbeyondit.
+                                                                                                                                                     13456
+                                                                        Qwen2.5-Math-7B-PRM800K         R-PRM-DPO
+                                                            MATH                                                     OlympiadBench
+                                 80                           76.9              66.9          80
+                                                                                                                       64.0              58.2
+                                 60                                                           60
+                                 40                                                           40
+                               F1 Score20                                                     20
+                                  0   0.2     0.3     0.4     0.5     0.6    0.7     0.8       0   0.2     0.3     0.4     0.5    0.6     0.7     0.8
+                                                          Threshold                                                    Threshold
+                      Figure4: AverageF1scoresonProcessBenchatdifferentthresholds: MATHperformance(left)andOlympiadBench
+                      performance (right).
+                                                                            82.4             robustness to threshold variation, with minimal
+                          80                                                   GSM8K
+                                                                            77.2             performance fluctuations on ProcessBench.                      In
+                                                                               MATH
+                            72.2                                 70.8     71.7               contrast, Qwen2.5-Math-7B-PRM800K exhibits
+                        e 70                            69.7                   Average
+                            67.4              67.6                          66.5             greater sensitivity, showing a noticeable rightward
+                                     62.8                                      Olympiad      shift in its performance curve on ProcessBench.
+                        F1 Scor61.3                                         60.8
+                          60                                                   OmniMATH         Onthemorechallenging out-of-domain test sub-
+                            54.6                                                             set OlympiadBench, our method maintains its ro-
+                            51.0
+                          50                                                                 bustness to threshold variations, while Qwen2.5-
+                              1        2        4        8        16       32                Math-7B-PRM800K exhibits a larger threshold
+                                     Number of sampling trajectories
+                                                                                             shift, indicating its tendency to misclassify incor-
+                      Figure 5: Efficient scaling inference-time compute on                  rect solutions as correct. This demonstrates that
+                      ProcessBench. Results for R-PRM-DPO.                                   our method has better generalization capability,
+                      5.3    Effective Inference Time Scaling                                maintaining more accurate evaluation even when
+                                                                                             problem types and domains change. For detailed
+                      Weinvestigated how R-PRM’s performance scales                          performance analysis of scores and thresholds on
+                      with the inference budget. As shown in Figure 5,                       PRMBench,pleaserefer to the Appendix D.
+                      R-PRMdemonstratesconsistentperformancegains
+                      as the number of evaluation trajectories increases.                    5.5     CaseStudy
+                      Notably, scaling from K = 2 to K = 4 trajecto-
+                      ries yields a substantial F1 improvement from 62.8                     Asillustrated in Figure 6, the solution mistakenly
+                      to 67.6, which demonstrates the robustness of our                      skipped verifying the number 19 in Step 7 and
+                      scaling strategy and highlights a unique advantage                     proceeded directly to check number 23 in Step 8.
+                      of our reasoning-driven approach. Crucially, this                      Unfortunately, the strong baseline Qwen2.5-Math-
+                      performance scaling is achieved with an acceptable                     7B-PRM800K failed to recognize the omission,
+                      computational overhead, confirming the practical                       incorrectly assigning a high reward score of 0.86
+                      efficiency of our method. A detailed analysis of                       to Step 8.
+                      the performance-cost trade-off is provided in Ap-                         In contrast, R-PRM carefully analyzed both the
+                      pendix A. We recommend using K = 4 as it offers                        previous and current steps before making its judg-
+                      an excellent trade-off between performance and                         ment. Based on this analysis, R-PRM concluded
+                      computational cost.                                                    that the task required verifying the numbers in as-
+                      5.4    Threshold Robustness                                            cending order, which showcases its advanced logi-
+                                                                                             cal reasoning capabilities. Subsequently, R-PRM
+                      During evaluations of ProcessBench and PRM-                            resumed the reasoning process for Step 7 to ver-
+                      Bench, we adopt a fixed threshold of 0.5 for binary                    ify the correctness of number 19, thus identifying
+                      classification to determine whether each step is cor-                  the discrepancy between its own result and the an-
+                      rect. We further analyze the model’s sensitivity to                    swer in Step 8. Through this reasoning process,
+                      threshold variations across different problem com-                     R-PRMassignedarewardscoreof0.05toStep8,
+                      plexities. As shown in Figure 4, on the MATH sub-                      successfully detecting the error. Please refer to the
+                      set of ProcessBench, R-PRM demonstrates strong                         Appendix E for more cases.
+                                                                                       13457
+                     Problem: An emirp is an integer that, when its digits are written in reverse order, is a prime number. For example, 73 is
+                     an emirp because 37 is prime. What is the smallest two-digit prime number that is NOT an emirp?
+                     Solution: ...
+                     Step7: Continue to the next smallest two-digit prime number. 19 is prime.
+                     Step 8: Check if 23 is an emirp. Reverse the digits of 23: 32. Check if 32 is prime: No, 32 is not prime (divisible by 2).
+                     Since 23 is a prime number and its reverse, 32, is not a prime number, 23 is not an emirp. ...
+                     Qwen2.5-Math-7B-PRM800Kscore: 0.859
+                     R-PRM:Analysis: Previous Steps Analysis: ...
+                     . . . . . .
+                     Calculation Analysis: ......Upon reviewing, the mistake in the analysis is assuming 23 is the answer without
+                     properly checking if there are smaller primes that are not emirps. ......Given the oversight in the analysis
+                     regarding the thorough checking of primes and their reversals, the conclusion that 23 is the smallest such prime
+                     without properly validating against all primes in sequence is premature. ......
+                     Conclusion: The Now Step incorrectly concludes that 23 is the smallest two-digit prime number ......
+                     Verification: Is the step correct (Yes/No)? No
+                     R-PRM(MajorityVoting)score: 0.055
+                  Figure 6: A case study from ProcessBench MATH dataset. Red text denotes the error step, and the blue text
+                  highlights our model’s critique of the error.
+                  6 Conclusion                                             Carlo Tree Search (MCTS) and Beam Search re-
+                  In this paper, we present Reasoning-Driven Pro-          main underexplored, although they could poten-
+                  cess Reward Modeling (R-PRM), a novel frame-             tially better leverage the characteristics of PRM
+                  workthat advances the process reward modeling of         and yield improved generation results.
+                  mathematical reasoning. Our framework consists           Acknowledgements
+                  of three components. First, we leverage stronger        We would like to thank the anonymous review-
+                  LLMstoconstructseeddata,enablingourmodelto               ers for their insightful comments. Shujian Huang
+                  perform a comprehensive evaluation process. Sec-         is the corresponding author. This work is sup-
+                  ond,weusepreferenceoptimizationtoenhanceper-             ported by National Science Foundation of China
+                  formance without requiring additional annotated          (No. 62376116, 62176120), research project of
+                  data. Third, we introduce inference-time scaling         Nanjing University-China Mobile Joint Institute
+                  to fully harness the model’s reasoning capabili-         (NJ20250038), the Fundamental Research Funds
+                  ties. Extensive experiments demonstrate that our         for the Central Universities (No.      2024300507,
+                  methodachieves significant performance improve-          2025300390), and the Postgraduate Research &
+                  mentsonProcessBenchandPRMBench,whilealso                 Practice Innovation Program of Jiangsu Province
+                  effectively guiding LLM reasoning. Further anal-         (No. KYCX25_0315andNo. SJCX25_0031).
+                  ysis shows that R-PRM exhibits more comprehen-
+                  sive, robust, and generalizable evaluation capabili-
+                  ties, as its performance continues to improve with       References
+                  increased inference, highlighting its substantial po-    Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian,
+                  tential.                                                   Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias
+                  Limitations                                                Plappert, Jerry Tworek, Jacob Hilton, Reiichiro
+                                                                             Nakano, Christopher Hesse, and John Schulman.
+                                                                             2021. Training verifiers to solve math word prob-
+                  Duetocomputationalresourceconstraints,wehave               lems. Preprint, arXiv:2110.14168.
+                  not yet verified our approach on larger models such      DeepSeek-AI. 2025. Deepseek-r1: Incentivizing rea-
+                  as 70B, despite extensive experiments demonstrat-          soning capability in llms via reinforcement learning.
+                  ing its effectiveness on 7B models. We hypothesize         Preprint, arXiv:2501.12948.
+                  that larger models, given their enhanced reasoning       Hanze Dong, Wei Xiong, Bo Pang, Haoxiang Wang,
+                  capabilities, could achieve higher modeling accu-          HanZhao,YingboZhou,NanJiang, Doyen Sahoo,
+                  racy when combined with our methodology. Ad-               CaimingXiong,andTongZhang.2024. Rlhfwork-
+                  ditionally, while we have tested popular inference         flow: From reward modeling to online rlhf. Preprint,
+                  strategies like Best-of-N and Guided Search, our           arXiv:2405.07863.
+                  exploration of advanced search algorithms remains        ChaoqunHe,RenjieLuo,YuzhuoBai,ShengdingHu,
+                  limited.  Sophisticated methods such as Monte              Zhen Leng Thai, Junhao Shen, Jinyi Hu, Xu Han,
+                                                                      13458
+                    Yujie Huang, Yuxiang Zhang, et al. 2024. Olympiad-    Charlie Snell, Jaehoon Lee, Kelvin Xu, and Aviral Ku-
+                    bench: A challenging benchmark for promoting agi        mar. 2024. Scaling llm test-time compute optimally
+                    with olympiad-level bilingual multimodal scientific     can be more effective than scaling model parameters.
+                    problems. arXiv preprint arXiv:2402.14008.              arXiv preprint arXiv:2408.03314.
+                 Aitor Lewkowycz, Anders Andreassen, David Dohan,         MingyangSong,ZhaochenSu,XiaoyeQu,JiaweiZhou,
+                    Ethan Dyer, Henryk Michalewski, Vinay Ramasesh,         and Yu Cheng. 2025. Prmbench: A fine-grained
+                    Ambrose Slone, Cem Anil, Imanol Schlag, Theo            and challenging benchmark for process-level reward
+                    Gutman-Solo, et al. 2022. Solving quantitative rea-     models. Preprint, arXiv:2501.03124.
+                    soning problems with language models. Advances        Zhiqing Sun, Longhui Yu, Yikang Shen, Weiyang
+                    in Neural Information Processing Systems, 35:3843–      Liu, Yiming Yang, Sean Welleck, and Chuang
+                    3857.                                                   Gan. 2024. Easy-to-hard generalization: Scalable
+                 Hunter Lightman, Vineet Kosaraju, Yura Burda, Harri        alignment beyond human supervision.       Preprint,
+                    Edwards, Bowen Baker, Teddy Lee, Jan Leike,             arXiv:2403.09472.
+                    John Schulman, Ilya Sutskever, and Karl Cobbe.        Zhengyang Tang, Xingxing Zhang, Benyou Wang, and
+                    2023.   Let’s verify step by step.  arXiv preprint      Furu Wei. 2024. Mathscale: Scaling instruction
+                    arXiv:2305.20050.                                       tuning for mathematical reasoning. arXiv preprint
+                 Haipeng Luo, Qingfeng Sun, Can Xu, Pu Zhao, Jian-          arXiv:2403.02884.
+                    guang Lou, Chongyang Tao, Xiubo Geng, Qingwei         Jonathan Uesato, Nate Kushman, Ramana Kumar, Fran-
+                    Lin, Shifeng Chen, Yansong Tang, and Dongmei            cis Song, Noah Siegel, Lisa Wang, Antonia Creswell,
+                    Zhang. 2025. Wizardmath: Empowering mathemat-           Geoffrey Irving, and Irina Higgins. 2022. Solving
+                    ical reasoning for large language models via rein-      math word problems with process- and outcome-
+                    forced evol-instruct. Preprint, arXiv:2308.09583.       based feedback. Preprint, arXiv:2211.14275.
+                 Liangchen Luo, Yinxiao Liu, Rosanne Liu, Samrat          JunWang,MengFang,ZiyuWan,MuningWen,Jiachen
+                    Phatale, Meiqi Guo, Harsh Lara, Yunxuan Li, Lei         Zhu, Anjie Liu, Ziqin Gong, Yan Song, Lei Chen,
+                    Shu, Yun Zhu, Lei Meng, Jiao Sun, and Abhinav           Lionel M. Ni, Linyi Yang, Ying Wen, and Weinan
+                    Rastogi. 2024a. Improve mathematical reasoning in       Zhang. 2024a. Openr: An open source framework
+                    language models by automated process supervision.       for advanced reasoning with large language models.
+                    Preprint, arXiv:2406.06592.                             Preprint, arXiv:2410.09671.
+                 Liangchen Luo, Yinxiao Liu, Rosanne Liu, Samrat          Peiyi Wang, Lei Li, Zhihong Shao, Runxin Xu, Damai
+                    Phatale, Harsh Lara, Yunxuan Li, Lei Shu, Yun Zhu,      Dai, Yifei Li, Deli Chen, Yu Wu, and Zhifang
+                    Lei Meng, Jiao Sun, et al. 2024b. Improve mathemat-     Sui. 2024b. Math-shepherd: Verify and reinforce
+                    ical reasoning in language models by automated pro-     llms step-by-step without human annotations. In
+                    cess supervision. arXiv preprint arXiv:2406.06592.      Proceedings of the 62nd Annual Meeting of the
+                                                                            Association for Computational Linguistics (Volume
+                 OpenAI     O1.   2023.        Learning    to  reason       1: Long Papers), pages 9426–9439.
+                    with   llms.        https://openai.com/index/         Yizhong Wang, Yeganeh Kordi, Swaroop Mishra, Alisa
+                    learning-to-reason-with-llms/.          Accessed:       Liu, Noah A. Smith, Daniel Khashabi, and Hannaneh
+                    2025-02-08.                                             Hajishirzi. 2023. Self-instruct: Aligning language
+                 Skywork o1 Team. 2024. Skywork-o1 open series.             models with self-generated instructions. Preprint,
+                    https://huggingface.co/Skywork.                         arXiv:2212.10560.
+                 QwQ.2023. Qwq: Reflect deeply on the boundaries of       Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten
+                    the unknown. https://qwenlm.github.io/blog/             Bosma,BrianIchter, Fei Xia, Ed Chi, Quoc Le, and
+                    qwq-32b-preview//. Accessed: 2025-02-08.                DennyZhou.2023. Chain-of-thoughtpromptingelic-
+                                                                            its reasoning in large language models. Preprint,
+                 Rafael Rafailov, Archit Sharma, Eric Mitchell, Stefano     arXiv:2201.11903.
+                    Ermon,Christopher D. Manning, and Chelsea Finn.       Shijie Xia, Xuefeng Li, Yixin Liu, Tongshuang Wu, and
+                    2024. Direct preference optimization: Your lan-         Pengfei Liu. 2025. Evaluating mathematical reason-
+                    guage model is secretly a reward model. Preprint,       ing beyond accuracy. Preprint, arXiv:2404.05692.
+                    arXiv:2305.18290.
+                                                                          An Yang, Beichen Zhang, Binyuan Hui, Bofei Gao,
+                 Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu,            Bowen Yu, Chengpeng Li, Dayiheng Liu, Jian-
+                    Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan          hong Tu, Jingren Zhou, Junyang Lin, Keming Lu,
+                    Zhang, Y. K. Li, Y. Wu, and Daya Guo. 2024.             Mingfeng Xue, Runji Lin, Tianyu Liu, Xingzhang
+                    Deepseekmath: Pushing the limits of mathemati-          Ren, and Zhenru Zhang. 2024. Qwen2.5-math tech-
+                    cal reasoning in open language models. Preprint,        nical report: Toward mathematical expert model via
+                    arXiv:2402.03300.                                       self-improvement. Preprint, arXiv:2409.12122.
+                                                                     13459
+                  Shimao Zhang, Xiao Liu, Xin Zhang, Junxiao Liu,                                              74.0%    74.1%    74
+                                                                                  1.0                                     1.08s
+                     Zheheng Luo, Shujian Huang, and Yeyun Gong.                         Average Time (s)
+                     2025a. Process-based self-rewarding language mod-                   F1 Score     72.3%
+                                                                                  0.8                            0.83s           72
+                     els. arXiv preprint arXiv:2503.03746.                       ime (s)
+                                                                                  0.6        69.8%                               70 e (%)
+                  Zhenru Zhang, Chujie Zheng, Yangzhen Wu, Beichen                                      0.52s                      F1 Scor
+                     Zhang, Runji Lin, Bowen Yu, Dayiheng Liu, Jin-              verage T0.4   0.39s
+                     gren Zhou, and Junyang Lin. 2025b. The lessons of           A                                               68
+                     developing process reward models in mathematical             0.2 0.18s
+                     reasoning. Preprint, arXiv:2501.07301.                         65.9%                                        66
+                                                                                  0.0   1        2        4        8       10
+                  Chujie Zheng, Zhenru Zhang, Beichen Zhang, Runji                                  Sample Number (K)
+                     Lin, Keming Lu, Bowen Yu, Dayiheng Liu, Jin-             Figure 7: R-PRM-DPO-Iter2 Inference Time vs F1 on
+                     gren Zhou, and Junyang Lin. 2024. Processbench:          ProcessBench
+                     Identifying process errors in mathematical reasoning.
+                     Preprint, arXiv:2412.06559.                                Model                                 Avg@16(%)
+                  A PracticalInference-Time Overhead                            DeepSeek-R1-Distilled-Qwen-7B             54.5
+                        Analysis of R-PRM                                       w/R-PRM-DPO(GuideSearch)                  60.8
+                  Toevaluatethepracticalcomputationaloverheadof               Table 5: Accuracy of DeepSeek-R1-Distilled-Qwen-7B
+                  R-PRMinreal-worldusecases, we benchmarked                   onAIME24withandwithoutR-PRMguidance.
+                  inference speed under realistic deployment settings.
+                  Figure 7 presents the average time required to eval-        8 candidates at each step. Following this 30-step
+                  uate a single ProcessBench example at different             guidedgeneration, the model completed the reason-
+                  sample sizes (K) on a single NVIDIA H100 GPU                ing chain autoregressively. We sampled 16 such
+                  (vLLM0.8.4).                                                completions and found that this partial guidance in-
+                     Experiments show that with K=4, evaluating a             creased the average accuracy (avg@16) to 60.8%, a
+                  single data point takes only 0.52 s, which balances         notableimprovementoverthe54.5%baseline. This
+                  performance and computational cost. To contextu-            result demonstrates that even limited, early-stage
+                  alize this for a practical application like online rein-    guidance from R-PRM can significantly enhance
+                  forcement learning, consider a common setup with            the performance of long-reasoning models.
+                  128promptsand8rollouts. In this scenario, com-
+                  puting rewards with our R-PRMs across 8 GPUs                C DetailedDescription of PRMBench
+                  requires only 66.56 seconds for K=4, and this time               Subcategories
+                  reduces to just 23.4 seconds for K=1.                          • Non-Redundancy (NR): Evaluates the
+                     These results indicate that R-PRM’s inference
+                  overhead is acceptable for typical online training                model’s ability to identify and eliminate
+                  pipelines, and even more favorable for offline or                 unnecessary steps within the reasoning pro-
+                  latency-insensitive tasks such as SFT or DPO data                 cess, ensuring efficiency without sacrificing
+                  synthesis. The sublinear scaling further suggests                 correctness.
+                  that increasing the number of samples yields better            • Non-Circular        Logic    (NCL): Assesses
+                  accuracy with moderate additional cost, making                    whether the model can detect circular reason-
+                  R-PRMpractical for large-scale or production en-                  ing, where conclusions are reintroduced as
+                  vironments.                                                       premises, leading to logical loops.
+                  B R-PRMGuidanceforLong-Reasoning                               • Empirical Soundness (ES): Measures the
+                        Model                                                       model’s capability to identify and reject rea-
+                  Toassess R-PRM’s efficacy on long-form reason-                    soning steps that contradict established facts
+                  ing, we evaluated it on the DeepSeek-R1-Distilled-                or real-world knowledge.
+                  Qwen-7B model using the AIME24 benchmark.
+                  To manage the lengthy reasoning, we restricted                 • Step Consistency (SC): Evaluates whether
+                  R-PRMguidance to the initial 30 steps. Specifi-                   the reasoning steps maintain consistency with
+                  cally, we constructed a guided prefix by iteratively              each other, ensuring that all steps logically
+                  selecting the highest-scoring continuation out of                 flow from one to the next.
+                                                                         13460
+                    • Domain Consistency (DC): Assesses the             ability by explaining the step, checking the calcu-
+                      model’s ability to apply domain-specific          lation, and finding the error, with a final score of
+                      knowledge correctly, avoiding the misuse of       around 0.3.
+                      concepts or theories across different domains.    F UsedScientific Artifacts
+                    • Confidence Invariance (CI): Tests whether         Belowarethescientific artifacts used in our work.
+                      the model maintains appropriate confidence        For the sake of ethics, our use of these artifacts is
+                      levels throughout the reasoning process, espe-    consistent with their intended use.
+                      cially when errors are detected or uncertain-
+                      ties arise.                                          • Transformers (Apache-2.0 license), a frame-
+                    • Prerequisite Sensitivity (PS): Evaluates              work to facilitate downloading and training
+                      whether the model detects missing prerequi-            state-of-the-art pretrained models.
+                      sites or conditions essential for valid reason-      • trl (Apache-2.0 license), a full stack library
+                      ing, ensuring the completeness of the logic.           that provides a set of tools to train transformer
+                    • Deception Resistance (DR): Measures the                language models with Reinforcement Learn-
+                      model’s ability to detect and reject mislead-          ing. The library is built on top of the Trans-
+                      ing information that might appear correct but          formers library.
+                      contains subtle errors.                              • PRM800K(MITlicense), a large-scale dataset
+                                                                             proposedbyOpenAI,containing800,000step-
+                    • Multi-Solution Consistency (MS): Assesses              level correctness labels for model-generated
+                      the model’s ability to handle multiple valid           solutions to problems from the MATH dataset.
+                      solutions to the same problem, ensuring con-         • PRMBench(Apache-2.0 license), a benchmark
+                      sistency across different reasoning paths.             designed to evaluate the ability of PRMs
+                 D ThresholdRobustnessonPRMBench                             to identify error-types in the solution pro-
+                                                                             cess, consisting of 6,216 fine-grained data in-
+                 Asillustrated in Figure 8, the experimental results         stances.
+                 of PRMBench show that R-PRM has significant
+                 robustness advantages, while Qwen2.5-Math-7B-          G PromptforConstructionData
+                 PRM800Kexhibitsaperformancegapof8.2points
+                 between the 0.5 threshold and its optimal perfor-
+                 mance.
+                 Figure 8: PRMBench Overall Score with Different
+                 Threshold
+                 E AdditionalCase
+                 As shown in this case, Qwen2.5-Math-7B-
+                 PRM800K fail to detect the calculation error in
+                 this step, yet they show high confidence in their
+                 judgments with their correctness scores around 0.9.
+                 On the other hand, our R-PRM shows its strong
+                                                                   13461
+                                                                                        3         2
+                         Problem: Suppose t is a positive integer such that lcm[12,t] = (12t) . What is the smallest possible value for t?
+                         Solution:
+                                                                                                                                                3
+                         Tosolve this problem, we can start by using the properties of the least common multiple (LCM). Given: lcm[12,t] =
+                              2
+                        (12t) .                                                       p                 p
+                                                                                      3            3    3       2
+                         Step 1: Take the cube root of both sides of the equation.      lcm[12,t] =        (12t) . This simplifies to: lcm[12,t] =
+                         12t2/3.
+                                                                      2
+                         . . . Step 31: We can see that 13824 = 2304 , so t = 48 satisfies the original equation. Therefore, the smallest possible
+                         value for t is 48 .
+                         Qwen2.5-Math-7B-PRM800Kscore: 0.8711
+                         R-PRM(Ours): Analysis: Previous Steps Analysis: Step 1: This step states the problem and sets up the equation to be
+                                                    3          2
+                         solved, which is lcm[12,t] = (12t) .This step is a correct restatement of the problem ......
+                         . . .                                                                                                          p
+                                                                                                     2                                   3      2
+                         Calculation Analysis: The calculation involves taking the cube root of (12t) . By the properties of exponents,    (12t) =
+                         √
+                         3    2   2      2/3    2/3
+                           12 ·t =12         · t   . This is because the cube root of a product can be expressed as the product of the cube roots,
+                         and the cube root of a power can be expressed as that power divided by 3. Therefore, the correct simplification should be
+                                         2/3   2/3          2/3
+                         lcm[12,t] = 12      · t   , not 12t    as stated in the Now Step.p                2/3
+                                                                                           3       2
+                         Conclusion: The Now Step incorrectly simplifies the expression      (12t) to 12t     . The correct simplification should be
+                         122/3 · t2/3, which is different from what is presented. Therefore, the Now Step contains an error.
+                         Verification: Is the step correct (Yes/No)? No"
+                         R-PRMscore: 0.2992
+                     Figure 9: A case study from MATH subset of ProcessBench. Red text denotes the error step and the scores of other
+                     models, and the blue text highlights our model’s critique of the error and our score for that step.
+                                                                                   13462
+         Youareanexcellent math teacher. Please verify the correctness of the Now Step.
+         Youfirst need to analyze the Now Step and the Previous Steps and then summarize based on your analysis.
+         Analysis:
+         Youneedtoanalyzethefollowing aspects.
+         **Previous Steps Analysis**: You need to analyze the Previous Steps step by step. For each step, you need to first explain
+         what the current step is doing, then you try to find any error in the current step.
+         **NowStepAnalysis**: You first need to explain what the Now Step is doing, and then point out which part of the Question
+         it is trying to solve or which part of the information it states.
+         **Data Source Analysis**: First you need to find out what data are used in the Now Step, and then you need to determine
+         whether the source of the data is reasonable and correct. When you judge whether the source of a data is reasonable and
+         correct, you need to specify the specific source of this data: such as which part of the question, or which content of the
+         previous step; and then determine the source and current use is consistent, the Now Step is used correctly.
+         **Consistency Analysis**: You need to check that the Now Step is consistent with the contents of the Previous Steps, and
+         then you need to check that all the information inside the Now Step is consistent.
+         **Calculation Analysis**: If the Now Step involves any calculations, such as addition, subtraction, multiplication, division,
+         equations, modulo operations, etc., you will first need to perform a check on the calculation, such as a reverse operation, to
+         see if the calculation was done correctly, and then analyze the results of your check to see if there was an error in the
+         calculation.
+         Conclusion:
+         Please verify the correctness of the Now Step based on your analysis, if there is any error in the Now Step then the Now Step
+         is wrong and vice versa the Now Step is correct. At the end of the Conclusion, when you give your final answer, write it in
+         the form "Verification: Is the step correct (Yes/No)? X", where X is either Yes or No.
+         Question: [Math Problem]
+         Previous Steps: [Previous Steps]
+         NowStep: [Current Step]
+         Please carefully analyze the correctness of the Now Step.
+         Reply:
+                         Table 6: The Prompt to Construct Data
+                                 13463

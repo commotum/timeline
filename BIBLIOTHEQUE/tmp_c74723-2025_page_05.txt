@@ -1,0 +1,72 @@
+                            ⋆                                   INST
+                   Given u , we construct instance masks M           by merg-           Concretely, we assign a unique RGB color to each in-
+                ing the final assigned masks via per-pixel argmax. MCLS             stance ID in MINST, producing an instance color map P        ∈
+                                                                                                     n                                         n
+                is obtained by assigning the highest probability class c =          R3×W×H foreachimageI ,whichweuseasalightweight
+                                                                          j                                      n
+                argmax p       within the mask area of an instance.                 supervision signal. We introduce an additional set of Gaus-
+                         i  i,j
+                                                                                                            ˆ
+                Discussion. The standard mask merging procedure as in-              sian color parameters θ, and an auxiliary loss and an aux-
+                troduced in MaskFormer [9] is substantially different from          iliary loss that supervises the rendering of instance color
+                ours.  In a nutshell, it consists of first filtering out low-       mapsduring Gaussian optimization:
+                confidence mask predictions to get a pool of candidate                                            N
+                masks. This is followed by a pixel-wise voting process to                                     1 X             ˆ ˆ
+                                                                                               L (θ,ϕ)=              L (P ,P (θ,ψ)),            (6)
+                select the most confident mask at each location. Finally, ad-                   reg           N        1   n   n
+                ditional filtering is applied to remove predictions that lack                                    n=1
+                                                                                            ˆ
+                                                                                    where P (θ,ϕ) is the rendered panoptic image. We opti-
+                sufficient vote support. While this heuristic procedure is                    n
+                simple and typically performs well for single images, it of-        mize the Gaussians with the following weighted combina-
+                ten fails to integrate the multi-view constraints essential for     tion of the two losses:
+                3D panoptic segmentation. Indeed, as shown in Sec. 4.5,                                                         ˆ
+                                                                                                  min     L (θ,ψ)+λL (θ,ψ)                      (7)
+                our QUBO procedure results in a large boost in perfor-                             θ,ϕ      rgb             reg
+                mance, thanks to its global optimization of instance masks
+                across all views.                                                   with weight λ set to 1 in all our experiments.
+                3.3. Panoptic labels on novel views with 3DGS                       Uplifting with LUDVIG. To uplift the instance labels into
+                                                                                    the optimized Gaussian Splatting scene, we opt for LUD-
+                In order to compare our model with other methods [2, 16,            VIG [35], a recent 3DGS-based feature uplifting method
+                25, 50, 57, 62], which evaluate the panoptic performance            that simply averages 2D pixel features across all views. In-
+                on unseen views, we additionally rely on Gaussian Splat-            steadofusingLUDVIGtoupliftfeatures,weutilizeittoup-
+                                                                                                                              0           m×W×H
+                ting (3DGS) [22]. We explore two possible strategies: (i)           lift one-hot encoded instance labels Mn ∈ {0,1}
+                                                                                    obtained from MINST. We define S as the set of view-pixel
+                we simply generate novel RGB views with vanilla 3DGS                                   n                 i
+                                                                                    pairs (n,u) impacted by Gaussian G during forward ren-
+                and predict the panoptic segmentation by a simple forward                                                   i
+                passofPanSt3Rontherenderedimages;or(ii)weupliftthe                  dering. This impact is quantified by the weight wi(n,u)
+                predicted panoptic segmentations to 3D and render the seg-          resulting from α-blending. LUDVIG defines the 3D feature
+                                                                                    g for the Gaussian G as the following weighted sum:
+                mentations on novel views. Since the first strategy is triv-          i                    i
+                ial and self-explanatory, we now describe the second strat-                    Xw(n,u)                        X
+                egy in more detail. In the following, we denote 2D images                g =         i       M0(u), Z =           w(n,p),       (8)
+                                                                                          i           Z        n         w          i
+                I ,...,I    and instance mask predictions MINST, as output                  (n,u)∈S     w                   (n,p)∈S
+                 1       N                                                                          i                              i
+                bythe QUBOmaskmergingdescribedabove.
+                Scene optimization. The 3DGS optimizes the means and                After uplifting to 3D and and reprojecting to 2D, the final
+                covariances of the Gaussian densities, their opacities, and         2Drenderedinstancelabelisobtainedastheargmaxalong
+                the color function parametrized by spherical harmonics              the instance label dimension.
+                [22]. Denoting by θ the color-related parameters and by             4. Experimental evaluation
+                ψ the other parameters, the 3DGS optimizes the following
+                reconstruction loss:                                                4.1. Implementation details
+                                           N                                        Training datasets. To train our method, we employ a mix
+                                        1 X           ˆ
+                              L     =          L(I ,I (θ,ψ)),              (5)
+                                rgb    N           n n                              of 2D (single-view) and 3D (set of multi-view posed im-
+                                          n=1                                       ages) datasets for which ground truth panoptic segmenta-
+                        ˆ                                                           tions are available (see Tab. 1). ScanNet++ [69] is com-
+                where I (θ) is the image rendered in the direction corre-
+                         n                                                          prised of 1006 high-resolution 3D indoor scenes with dense
+                spondingtoviewn,andLisacombinationofL andSSIM
+                                                                  1                 semantic (100 class labels) and instance annotations. We
+                loss functions [22].                                                usetheV2versionofthedatasetandfollowtheofficialsplit,
+                Panopticregularization. OptimizingGaussiansusingonly                i.e. 850 scenes for training and 50 scenes for validation.
+                RGBsupervision may cause them to span multiple object               Aria Synthetic Environments (ASE) [1] is a procedurally-
+                instances or semantic boundaries, which can negatively im-          generated synthetic dataset containing 100K unique multi-
+                pact subsequent label uplifting. To address this, we propose        room interior scenes populated with around 8K 3D objects
+                an additional regularization term to align Gaussians to the         from which we randomly sampled 750 scenes. With Infini-
+                predicted panoptic masks.                                           Gen[44],anothertoolforproceduralgenerationof3Ddata,
+                                                                               5860

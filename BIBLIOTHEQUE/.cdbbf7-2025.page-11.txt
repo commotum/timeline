@@ -1,0 +1,53 @@
+                 A. Additional Implementation Details                                                        Model                   mAP NDS
+                 A.1. Voxel Encoding for Rich Geometric Features                               SparseVoxFormer-base w/o mVFE         70.7    72.9
+                                                                                                    SparseVoxFormer-base             70.8    73.2
+                 Duetothenatureofourapproachthatdirectlyexploitsgeo-                                     Table 8. Effect of using mVFE.
+                 metric information in the sparse voxel features, it is impor-
+                 tant that the features encodes rich geometric information.                            Dataset       # of tokens     Feat. Resolution
+                 However, our voxel features are yielded from the interme-
+                 diate stage of a LiDAR backbone (Fig. 4 in the main paper)                 BEV            -           32,400         180×180×1
+                 so that each voxel feature may not be fully encoded. More-                           Nuscenes         18,000        180×180×11
+                 over, the current initial voxel encoding approach (Hard-                  Sparse      Waymo            9,500        180×180×11
+                 SimpleVFE [40]) averages raw LiDAR points within each                               Argoverse2         3,000        180×180×11
+                 voxel. It implies that inherent geometric information in the           Table 9. Comparison of the number of tokens for BEV features
+                 cell may be suppressed because information of point distri-            andsparsevoxelfeaturesaccordingtovariousLiDARsensors.Al-
+                 bution in the voxel would be disregarded. To alleviate this            though the sparse 3D voxel features (180×180×11) from all the
+                 problem, We present a simple modification for the initial              LiDARsensors contain geometric information at a higher resolu-
+                 voxel encoding by adding several statistics such as the stan-          tion than that of the BEV features (180×180), the number of valid
+                 dard deviation and the count of points within each cell into           Transformer tokens is much smaller than that in the BEV features.
+                 the average of them. We call this modified voxel feature en-
+                 coding approach as mVFE. This simple modification with                 empirically found that 256 channels is minimally required
+                 a marginal overhead allows the raw voxel features to carry             for effective feature encoding.
+                 richfine-levelgeometricinformation,consequentlyimprov-
+                 ing 3D object detection accuracy (Table 8).                            A.3. Additional Training Detail
+                    Specifically, original HardSimpleVFE [40] receives Li-
+                 DARpointsineachvoxel,andeachvoxelisrepresentedby                       As we base our implementation on the source code of
+                 five values (avg x, avg y, avg z, avg intensity, avg offset),          CMT[39], we follow many of the training details outlined
+                 where avg means an average value, intensity means the in-              in CMT. Specifically, we employ ground-truth sampling
+                 tensity of a LiDAR sensor, and offset means an temporal                during the training phase for the first 15 out of a total of
+                 offset among multiple sweeps. In our mVFE, the represen-               20 epochs. This is a form of curriculum learning. In the
+                 tation is modified to have 11 values (avg x, avg y, avg z,             ground-truth sampling, instances containing fewer than 5
+                 avg intensity, avg offset, std x, std y, std z, std intensity,         LiDARpointsareexcluded,i.e.,thoseinstancesthatbelong
+                 std offset, n points), where std means a standard deviation            to long-range and are difficult to detect. Also, additional fil-
+                 value, and n points means the number of points in the cell             tering by difficulty and class grouping are applied.
+                 normalized to 0∼1.                                                        For query denoising [16], we add auxiliary queries us-
+                 A.2. Additional Architecture Detail                                    ing the center coordinates of ground-truth cuboids, but only
+                                                                                        during the training phase. Specifically, we introduce noise
+                 Regarding the Transformer decoder, we use six transformer              to the coordinates and use their positional embeddings as
+                 decoder layers, each of which consists of a self-attention             the initial transformer queries. A loss function for query de-
+                 operation, a cross-attention operation, and a feed-forward             noisingensuresthattheoutputcoordinatescorrespondingto
+                 network. The number of queries used in our model is 900.               the noisy auxiliary queries align with the ground-truth co-
+                 The result of final transformer decoder layer is fed into our          ordinates. To avoid trivial shortcuts, we separate the gradi-
+                 prediction heads, and the heads predict the center, scale, ro-         ent groups for normal queries and the auxiliary queries, and
+                 tation, velocity, and class of each bounding cuboid.                   prevent the gradients from the outputs of auxiliary queries
+                    Regarding our deep fusion module, we use four                       from influencing other queries, as done in [16, 39].
+                 DSVT[33]block, each of which consists of four set atten-                  We use a pretrained image backbone but train a Li-
+                 tion layers (along x, x shift, along y, y shift). The specific         DAR backbone from scratch. Regarding the image back-
+                 hyper-parameters are set info ([72, 4]), window shape ([24,            bone, additional learning rate decays are applied for fine-
+                 24, 11]), hybrid factor ([2, 2, 1]), and shifts list ([[0, 0, 0],      tuning (0.01 for image backbone and 0.1 for image neck).
+                 [12, 12, 0]]).                                                         We use a cyclic learning rate policy with the initial learn-
+                    Whenweapplythedeepfusionmoduletoourmodel,we                         ing rate of 0.0001, but modify the target ratio of (4, 0.0001)
+                 increasethetargetnumberofchannelsofoursparseencoder                    from (8, 0.0001) in the original CMT. We follow the train-
+                 twice (128 to 256) because CMT also use 256 channels for               ing details of CMT for remaining factors (e.g. the batch size
+                 BEVfeaturerefinement as well as most recent models such                is 16). Our training time is similar to that of CMT (about 2.5
+                 as DAL[12]alsouse256channelsforsparseencoding.We                       days with eight A100 GPUs).

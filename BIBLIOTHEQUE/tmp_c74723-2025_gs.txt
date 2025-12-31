@@ -1,0 +1,710 @@
+                                    This ICCV paper is the Open Access version, provided by the Computer Vision Foundation.
+                                                 Except for this watermark, it is identical to the accepted version;
+                                            the final published version of the proceedings is available on IEEE Xplore.
+                                 PanSt3R:Multi-viewConsistent Panoptic Segmentation
+                           ˇ
+                   Lojze Zust               YohannCabon                 Juliette Marrie               Leonid Antsfeld
+                                                               ´ ˆ
+                                Boris Chidlovskii             Jerome Revaud              Gabriela Csurka
+                                                               Naver Labs Europe
+                                                     firstname.lastname@naverlabs.com
+                                      Abstract
+                  Panoptic segmentation in 3D is a fundamental problem
+               in scene understanding. Existing approaches typically rely
+               on costly test-time optimizations (often based on NeRF) to
+               consolidate 2D predictions of off-the-shelf panoptic seg-
+               mentation methods into 3D. Instead, in this work, we pro-     Figure 1. PanSt3R jointly predicts 3D geometry and panoptic seg-
+               pose a unified and integrated approach PanSt3R, which         mentation of a scene in a single forward pass.
+               eliminates the need for test-time optimization by jointly
+               predicting 3D geometry and multi-view-consistent panop-       els [6, 56, 60, 65].
+               tic segmentation in a single forward pass. Our approach          Several recent works [21, 27, 45, 51, 66] have extended
+               harnesses the 3D representations of MUSt3R, a recent scal-    panoptic segmentation to 3D scenes represented as point
+               able multi-view version of DUSt3R, and 2D representa-         clouds, meshes or voxels. These methods typically take a
+               tions of DINOv2, then performs joint multi-view panoptic      3D representation (e.g.a point cloud) as input and label it
+               prediction via a mask transformer architecture.   We ad-      using neural networks, such as PointNet [41, 42], designed
+               ditionally revisit the standard post-processing mask merg-    for direct operation on such data. However, acquiring dense
+               ing procedure and introduce a more principled approach        and accurate point clouds requires dedicated sensors and
+               for multi-view segmentation. We also introduce a simple       recent models [26, 49, 55, 58, 61] struggle with noisy or
+               method for generating novel-view predictions based on the     sparse point clouds derived from unposed images.
+               predictions of PanSt3R and vanilla 3DGS. Overall, the pro-       Instead, in this work, we propose to jointly perform 3D
+               posed PanSt3R is conceptually simple yet fast and scal-       reconstruction and panoptic segmentation given an uncon-
+               able, and achieves state-of-the-art performance on several    strained set of unposed images or video frames. In this
+               benchmarks, while being orders of magnitude faster. More      sense our method is closer to NeRF-based [2, 16, 25, 50,
+               information and examples available on our project page.       57, 75] or 3DGS-based methods [62] that start from a col-
+                                                                             lection of images. These approaches typically rely on posed
+               1. Introduction                                               images and off-the-shelf 2D panoptic segmentation mod-
+                                                                             els [15], followed by lifting and fusing the 2D panoptic pre-
+               Robust understanding of the semantics of 3D scenes is key     dictions to 3D via NeRFs [36] or 3DGS [22].
+               to many applications like virtual reality, robot navigation,     While this allows for aggregation of potentially incon-
+               or autonomous driving. Such use cases require an accurate     sistent and noisy 2D panoptic labels from multiple images
+               decomposition of the 3D environment into separate object      into consistent 3D labels, these methods have several limi-
+               instances of known classes. In 2D vision, this joint task     tations: (1) they depend on accurate camera poses, (2) they
+               of semantic and instance segmentation, denoted as panop-      require costly test-time optimization to align 2D segmen-
+               tic image segmentation [24], consists of instance segmen-     tations with 3D geometry, and (3) they inherently separate
+               tation of things classes (i.e.countable objects such as cars) the 2D segmentation and 3D reconstruction pipelines, po-
+               andsemanticsegmentationofstuff classes (i.e.uncountable       tentially sacrificing efficiency and accuracy.
+               classes such as road or sky). Following [24], a large num-       We argue that 3D reconstruction and 3D panoptic seg-
+               ber of solutions have been proposed for 2D panoptic seg-      mentation are two intrinsically connected tasks, both in-
+               mentation, based on CNNs [8, 30, 33, 37, 64], Transform-      volving reasoning in terms of 3D geometry of the scene
+               ers [14, 15, 29, 43, 67, 79], or more recently diffusion mod- and its instance decomposition. Therefore, we propose to
+                                                                        5856
+                model the 3D geometry and its panoptic segmentation in a           class-agnostic instance segmentation jointly trained with a
+                unified, end-to-end framework that performs directly multi-        semantic segmentation branch. Gao et al. [17] jointly trains
+                view consistent panoptic segmentation. Existing works for          semantic class labeling with a pixel-pair affinity pyramid,
+                such panoptic 3D reconstruction usually focus on single-           and Yuan et al. [71] generalizes object-contextual represen-
+                image inputs [11, 74] or require posed video inputs [63].          tations to panoptic segmentation.
+                   Instead, building on top of the recent 3D reconstruc-              With     the    success    of    Vision     Transformers,
+                tion network MUSt3R [61], we propose PanSt3R (Panoptic             Mask2Former [15], inspired by DETR           [4], adopted a
+                MUSt3R)whichjointlypredictsthe3Dscenegeometryand                   more unified approach to directly produce panoptic output,
+                its panoptics from an unconstrained collection of unposed          posing the task as a mask prediction and classification
+                images in a single forward pass. PanSt3R leverages two             problem.    Several recent extensions also aim for open-
+                pre-trained feature extractors to encode frames in both se-        vocabulary segmentation capabilities (e.g.using a CLIP
+                mantic (2D) and 3D-aware information, then directly re-            text encoder) [7, 14, 18, 20, 29, 43, 67, 70].      Recently,
+                gresses 3D geometry via a 3D head, and performs multi-             several diffusion-based methods were also proposed for
+                view instance mask prediction via a Mask2Former-like de-           this task [6, 56, 60, 65].
+                coder. These mask predictions are finally filtered using a         3D Panoptic Segmentation is a direct extension of 2D
+                lightweight novel quadratic binary optimization framework          panoptic segmentation for 3D scenes. We can distinguish
+                (QUBO). This turns out to be a crucial step in our method,         between several categories of approaches. First, methods
+                as we show that the standard filtering technique is poorly         that directly process an input 3D point cloud, typically ob-
+                suited for multi-view predictions. Finally, we demonstrate         tained by dedicated sensors (ToF or LIDAR), thereby as-
+                that it is straightforward to generate novel view panoptic         suming prior knowledge of the 3D scene geometry [21, 27,
+                predictions based on the outputs of our method via simple          45, 51, 66].
+                test-time uplifting of labels to 3DGS [35].                           Thesecondcategoryofmethods,closertoourapproach,
+                   In summary, our main contributions are as follows. We           requires only a set of input images and respective camera
+                introduce a method for joint 3D reconstruction and panop-          parameters (if not provided directly, the latter is usually
+                tic segmentation, which tackles the problem with a single          obtained via standard SfM techniques [48]). Existing ap-
+                forward pass. The approach is simple, fast, and operates           proaches in this category are either based on NeRF [36],
+                on hundreds of images without requiring any camera pa-             or Gaussian Splatting [22], with implicit or explicit labeled
+                rameters or test-time optimization. Second, we propose a           3D representations as output, respectively. These methods
+                novel and mathematically grounded mask prediction merg-            typically perform 3D panoptic segmentation by lifting 2D
+                ing strategy to further improve the quality of multi-view          segmentation masks obtained with pre-trained 2D panoptic
+                panoptic predictions. Third, we introduce two distinct and         segmentation models (e.g.Mask2Former [15]) to 3D. Zhi
+                simple approaches for novel-view synthesis with panoptic           et al. [75] showed that noisy 2D semantic segmentations
+                segmentation, leveraging our framework and 3D Gaussian             can be fused into a consistent volumetric model by a NeRF,
+                Splatting.  Finally, we conduct extensive evaluation and           and their model was extended to instance and panoptic seg-
+                ablative studies on several datasets, obtaining state-of-the-      mentation in [16, 25, 57].
+                art results, both in terms of panoptic quality and inference          Panoptic NeRF [16] starts from a set of sparse images,
+                speed.                                                             coarse 3D bounding primitives and noisy 2D predictions to
+                                                                                   generate panoptic labels via volumetric rendering. Panoptic
+                2. Related work                                                    Neural Fields (PNF) [25] learns a panoptic radiance field
+                                                                                   with a separate instance MLP and a semantic MLP by ex-
+                2DPanopticSegmentationisaunificationofsemanticand                  plicitly decomposing the scene into a set of objects and
+                instance segmentation tasks. Its goal is to decompose an           amorphous background. These MLPs collectively define
+                image into different regions, each region corresponding to         the panoptic-radiance field describing 3D point color, se-
+                an individual object (denoted as thing) or uncountable con-        mantic and instance labels. DM-NeRF [57] introduced an
+                cepts like ‘sky’ or ‘ground’ (denoted as stuff). The first         object field component to learn unique codes for all indi-
+                panoptic methods extended Mask R-CNN [19] to design a              vidual objects in 3D space from 2D supervision and panop-
+                deformable-convolution-based semantic segmentation head            tic segmentation with an extra semantic branch parallel to
+                and solve the two subtasks simultaneously [13, 23, 24, 37,         object code branch. Panoptic Lifting (PanLift) [50] relies
+                64].  Another set of models [8, 40, 59, 68] build upon             on TensoRF [5] on top of which they introduce lightweight
+                the DeepLab architecture [31]. Instead, [30] combines a            output heads for learning semantic and instance fields. The
+                proposal attention module with a mask attention module,            core idea of Contrastive Lift [2] is a slow-fast clustering ob-
+                [33] proposes an end-to-end occlusion-aware pipeline, and          jective function well suited for scenes with a large number
+                [52]introducesafullydifferentiableend-to-endnetworkfor             of objects. They lift 2D segments to 3D fusing them by
+                                                                              5857
+                 means of a neural field representation, which encourages                  3.1. PanSt3R
+                 multi-view consistency across frames.                                     Theoverall PanSt3R architecture is illustrated in Fig. 2 and
+                     OntheGaussian Spatting side, PLGS [62] learns to em-                  detailed below. It consists of a feature extraction step that
+                 bed an additional semantic and instance probability vectors               leverages foundational models for 2D and 3D feature ex-
+                 for each Gaussian, which can be rendered on novel views                   traction, followed by instance mask proposal generation.
+                 in parallel to RGB. To handle noisy panoptic predictions,                 Featureextraction. Ournetworkstartsbyextractingdense
+                 they rely on Scaffold-GS architecture [34] where additional               semanticand3D-awarerepresentationsfromthesetofinput
+                 depth maps are provided as input and 3D Gaussians are ini-                images by leveraging two pretrained backbones. Namely,
+                 tialized with semantic anchor points used for smooth regu-                we extract DINOv2 features for each input image, which
+                 larization during training. Instead, PCF-Lift [78] addressed              have been shown to capture dense and semantically mean-
+                 the degradation of performance in complex scenes caused                   ingful representations of the scene [38]. Likewise, we ex-
+                 by noisy and error-prone 2D segmentations by introducing                  tract MUSt3R[3]featuresforeachinputimage. MUSt3Ris
+                 Probabilistic Contrastive Fusion (PCF), which learns to em-               a recent extension of DUSt3R [26, 61], a foundation model
+                 bedprobabilistic features to robustly handle inaccurate seg-              for 3D vision, excelling at reconstructing the geometry of a
+                 mentations and inconsistent instance IDs.                                 scene given only sparse views. In practice, MUSt3R pro-
+                     Alternatively, a category of methods explores joint pre-              cesses images sequentially while maintaining an internal
+                 diction of 3D geometry and panoptics of the scene. How-                   memory of the previously seen images, thereby allowing
+                 ever, these approaches are either limited to single-image in-             the encoding of multi-view-consistent representations. Like
+                 puts [10, 11, 74], or rely on posed and ordered collection of             DINOv2, MUSt3R is a Transformer-based network, but it
+                 input frames [63, 77].                                                    contains an additional decoder to leverage its internal mem-
+                     In contrast to all these methods, our approach works on               ory. This way, it can encode both local and global scene
+                 collections of unordered and unposed input images without                 geometry using its encoder and decoder, respectively.
+                 camera parameters or depth maps, and directly outputs a                                                    D           D
+                                                                                              Formally, we denote by E          = ENC (I ) the DINOv2
+                 3Dreconstructionannotatedwithpanopticlabelsinasingle                                                       n               n     M
+                                                                                                                                     M
+                                                                                           feature maps of image I        and by E       = ENC (I ) and
+                 forward pass (see examples in Fig. 1).                                                                n             n                n
+                                                                                             M               M
+                                                                                           D =DEC(E )theencoder and decoder feature maps
+                                                                                             n               n
+                 3. Method                                                                 from MUSt3R. Note that by feature maps, we refer to
+                                                                                           an array of tokens, where each token corresponds to a
+                 Problem statement. Given a set of N images I ...I                ∈        small 16 × 16 patch in the image, i.e.we have in reality
+                                                                        1      N             D M M                                                   W     H
+                                                                                           E ,E ,D multi-channel feature maps of size                   ×
+                 RW×H×3, we aim to jointly perform 3D reconstruction                         n    n      n                                           16    16
+                 and panoptic segmentation, producing a global 3D point,                   and the number of channels corresponding to the respective
+                                                                                           feature dimensions d        =d        =1024andd            =768.
+                 a semantic class, and an instance ID for every pixel in                                          ED        EM                   DM
+                 each input image. Formally, these outputs materialize as                  As shown in Fig. 2, the three token maps are concatenated
+                 3D point-maps X ∈ RN×W×H×3, semantic segmentation                         along the feature dimension and passed through an MLP to
+                            CLS               N×W×H                                        formcompactjoint3D-semantictokenrepresentations{fn}
+                 masks M        ∈ {1...C}               , and instance segmenta-                          d
+                                                                                           with f    ∈ R t, where d       = 768. The concatenated fea-
+                                  INST               N×W×H                                        n                    f
+                 tion masks M          ∈ {1...m}               , where W and H             ture maps are also used to construct high-resolution mask
+                 denote the image width and height, C the number of classes                                    W×H×d
+                                                                                           features Fn ∈ R 2       2    F used for mask prediction, with
+                 and mthemaximumnumberofinstances1 inthescene.                             d   = 256. For that, we perform a series of MLP and 2×
+                                                                                            F
+                 Summary.         Our method builds upon recent progress                   upsampling operations to gradually upscale them until we
+                 made in the 3D reconstruction community. Specifically,                    reach the output resolution.
+                 our approach is based on MUSt3R [3], a Transformer-                       3D geometry. We leverage MUSt3R’s innate capabilities
+                 based powerful and scalable 3D reconstruction method,                     to reconstruct 3D point clouds. For every image, MUSt3R
+                 which we augment with panoptic capabilities inspired by                   predicts a global point cloud in the first image’s coordinate
+                 Mask2Former [9]. In Sec. 3.1 we detail the overall archi-                 frame, a local point cloud, and a confidence map. Specif-
+                 tecture of our network. Since the network outputs raw mask                                                          M
+                                                                                           ically, given the decoder features D         , a prediction head
+                 predictions that are potentially overlapping, a merging step                     3D                                 n
+                 is necessary to select a globally optimal set of instances                HEAD regresses3Dcoordinatesandconfidencesforeach
+                                                                                           pixel, i.e.Xg,Xl ,C = HEAD3D(DM) ∈ RW×H×3.
+                 (Sec. 3.2). In order to generate panoptic segmentations for                            n    n     n                 n
+                 novel viewpoints, we optionally project the labeled point                 Mask prediction and classification.                  We follow
+                 cloud into a set of 3D Gaussians (Sec. 3.3).                              Mask2Former[15]informulatingpanopticsegmentationas
+                                                                                           abinarymaskpredictionandclassificationproblem. Weex-
+                    1In our experiments m = 200. Instance IDs are not shared between       tend this formulation to the multi-view setting, generating
+                 classes and uniquely identify each object or stuff region in the scene.   globally consistent masks for each instance, i.e., the same
+                                                                                     5858
+                                                                                                                          Mask features    Instance masks
+                             Extracting frame-wise features                                  Panoptic prediction
+                                                                                                  Frame tokens
+                                                                  Frame tokens
+                                                                                        s
+                                         2D
+                                                                                        e
+                                                                                        i
+                                                                       MLP
+                                                                                        r
+                                         DINOv2
+                                                                                        e
+                                                                                        u
+                                                                                                      Mask 
+
+                                                                                        Q
+                                                                                         
+                                                                    Upscaler
+                                                                                        e
+                                                                                                  Transformer
+                                                                                        c
+                                                                                                                                         Class probabilites
+                                                                                        n
+                                         3D
+                                                                                        a
+                                                                                        t
+                                                                                        s
+                                                                                        n
+                                         MUSt3R
+                                                                                        I
+                     RGB frames
+                                                                                                   wall
+
+                                                                                                   chair
+
+                                                                  Mask features
+                                                                                                                SigLIP
+                                                                                                    ...
+                                                                                                                            Class Embeddings
+                                                                    3D Head
+                                                                                               Class Names
+                 Figure 2. PanSt3R architecture. 1) input unposed RGB frames are passed through pretrained DINOv2 and MUSt3R to extract 2D seman-
+                 tic and globally aligned 3D geometric features respectively. Frame tokens and mask features are constructed from per-frame concatenated
+                 features. 2) A mask transformer is used to decode instance masks and their class probabilities, by cross-attending learnable instance queries
+                 with extracted frame tokens.
+                 instance ID is assigned to a 3D object instance across all             point out a few key innovations. Most notably, our network
+                 views it appears in.                                                   is inherently multi-view, processing multiple images simul-
+                    This is achieved by a series of learnable queries de-               taneously and directly predicting consistent panoptic seg-
+                 noted by {q0}, shared by all views and used to represent               mentation across all views. This is enabled by leveraging
+                               j
+                 different instances of things and stuff classes in the in-             3D-aware features from MUSt3R and employing a shared
+                 put scene. These learnable query features can hence be                 set of queries, where each query explicitly targets the same
+                 seen as region proposals. They are input to a mask trans-              object instance across all view. Unlike [15], we do not con-
+                 former DECP that attends to multi-view frame tokens {f }               struct a multi-resolution feature pyramid, but instead we re-
+                                                                               n
+                 using cross-attention. This results in a set of refined queries        tain the original frame tokens to limit the memory footprint.
+                 {q } = DECP({q0},{f }), which serve as the base for in-                We adapt an open-vocabulary classification head [73], fa-
+                    j                j     n
+                 stance classification and mask prediction.                             cilitating training on heterogeneous datasets and improving
+                    To enable training across multiple datasets with diverse            test-time performance.
+                 labeling conventions, we adopt an open-vocabulary ap-                  3.2. Merging mask predictions
+                 proach for instance classification.     Specifically, the class
+                 probabilities for each query are computed as the cosine sim-           Given the set of multi-view mask predictions from Eq. (1),
+                                                                                                            N×W×H
+                 ilarity between the query embeddings and SigLIP [39, 72]               denoted M ∈ R           2   2 for each query i, our goal is to
+                                                                                                     i
+                 generated text embeddings of class names2. Second, the                 find a subset of masks that optimally cover the N × W × H
+                 maskprediction of each query is obtained via a dot product                                                                       2    2
+                                                                                        output pixel space, minimizing the overlap between se-
+                 with the high-resolution mask features F . We denote the               lected masks while reducing the area of empty regions
+                                                              n
+                 resulting instance mask for the image I and query j as                 (i.e. , holes). Mathematically, this can be formalized as a
+                                                            n
+                                                       M       W×H                      quadratic unconstrained binary optimization (QUBO) prob-
+                            M =sigmoid(F ·q )∈R2 2,                            (1)
+                               j,n                n    j                                lem:
+                 where qM = LINM(qj) is the mask embedding of qj.                             ⋆                 mP              P
+                          j                                                                  u =max                    u Q −           u u Q ,        (3)
+                                                                                                        u∈{0,1}      i  i   i      i<j  i  j  i,j
+                 Training loss.       We follow the training protocol of                where u is a boolean assignment of proposals, the weight
+                 Mask2Former [15], which comprises three losses: a focal                Q =P M representsthearea|M |covered by mask
+                 loss L     for instance classification [28], and a combina-              i       k    i,k                          i
+                        cls                                                             proposal i, and Q      represents the area in excess when se-
+                 tion of dice loss L      [54] and binary cross-entropy L                                   i,j
+                                      dice                                     bce      lecting both mask proposals i and j due to their overlap:
+                 for mask prediction. The final loss is a weighted combina-
+                 tion                                                                                                      P
+                                                                                                 Q =|M ∩M|=                    min(M ,M ),
+                                                                                                   i,j        i      j        k         i,k    j,k    (4)
+                               L=λL +λL +λL .                                  (2)
+                                      c  cls     d dice      b  bce                       since |M ∪M |=|M |+|M |−|M ∩M |.
+                                                                                                      i      j         i        j        i       j
+                 Discussion.     While our panoptic prediction network is                  To limit the selection of overlapping regions, we further
+                 largely inspired by Mask2Former [15], we would like to                 multiply Q      by a penalty λ      > 1, (typically λ      = 2).
+                                                                                                     i,j                 p                      p
+                    2p   =sim(qCLS,t ), where qCLS = LINCLS(q ) is the class embed-     Since QUBO is an NP-hard problem, we rely on simulated
+                      i,j        j    i         j              j
+                 ding of the query q and t is the text embedding of the class i.        annealing [47] to find a near-optimal solution efficiently.
+                                  j     i
+                                                                                   5859
+                            ⋆                                   INST
+                   Given u , we construct instance masks M           by merg-           Concretely, we assign a unique RGB color to each in-
+                ing the final assigned masks via per-pixel argmax. MCLS             stance ID in MINST, producing an instance color map P        ∈
+                                                                                                     n                                         n
+                is obtained by assigning the highest probability class c =          R3×W×H foreachimageI ,whichweuseasalightweight
+                                                                          j                                      n
+                argmax p       within the mask area of an instance.                 supervision signal. We introduce an additional set of Gaus-
+                         i  i,j
+                                                                                                            ˆ
+                Discussion. The standard mask merging procedure as in-              sian color parameters θ, and an auxiliary loss and an aux-
+                troduced in MaskFormer [9] is substantially different from          iliary loss that supervises the rendering of instance color
+                ours.  In a nutshell, it consists of first filtering out low-       mapsduring Gaussian optimization:
+                confidence mask predictions to get a pool of candidate                                            N
+                masks. This is followed by a pixel-wise voting process to                                     1 X             ˆ ˆ
+                                                                                               L (θ,ϕ)=              L (P ,P (θ,ψ)),            (6)
+                select the most confident mask at each location. Finally, ad-                   reg           N        1   n   n
+                ditional filtering is applied to remove predictions that lack                                    n=1
+                                                                                            ˆ
+                                                                                    where P (θ,ϕ) is the rendered panoptic image. We opti-
+                sufficient vote support. While this heuristic procedure is                    n
+                simple and typically performs well for single images, it of-        mize the Gaussians with the following weighted combina-
+                ten fails to integrate the multi-view constraints essential for     tion of the two losses:
+                3D panoptic segmentation. Indeed, as shown in Sec. 4.5,                                                         ˆ
+                                                                                                  min     L (θ,ψ)+λL (θ,ψ)                      (7)
+                our QUBO procedure results in a large boost in perfor-                             θ,ϕ      rgb             reg
+                mance, thanks to its global optimization of instance masks
+                across all views.                                                   with weight λ set to 1 in all our experiments.
+                3.3. Panoptic labels on novel views with 3DGS                       Uplifting with LUDVIG. To uplift the instance labels into
+                                                                                    the optimized Gaussian Splatting scene, we opt for LUD-
+                In order to compare our model with other methods [2, 16,            VIG [35], a recent 3DGS-based feature uplifting method
+                25, 50, 57, 62], which evaluate the panoptic performance            that simply averages 2D pixel features across all views. In-
+                on unseen views, we additionally rely on Gaussian Splat-            steadofusingLUDVIGtoupliftfeatures,weutilizeittoup-
+                                                                                                                              0           m×W×H
+                ting (3DGS) [22]. We explore two possible strategies: (i)           lift one-hot encoded instance labels Mn ∈ {0,1}
+                                                                                    obtained from MINST. We define S as the set of view-pixel
+                we simply generate novel RGB views with vanilla 3DGS                                   n                 i
+                                                                                    pairs (n,u) impacted by Gaussian G during forward ren-
+                and predict the panoptic segmentation by a simple forward                                                   i
+                passofPanSt3Rontherenderedimages;or(ii)weupliftthe                  dering. This impact is quantified by the weight wi(n,u)
+                predicted panoptic segmentations to 3D and render the seg-          resulting from α-blending. LUDVIG defines the 3D feature
+                                                                                    g for the Gaussian G as the following weighted sum:
+                mentations on novel views. Since the first strategy is triv-          i                    i
+                ial and self-explanatory, we now describe the second strat-                    Xw(n,u)                        X
+                egy in more detail. In the following, we denote 2D images                g =         i       M0(u), Z =           w(n,p),       (8)
+                                                                                          i           Z        n         w          i
+                I ,...,I    and instance mask predictions MINST, as output                  (n,u)∈S     w                   (n,p)∈S
+                 1       N                                                                          i                              i
+                bythe QUBOmaskmergingdescribedabove.
+                Scene optimization. The 3DGS optimizes the means and                After uplifting to 3D and and reprojecting to 2D, the final
+                covariances of the Gaussian densities, their opacities, and         2Drenderedinstancelabelisobtainedastheargmaxalong
+                the color function parametrized by spherical harmonics              the instance label dimension.
+                [22]. Denoting by θ the color-related parameters and by             4. Experimental evaluation
+                ψ the other parameters, the 3DGS optimizes the following
+                reconstruction loss:                                                4.1. Implementation details
+                                           N                                        Training datasets. To train our method, we employ a mix
+                                        1 X           ˆ
+                              L     =          L(I ,I (θ,ψ)),              (5)
+                                rgb    N           n n                              of 2D (single-view) and 3D (set of multi-view posed im-
+                                          n=1                                       ages) datasets for which ground truth panoptic segmenta-
+                        ˆ                                                           tions are available (see Tab. 1). ScanNet++ [69] is com-
+                where I (θ) is the image rendered in the direction corre-
+                         n                                                          prised of 1006 high-resolution 3D indoor scenes with dense
+                spondingtoviewn,andLisacombinationofL andSSIM
+                                                                  1                 semantic (100 class labels) and instance annotations. We
+                loss functions [22].                                                usetheV2versionofthedatasetandfollowtheofficialsplit,
+                Panopticregularization. OptimizingGaussiansusingonly                i.e. 850 scenes for training and 50 scenes for validation.
+                RGBsupervision may cause them to span multiple object               Aria Synthetic Environments (ASE) [1] is a procedurally-
+                instances or semantic boundaries, which can negatively im-          generated synthetic dataset containing 100K unique multi-
+                pact subsequent label uplifting. To address this, we propose        room interior scenes populated with around 8K 3D objects
+                an additional regularization term to align Gaussians to the         from which we randomly sampled 750 scenes. With Infini-
+                predicted panoptic masks.                                           Gen[44],anothertoolforproceduralgenerationof3Ddata,
+                                                                               5860
+                  Table 1. Statistics for datasets used during training (top) and eval-      Table 2. We report results for direct predictions of PanSt3R on
+                  uation (bottom). ”MV” denotes available multi-view data.                   rendered test images (with and without QUBO), as well as results
+                                                                                             obtained via the simple 3DGS uplifting approach with LUDVIG.
+                               Dataset          real  MV #scenes #classes                    †Timing for building the 3DGS. Note that given access to target
+                               ScanNet++[69]     ✓     ✓      855       100                  view images, PanSt3R can make predictions without the need for
+                               ASE[1]            x     ✓      750        44                  3DGS(andcameraparameters).
+                           rainingInfinigen [44] x     ✓      936        76
+                           T   COCO[32]          ✓     x      118k       80                                           Req.    Hyper-  Rep-   Scan       Time
+                               ADE20k[76]        ✓     x      20k       150                                 Method    Poses    sim     lica   Net       (min)
+                               ScanNet++[69]     ✓     ✓       50       100                          DM-NeRF[57]       ✓       51.6    44.1  41.7      ∼900
+                            al ScanNet[12]       ✓     ✓       12        20                               PNF[25]      ✓       44.8    41.1  48.3         -
+                            Ev Hypersim[46]      x     ✓       6         20                            PanLift [50]    ✓       60.1    57.9  58.9      ∼450
+                               Replica [53]      x     ✓       7         20                     Contrastive Lift [2]   ✓       62.3    59.1  62.3      ∼420
+                                                                                                         PLGS[62]      ✓       62.4    57.8  58.7      ∼120
+                  wegenerate 936 indoor scenes of 25 images each. Finally,                            PCF-Lift [78]    ✓        -       -    63.5         -
+                                                                                                                                                              †
+                  we also leverage two widely used 2D panoptic segmenta-                        PanSt3Rw/oQUBO          †      51.6    57.3  59.5    ∼4(+35 )
+                                                                                                                                                               †
+                  tion datasets, COCO [32] and ADE20K [76], which consist                                  PanSt3R      †      56.5    62.0  65.7   ∼4.5(+35 )
+                  of high-resolution images with precise manual annotations.                   PanSt3R+LUDVIG          ✓       66.3    60.6  67.5       ∼40
+                  Adding these datasets is useful to improve generalization
+                  and robustness, since they offer a larger visual diversity. To
+                  simulate multi-view data on 2D images, we sample several
+                  geometric and photometric variants of the input image in-
+                  cluding crops, rotations, and color jittering.
+                  Training details. The DINOv2 and MUSt3R backbones
+                  (resp. ViT-L,andViT-L+ViT-Barchitectures)areinitialized
+                  with their pretrained weights and frozen during PanSt3R
+                  training. In preliminary experiments, we observed that fine-               Figure 3. Qualitative examples of novel-view panoptic segmenta-
+                  tuning MUSt3R does not have a big impact on the final                      tion on HypersimandReplicascenes. Predictionsareoverlaidon
+                  performance, but incurs significant additional training cost.              top of original images, and colors and their nuances denote differ-
+                  Since each dataset comes with a different set of classes, we               ent classes and object instances respectively.
+                  restrict the focal loss supervision L         to within the set of
+                                                            cls
+                  ground-truth classes of each dataset during training. Addi-                while penalizing segments with wrong matches (False Pos-
+                  tional training details are provided in the Supplementary.                 itives) or without matches (False Negatives).             It can be
+                  Test-time keyframes. Since the number of test views can                    seen as a combination of two terms, segmentation qual-
+                  belargeduringinference(e.g.hundreds),weadoptthesame                        ity SQ = 1/|TP|P                    IoU(p,g), and a recognition
+                  technique as in [3] to reduce the computational and mem-                                            (p,g)∈TP
+                  ory footprint. Namely, we efficiently cluster the set of input             quality RQ = TP/(2·|TP|+|FP|+|FN|).
+                  images using retrieval techniques and select a small set of                Extension to 3D scenes. PQ can be trivially computed at
+                                                                                             the scene level by pretending that the scene is a concatena-
+                  50keyframesusingthefarthest-point-sampling (FPS) algo-                     tion of all images, effectively tying predictions between all
+                  rithm to maximize coverage. Frame tokens {f } are then                                                                       sc
+                                                                         n                   images. Thismetric, coined scene-PQ(PQ ),wasfirstpro-
+                  only selected from these keyframes, which is enough to                     posedin[50]toevaluatetheresultsof3Dpanopticsegmen-
+                  generate relevant queries {qj}, as shown in Sec. 4.5. We                   tation. As we always use the scene-PQ metric, we omit the
+                  then process the remaining views frame-by-frame, only ex-                                   sc
+                                                                                             upper-script ” ” for brevity in the following. To compute
+                  tracting the per-frame features F        and directly performing
+                                                        n                                    the overall results for a dataset, we average the per-scene
+                  maskprediction via Eq. (1), with the decoded queries {qj}                  PQsacross all scenes.
+                  obtained from the keyframes.
+                  4.2. Evaluation metrics                                                    4.3. Evaluation on the PanLift benchmark
+                                                                                             Wefirst evaluate our method on the Panoptic Lifting (Pan-
+                  Panoptic Quality (PQ). The Panoptic Quality (PQ)                           Lift) benchmark [50]. It comprises 12 scenes from Scan-
+                  score [24] is defined as                                                   Net [12], 6 scenes from Hypersim [46] and 7 scenes from
+                                          2P              IoU(p,g)                           Replica [53] (see details in [50]). We use the same splits
+                                  PQ=          (p,g)∈TP               ,            (9)       between seen and unseen (novel) views as in [2, 50].
+                                          2|TP|+|FP|+|FN|                                        For PanSt3R, we experiment with the two strategies pre-
+                  wherepisapredictedinstanceandg isaGTclassinstance.                         sented in Sec. 3.3: (i) we simply render a novel image of the
+                  Intuitively, this score averages IoU of matched segments                   target viewpoint using an off-the-shelf 3DGS model, and
+                                                                                       5861
+                                                                                                                                   Table3. ResultsontheScanNet++valset. Wereportresultofour
+                                                                                                                                   default modelPanSt3R(full)andonetrainedonlyonScanNet++.
+                                                                                                                                   PanSt3R is compared with PanLift [50] and Contrastive Lift [2],
+                                                                                                                                   utilizing Mask2Former [15] finetuned on ScanNet++.
+                                                                                                                                           Method                               PQ       PQ        PQ        Time(min)
+                                                                                                                                                                                             th         st
+                                                                                                                                           PanLift [50]                        29.5      15.6      59.4          ∼500
+                                                                                                                                           Contrastive Lift [2]                28.4      14.8      56.3          ∼460
+                                                                                                                                           PanSt3R(ScanNet++)                  46.7      43.2      55.8          ∼2.3
+                           Original Image     Panoptic Lifting   Contrastive Lift        PanSt3R        PanSt3R+LUDVIG                     +LUDVIG                             54.8      52.4      62.4           ∼35
+                                                                                                                                           PanSt3R(full)                       49.1      45.8      58.7          ∼2.3
+                         Figure 4. Qualitative comparison of novel-view panoptic segmen-                                                   +LUDVIG                             54.7      51.7      62.4           ∼35
+                         tation on ScanNet [12] scenes. Colors and their nuances denote
+                         different classes and object instances respectively.
+                         perform a forward pass on rendered images with PanSt3R;                                                   Discussion. PanSt3R + LUDVIG set a new state-of-the-
+                         or (ii) we utilize the LUDVIG uplifting strategy to di-                                                   art, except on Replica, where direct forward pass predic-
+                         rectly construct a panoptic 3DGS-based scene representa-                                                  tion of PanSt3R on rendered views performs slightly bet-
+                         tion. Given access to target-view images, PanSt3R can di-                                                 ter. On Hypersim and ScanNet, uplifting the panoptic seg-
+                         rectly predict panoptic segmentation in a forward pass, in                                                mentations performs much better than direct forward with
+                         principle not requiring poses or 3DGS. However, tobemore                                                  PanSt3Rduetothenoisereductioneffectofmulti-viewfea-
+                         inline with the competing methods, which predict panoptic                                                 ture aggregation (Fig. 4). Notably, PanSt3R accomplishes
+                         segmentation based on test poses, not images, we compute                                                  this while being far more computationallyefficientthanpre-
+                         the PQ results for PanSt3R (and PanSt3R w/o QUBO) on                                                      vious methods, even when uplifting to 3DGS via LUDVIG.
+                         test images rendered with vanilla 3DGS built with posed                                                   Additionally, using a simple direct prediction with PanSt3R
+                                                  3                                                                                onre-rendered images is enough to outperform all previous
+                         training images .                                                                                         methods on two out of three datasets (except Hypersim),
+                         Comparisonwithexistingmethods. 3Dpanopticsegmen-                                                          with potentially no need for camera parameters in contrast
+                         tation methods either directly process an input 3D point                                                  to existing methods.
+                         cloud (see discussion in Supplementary), or they revolve
+                         around the idea of performing 3D panoptic segmentation                                                    4.4. Evaluation on ScanNet++
+                         by lifting 2D segmentation masks obtained with off-the
+                         shelf pre-trained 2D panoptic segmentation models, often                                                  We also evaluate PanSt3R on the validation set of the
+                         Mask2Former [62] pretrained on COCO [32]. Then they                                                       ScanNet++ [69]. For each of the 50 validation scenes,
+                         maptheCOCOpanopticclassestothefollowing21classes:                                                         we randomly select 100 frames (only iPhone images) and
+                         wall, floor, cabinet, bed, chair, sofa, table, door, window,                                              use PanSt3R to predict multi-view consistent panoptic seg-
+                         counter, shelves, curtain, ceiling, refrigerator, television,                                             mentations for these images in a single forward pass. We
+                         person, toilet, sink, lamp, bag and other. In general, these                                              then randomly select 50 images from the remaining pool
+                         methods lift and align the 2D predictions to 3D with a test-                                              of images to serve as test views in order to evaluate the
+                         time optimization of a NeRF or 3DGS.                                                                      panoptic segmentation on novel unseen viewpoints with the
+                              We compare our PanSt3R variants on the PanoLift                                                      same process as used in the PanLift benchmark. A ma-
+                         datasets against state-of-the art methods in Tab. 2, where                                                jor difference compared to PanLift is a much larger num-
+                         DM-NeRF [57], PNF [25], PanLift [50] and Contrastive                                                      ber of classes (100 instead of 20), including small objects
+                         Lift [2] are NeRF-based approaches, and PLGS [62] and                                                     (e.g.crate, paper, socket, cup, smoke detector, soap dis-
+                         PCF-Lift [78] rely on 3DGS to uplift 2D panoptic segmen-                                                  penser), hence requiring much more fine-grained segmen-
+                         tation masks. PanSt3R inference is performed using the full                                               tation. To better assess the performance of the models, we
+                                                                                                                                   also report PQ              and PQ , denoting panoptic quality com-
+                         training class set, then classes are re-mapped to the target 21                                                                   th               st
+                         classes, similar to existing work. In Fig. 3 we provide vi-                                               puted separately on thing and on stuff classes.
+                         sual examples for PanSt3R+LUDVIG on different datasets                                                    Comparisonwithexistingmethods. Duetoalackofpub-
+                         and scenes, and in Fig. 4 we provide qualitative compar-                                                  lished results for panoptic segmentation on ScanNet++,
+                         isons between PanSt3R, PanSt3R+LUDVIG, PanLift and                                                        we compare our method to PanLift [50] and Contrastive
+                         Contrastive Lift.                                                                                         Lift [2] using the official code and uplift the predictions
+                             3Note that prediction quality of PanSt3R is limited by the fidelity of                                of Mask2Former, finetuned on the ScanNet++ training set.
+                         3DGS rendered views. Direct prediction on test images yields notably                                      To ensure a fair comparison, we also evaluate a variant of
+                         better results (see Supplementary).                                                                       PanSt3R trained only on the ScanNet++ training set, de-
+                                                                                                                           5862
+                                                                                               Table 4. Ablating the importance of 3D (MUSt3R [3]) and 2D
+                                                                                               (DINOv2[38])featuresontheScanNet++validationset. Results
+                                                                                               are shown for PanSt3R (224, ScanNet++)+LUDVIG.
+                   Rendered Image
+                                                                                                                    features   PQ     PQ      PQ
+                                                                                                                                         th      st
+                   PanSt3R w/o QUBO                                                                                3D+2D 50.4 45.4            61.1
+                                                                                                                      3D       46.4   40.7    58.8
+                                                                                                                      2D       35.7   28.4    51.9
+                   PanSt3R
+                                                                                               Table 5.    Analyzing the effect of the QUBO merging strategy
+                                                                                               (Sec. 3.2). Results are reported for PanSt3R+LUDVIG.
+                   PanSt3R + LUDVIG 
+                  Figure 5. Qualitative results of novel-view panoptic segmentation                     QUBO Hypersim Replica          ScanNet    ScanNet++
+                  onvarious ScanNet++[12] scenes. Colors and their nuances de-                             x        58.1       60.8      60.2        50.8
+                  notedifferent classes and their instances. Note that due to the large                    ✓        66.7       60.7      67.3        52.0
+                  numberofclasses (100), some may share similar colors.
+                                                                                       4       starting from MUSt3R/DINOv2witha224x224inputreso-
+                  noted as PanSt3R (ScanNet++) alongside our full model .                      lution and trained on the ScanNet++ training set only. Re-
+                  Quantitative and qualitative results are presented in Tab. 3                 sult obtained using only the 2D (DINOv2) or 3D (MUSt3R)
+                  and Fig. 5 respectively.                                                     features are presented in Tab. 4. We observe a clear comple-
+                  Discussion We observe that all PanSt3R variants (full or                     mentarity effect between 2D semantic features of DINOv2
+                  ScanNet++only,withorwithoutLUDVIG)largelyoutper-                             and 3D geometric features of MUSt3R.
+                  form both PanLift and Contrastive Lift by more than 10%
+                  in PQ, while being an order of magnitude faster. Analysis                    Mask merging strategy. We evaluate the impact of the
+                  reveals, that related approaches encounter difficulties with                 QUBO-based mask merging strategy (Sec. 3.2). In Tab. 2
+                  thing instances, especially small objects (see PQth scores).                 and Fig. 5, we compare two versions of PanSt3R, with
+                  Additionally, we observe that NeRF optimization strug-                       and without QUBO (i.e.using the standard merging strat-
+                  gles when using ’only’ 100 training views. In comparison,                    egy from MaskFormer [9]). The same experiments are per-
+                  PanSt3R’s performance is relatively invariant to the num-                    formed with additional LUDVIG uplifting in Tab. 5. We
+                  ber of views, since it builds upon the sparse view recon-                    observe an overall large gap in terms of PQ (except for
+                  struction framework of DUSt3R and MUSt3R (see abla-                          PanSt3R+LUDVIGonReplica),whichhighlights the inad-
+                  tions in Sec. 4.5). When we compare PanSt3R and PanSt3R                      equacy of the standard merging scheme when dealing with
+                  (ScanNet++), we observe that the model trained on more                       multi-view segmentation. In a sense, this is expected, as
+                  data is slightly better, but the gap disappears when using                   the standard scheme is purely heuristic and instances are
+                  LUDVIG. Finally, we once again observe that uplifting la-                    selected only locally, without considering any global con-
+                  bels with LUDVIG results in a significant improvement                        sistency.
+                  both quantitatively and qualitatively (see Fig. 5).
+                  4.5. Ablative studies                                                        5. Conclusion
+                  Weperform a range of comparative experiments and abla-
+                  tive studies to evaluate the impact of various components                    Wehavepresented PanSt3R, a novel approach for joint 3D
+                  and model configurations on the method’s performance.                        reconstruction and 3D panoptic segmentation operating on
+                  Weprimarily assess the role of using 2D DINOv2 and 3D                        unposed and uncalibrated collections of images. The pro-
+                  MUSt3Rencoders, as well as the impact of QUBO and GS                         posed approach, building upon recent progress in 2D and
+                  regularization. Further ablative experiences can be found in                 3Dfoundationmodels,isconceptually simple yet effective,
+                  the Supplementary.                                                           achieving state-of-the-art results on multiple benchmarks.
+                  Impact of 2D & 3D features. We ablate the contribution                       Despite not relying on any depth input nor camera parame-
+                  of our two feature extraction backbones on the final per-                    ters, and without the need for costly test-time optimization,
+                  formance. For this study, we use a smaller architecture,                     PanSt3Risabletodecomposeasceneintoasetofinstances
+                                                                                               in an efficient manner producing high-quality results and
+                     4ThesamemodelweightsasininTab.2,butusingthe100ScanNet++                   pavingthewaytopromisingfutureapplicationsinthefields
+                  classes during inference.                                                    of robotics, virtual reality and autonomous driving.
+                                                                                         5863
+                References                                                                 Panoptic NeRF: 3D-to-2D Label Transfer for Panoptic Ur-
+                 [1] Armen Avetisyan, Christopher Xie, Henry Howard-Jenkins,               ban Scene Segmentation. In 3DV, 2022. 1, 2, 5
+                      Tsun-Yi Yang, Samir Aroudj, Suvam Patra, Fuyang Zhang,          [17] Naiyu Gao, Yanhu Shan, Yupei Wang, Xin Zhao, Yinan Yu,
+                      Duncan P. Frost, Luke Holland, Campbell Orme, Jakob En-              Ming Yang, and Kaiqi Huang. SSAP: Single-Shot Instance
+                      gel, Edward Miller, Richard A. Newcombe, and Vasileios               Segmentation With Affinity Pyramid. In ICCV, 2019. 2
+                      Balntas. SceneScript: Reconstructing Scenes With An Au-         [18] Xiuye Gu, Yin Cui, Jonathan Huang, Abdullah Rashwan,
+                      toregressive Structured LanguageModel. arXiv:2403.13064,             Xuan Yang, Xingyi Zhou, Golnaz Ghiasi, Weicheng Kuo,
+                      2024. 5, 6                                                           Huizhong Chen, Liang-Chieh Chen, and David A. Ross.
+                                                ˜                                          3DaTaSeg: Taming a Universal Multi-Dataset Multi-Task
+                 [2] Yash Bhalgat, Iro Laina, Joao F. Henriques, Andrew Zisser-            Segmentation Model. In NeurIPS, 2023. 2
+                      man, and Andrea Vedaldi. Contrastive Lift: 3D Object In-
+                                                                                                                                     ´
+                      stance Segmentation by Slow-Fast Contrastive Fusion. In         [19] Kaiming He, Georgia Gkioxari, Piotra Dollar, and Ross Gir-
+                      NeurIPS, 2024. 1, 2, 5, 6, 7                                         shick. Mask R-CNN. In ICCV, 2017. 2
+                 [3] Yohann Cabon, Lucas Stoffl, Leonid Antsfeld, Gabriela            [20] Shuting He, Henghui Ding, and Wei Jiang. Primitive Gen-
+                                                   ´ ˆ                                     eration and Semantic-related Alignment for Universal Zero-
+                      Csurka, Boris Chidlovskii, Jerome Revaud, and Vincent
+                      Leroy. MUSt3R: Multi-view Network for Stereo 3D Recon-               Shot Segmentation. In CVPR, 2023. 2
+                      struction. In CVPR, 2025. 3, 6, 8                               [21] Fangzhou Hong, Hui Zhou, Xinge Zhu, Hongsheng Li, and
+                 [4] NicolasCarion,FranciscoMassa,GabrielSynnaeve,Nicolas                  Ziwei Liu. LiDAR-based Panoptic Segmentation via Dy-
+                      Usunier, Alexander Kirillov, and Sergey Zagoruyko. End-to-           namic Shifting Network. In CVPR, 2021. 1, 2
+                      EndObjectDetection with Transformers. In ECCV, 2020. 2          [22] Bernhard Kerbl, Georgios Kopanas, Thomas Leimkuehler,
+                 [5] Anpei Chen, Zexiang Xu, Andreas Geiger, Jingyi Yu, and                and George Drettakis. 3D Gaussian Splatting for Real-Time
+                      Hao Su. TensoRF: Tensorial Radiance Fields. In ECCV,                 Radiance Field Rendering. ACM Transactions on Graphics ,
+                      2022. 2                                                              42(4):1–14, 2023. 1, 2, 5
+                 [6] Ting Chen, Lala Li, Saurabh Saxena, Geoffrey Hinton, and         [23] Alexander Kirillov, Kaiming He, Ross Girshick, Carsten
+                      David J. Fleet. A Generalist Framework for Panoptic Seg-                                    ´
+                                                                                           Rother, and Piotr Dollar.   Panoptic Feature Pyramid Net-
+                      mentation of Images and Videos. In ICCV, 2023. 1, 2                  works. In CVPR, 2019. 2
+                 [7] Xi Chen, Shuang Li, Ser-Nam Lim, Antonio Torralba, and           [24] Alexander Kirillov, Kaiming He, Ross Girshick, Carsten
+                      HengshuangZhao. Open-vocabularyPanopticSegmentation                                        ´
+                      with Embedding Modulation. In ICCV, 2023. 2                          Rother, and Piotr Dollar. Panoptic Segmentation. In CVPR,
+                 [8] Bowen Cheng, Maxwell D. Collins, Yukun Zhu, Ting Liu,                 2019. 1, 2, 6
+                      Thomas S. Huang, Hartwig Adam, and Liang-Chieh Chen.            [25] Abhijit Kundu, Kyle Genova, Xiaoqi Yin, Alireza Fathi,
+                      Panoptic-DeepLab: A Simple, Strong, and Fast Baseline for            Caroline Pantofaru, Leonidas Guibas, Andrea Tagliasacchi,
+                      Bottom-UpPanoptic Segmentation. In CVPR, 2020. 1, 2                  Frank Dellaert, and Thomas Funkhouser. Panoptic Neural
+                 [9] Bowen Cheng, Alexander G. Schwing, and Alexander Kir-                 Fields: A Semantic Object-Aware Neural Scene Representa-
+                      illov. Per-Pixel Classification is Not All You Need for Se-          tion. In CVPR, 2022. 1, 2, 5, 6, 7
+                                                                                                                               ´ ˆ
+                      mantic Segmentation. In NeurIPS, 2021. 3, 5, 8                  [26] VincentLeroy,YohannCabon,andJeromeRevaud. Ground-
+                [10] Tao Chu, Pan Zhang, Qiong Liu, and Jiaqi Wang. BUOL:                  ing Image Matching in 3D with MASt3R. In ECCV, 2024.
+                      ABottom-UpFrameworkwithOccupancy-awareLiftingfor                     1, 3
+                      Panoptic 3D Scene Reconstruction From A Single Image .          [27] Jinke Li, Xiao He, Yang Wen, Yuan Gao, Xiaoqiang Cheng,
+                      In CVPR, 2023. 3                                                     and Dan Zhang. Panoptic-PHNet: Towards Real-Time and
+                [11] ManuelDahnert,JiHou,MatthiasNiessner,andAngelaDai.                    High-Precision LiDAR Panoptic Segmentation via Cluster-
+                      Panoptic 3d scene reconstruction from a single rgb image. In         ing Pseudo Heatmap. In CVPR, 2022. 1, 2
+                      NeurIPS, 2021. 2, 3                                             [28] Xiang Li, Wenhai Wang, Lijun Wu, Shuo Chen, Xiaolin
+                [12] Angela Dai, Angel X. Chang, Manolis Savva, Maciej Hal-                Hu, Jun Li, Jinhui Tang, and Jian Yang. Generalized Focal
+                      ber, Thomas Funkhouser, and Matthias Nießner. ScanNet:               Loss: Learning Qualified and Distributed Bounding Boxes
+                      Richly-Annotated 3D Reconstructions of Indoor Scenes. In             for Dense Object Detection. In NeurIPS, 2020. 4
+                      CVPR,2017. 6, 7, 8                                              [29] Xiangtai Li, Haobo Yuan, Wei Li, Henghui Ding, Size Wu,
+                [13] Daan de Geus, Panagiotis Meletis, and Gijs Dubbelman.                 WenweiZhang,YiningLi,KaiChen,andChenChangeLoy.
+                      Panoptic Segmentation with a Joint Semantic and Instance             OMG-Seg: Is One Model Good Enough For All Segmenta-
+                      Segmentation Network. arXiv:1809.02110, 2018. 2                      tion? In CVPR, 2024. 1, 2
+                [14] Zheng Ding, Jieke Wang, and Zhuowen Tu.              Open-       [30] Yanwei Li, Xinze Chen, Zheng Zhu, Lingxi Xie, Guan
+                      Vocabulary Universal Image Segmentation with MaskCLIP.               Huang, Dalong Du, and Xingang Wang. Attention-Guided
+                      In ICML, 2023. 1, 2                                                  UnifiedNetworkforPanopticSegmentation. InCVPR,2019.
+                [15] Yu Du, Fangyun Wei, Zihe Zhang, Miaojing Shi, Yue Gao,                1, 2
+                      and Guoqi Li. Masked-attention Mask Transformer for Uni-        [31] Chen Liang-Chieh, George Papandreou, Iasonas Kokkinos,
+                      versal Image Segmentation. In CVPR, 2022. 1, 2, 3, 4, 7              Kevin Murphy, and Alan Yuille. Semantic Image Segmen-
+                [16] Xiao Fu, Shangzhan Zhang, Tianrun Chen, Yichong Lu,                   tation with Deep Convolutional Nets and Fully Connected
+                      LanyunZhu,XiaoweiZhou,AndreasGeiger,andYiyiLiao.                     CRFs. In ICLR, 2015. 2
+                                                                                 5864
+                [32] Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays,           and Joshua M. Susskind. Hypersim: A Photorealistic Syn-
+                                                           ´
+                     PietroPerona,DevaRamanan,PiotrDollar,andC.Lawrence                 thetic Dataset for Holistic Indoor Scene Understanding. In
+                     Zitnick. Microsoft COCO: Common Objects in Context. In             ICCV,2021. 6
+                     ECCV,2014. 6, 7                                               [47] S. S. Kirkpatrick, Gelatt C. D. Jr., and M. P. Vecchi. Opti-
+                [33] Huanyu Liu, Chao Peng, Changqian Yu, Jingbo Wang, Xu               mization by Simulated Annealing. Science, 220, 1983. 4
+                     Liu, Gang Yu, and Wei Jiang. An End-to-End Network for                                  ¨
+                                                                                   [48] Johannes Lutz Schonberger and Jan-Michael Frahm.
+                     Panoptic Segmentation. In CVPR, 2019. 1, 2                         Structure-from-Motion Revisited. In CVPR, 2016. 2
+                [34] Tao Lu, Mulin Yu, Linning Xu, Yuanbo Xiangli, Limin                            ¨
+                                                                                   [49] PhilippSchroppel,JanBechtold,ArtemijAmiranashvili,and
+                     Wang, Dahua Lin, and Bo Dai. Scaffold-GS: Structured 3D            Thomas Brox. A Benchmark and a Baseline for Robust
+                     Gaussians for View-Adaptive Rendering. In CVPR, 2024. 3            Multi-view Depth Estimation. In 3DV, 2022. 1
+                                               ´ ´
+                [35] Juliette Marrie, Romain Menegaux, Michael Arbel, Diane                                                              `
+                                                                                   [50] Yawar Siddiqui, Lorenzo Porzi, Samuel Rota Bulo, Nor-
+                     Larlus, and Julien Mairal.  LUDVIG: Learning-free Up-                      ¨
+                                                                                        man Muller, Matthias Nießner, Angela Dai, and Peter
+                     lifting of 2D Visual Features to Gaussian Splatting scenes.        Kontschieder. Panoptic Lifting for 3D Scene Understanding
+                     arXiv:2410.14462, 2024. 2, 5                                       With Neural Fields. In CVPR, 2023. 1, 2, 5, 6, 7
+                [36] Ben Mildenhall, Pratul P. Srinivasan, Matthew Tancik,                                                  ¨
+                                                                                   [51] Kshitij Sirohi, Rohit Mohan, Daniel Buscher, Wolfram Bur-
+                     Jonathan T. Barron, Ravi Ramamoorthi, and Ren Ng. NeRF:            gard, and Abhinav Valada. EfficientLPS: Efficient LiDAR
+                     Representing Scenes as Neural Radiance Fields for View             Panoptic Segmentation. IEEE Transactions on Robotics , 38
+                     Synthesis. In ECCV, 2020. 1, 2                                     (3):1894–1914, 2021. 1, 2
+                [37] Rohit Mohan and Abhinav Valada. EfficientPS: Efficient        [52] Konstantin Sofiiuk, Olga Barinova, and Anton Konushin.
+                     Panoptic Segmentation. International Journal of Computer           AdaptIS: Adaptive Instance Selection Network. In ICCV,
+                     Vision , 129:1551–1579, 2021. 1, 2                                 2019. 2
+                                            ´            ´
+                [38] Maxime Oquab, Timothee Darcet, Theo Moutakanni, Huy           [53] Julian Straub, Thomas Whelan, Lingni Ma, Yufan Chen,
+                     Vo, Marc Szafraniec, Vasil Khalidov, Pierre Fernandez,             Erik Wijmans, Simon Green, Jakob J. Engel, Raul Mur-
+                     Daniel Haziza, Francisco Massa, Alaaeldin El-Nouby, Mah-           Artal, Carl Ren, Shobhit Verma, Anton Clarkson, Mingfei
+                     moud Assran, Nicolas Ballas, Wojciech Galuba, Russell              Yan, Brian Budge, Yajie Yan, Xiaqing Pan, June Yon,
+                     Howes,Po-YaoHuang,Shang-WenLi,IshanMisra,Michael                   Yuyang Zou, Kimberly Leon, Nigel Carter, Jesus Briales,
+                                                                         ´
+                     Rabbat, Vasu Sharma, Gabriel Synnaeve, Hu Xu, Herve Je-            Tyler Gillingham, Elias Mueggler, Luis Pesqueira, Manolis
+                     gou, Julien Mairal, Patrick Labatut, Armand Joulin, and Pi-        Savva, Dhruv Batra, Hauke M. Strasdat, Renzo De Nardi,
+                     otr Bojanowski. DINOv2: Learning Robust Visual Features            Michael Goesele, Steven Lovegrove, and Richard New-
+                     withoutSupervision. TransactionsonMachineLearningRe-               combe. The Replica Dataset: A Digital Replica of Indoor
+                     search , 3(1), 2024. 3, 8                                          Spaces. arXiv:1906.05797, 2019. 6
+                [39] Songyou Peng and Kyle Genova. OpenScene: 3D Scene                                                                   ´
+                                                                                   [54] Carole H. Sudre, Wenqi Li, Tom Vercauteren, Sebastien
+                     Understanding with Open Vocabularies. In CVPR, 2023. 4             Ourselin, and M. Jorge Cardoso. Generalised Dice Overlap
+                                                    ´                                   as a Deep Learning Loss Function for Highly Unbalanced
+                [40] Lorenzo Porzi, Samuel Rota Bulo, Aleksander Colovic, and
+                     Peter Kontschieder.  Seamless Scene Segmentation.     In           Segmentations. In DLMIA, 2017. 4
+                     CVPR,2019. 2                                                  [55] Zhenggang Tang, Yuchen Fan, Dilin Wang, Hongyu Xu,
+                [41] CharlesR.Qi,HaoSu,KaichunMo,andLeonidasJ.Guibas.                   Rakesh Ranjan, Alexander Schwing, and Zhicheng Yan.
+                     PointNet: Deep Learning on Point Sets for 3D Classification        MV-DUSt3R+: Single-Stage Scene Reconstruction from
+                     and Segmentation. In CVPR, 2017. 1                                 Sparse Views in 2 Seconds. arXiv:2412.06974, 2024. 1
+                [42] Charles Ruizhongtai Qi, Li Yi, Hao Su, and Leonidas J.        [56] Wouter Van Gansbeke and Bert De Brabandere. A Simple
+                     Guibas. PointNet++: Deep Hierarchical Feature Learning             Latent Diffusion Approach for Panoptic Segmentation and
+                     onPoint Sets in a Metric Space. In NeurIPS, 2017. 1                MaskInpainting. In ECCV, 2024. 1, 2
+                [43] Jie Qin, Jie Wu, Pengxiang Yan, Ming Li, Ren Yuxi, Xue-       [57] Bing Wang, Lu Chen, and Bo Yang. DM-NeRF: 3D Scene
+                     feng Xiao, Yitong Wang, Rui Wang, Shilei Wen, Xin Pan,             Geometry Decomposition and Manipulation from 2D Im-
+                     and Xingang Wang. FreeSeg: Unified, Universal and Open-            ages. In ICLR, 2023. 1, 2, 5, 6, 7
+                     Vocabulary Image Segmentation. In CVPR, 2023. 1, 2            [58] HengyiWangandLourdesAgapito. 3DReconstructionwith
+                [44] Alexander Raistrick, Lingjie Mei, Karhan Kayan, David              Spatial Memory. arXiv:2408.16061, 2024. 1
+                     Yan, Yiming Zuo, Beining Han, Hongyu Wen, Meenal              [59] Huiyu Wang, Yukun Zhu, Bradley Green, Hartwig Adam,
+                     Parakh, Stamatis Alexandropoulos, Lahav Lipson, Zeyu Ma,           Alan L. Yuille, and Liang-Chieh Chen.    Axial-DeepLab:
+                     and Jia Deng.    Infinigen Indoors: Photorealistic Indoor          Stand-Alone Axial-Attention for Panoptic Segmentation. In
+                     Scenes using Procedural Generation. In CVPR, 2024. 5,              ECCV,2020. 2
+                     6                                                             [60] Hefeng Wang, Jiale Cao, Rao Muhammad Anwer, Jin
+                [45] Ryan Razani, Ran Cheng, Enxu Li, Ehsan Taghavi, Yuan               Xie, Fahad Shahbaz Khan, and Yanwei Pang. DFormer:
+                     Ren, and Liu Bingbing. GP-S3Net: Graph-based Panoptic              Diffusion-guided Transformer for Universal Image Segmen-
+                     Sparse Semantic Segmentation Network. In ICCV, 2021. 1,            tation. arXiv:2306.02240, 2023. 1, 2
+                     2                                                             [61] Shuzhe Wang, Vincent Leroy, Yohann Cabon, Boris
+                                                                                                          ´ ˆ
+                [46] Mike Roberts, Jason Ramapuram, Anurag Ranjan, Atulit               Chidlovskii, and Jerome Revaud. DUSt3R: Geometric 3D
+                     Kumar, Miguel Angel Bautista, Nathan Paczan, Russ Webb,            Vision Made Easy. In CVPR, 2024. 1, 2, 3
+                                                                              5865
+               [62] Yu Wang, Xiaobao Wei, Ming Lu, and Guoliang Kang.           [79] Xueyan Zou, Zi-Yi Dou, Jianwei Yang, Zhe Gan, Linjie Li,
+                    PLGS:RobustPanoptic Lifting with 3D Gaussian Splatting.          Chunyuan Li, Xiyang Dai, Harkirat Behl, Jianfeng Wang,
+                    arXiv:2410.17505, 2024. 1, 3, 5, 6, 7                            Lu Yuan, Nanyun Peng, Lijuan Wang, Yong Jae Lee, and
+               [63] Dong Wu, Zike Yan, and Hongbin Zha. PanoRecon: Real-             Jianfeng Gao. Generalized Decoding for Pixel, Image, and
+                    TimePanoptic3DReconstructionfromMonocularVideo. In               Language. In CVPR, 2023. 1
+                    CVPR,2024. 2, 3
+               [64] Yuwen Xiong, Renjie Liao, Hengshuang Zhao, Rui Hu, Min
+                    Bai, Ersin Yumer, and Raquel Urtasun. UPSNet: A Unified
+                    Panoptic Segmentation Network. In CVPR, 2019. 1, 2
+               [65] Jiarui Xu, Sifei Liu, Arash Vahdat, Wonmin Byeon, Xiao-
+                    long Wang, and Shalini De Mello. Open-Vocabulary Panop-
+                    tic Segmentation with Text-to-Image Diffusion Models. In
+                    CVPR,2023. 1, 2
+               [66] Shuangjie Xu, Rui Wan, Maosheng Ye, Xiaoyi Zou, and
+                    Tongyi Cao. Sparse Cross-scale Attention Network for Ef-
+                    ficient LiDAR Panoptic Segmentation. In AAAI, 2022. 1,
+                    2
+               [67] Xin Xu, Tianyi Xiong, Zheng Ding, and Zhuowen Tu.
+                    MasQCLIP for Open-Vocabulary Universal Image Segmen-
+                    tation. In ICCV, 2023. 1, 2
+               [68] Tien-Ju Yang, Maxwell D. Collins, Yukun Zhu, Jyh-Jing
+                    Hwang, Ting Liu, Xiao Zhang, Vivienne Sze, George Pa-
+                    pandreou, and Liang-Chieh Chen. DeeperLab: Single-Shot
+                    Image Parser. arXiv:1902.05093, 2019. 2
+               [69] Chandan Yeshwanth, Yueh-Cheng Liu, Matthias Nießner,
+                    and Angela Dai. ScanNet++: A High-Fidelity Dataset of
+                    3DIndoorScenes. In ICCV, 2023. 5, 6, 7
+               [70] QihangYu,JuHe,XueqingDeng,XiaohuiShen,andLiang-
+                    Chieh Chen.    Convolutions Die Hard: Open-Vocabulary
+                    Segmentation with Single Frozen Convolutional CLIP. In
+                    NeurIPS, 2023. 2
+               [71] Yuhui Yuan, Xilin Chen, and Jingdong Wang.      Object-
+                    Contextual Representations for Semantic Segmentation. In
+                    ECCV,2020. 2
+               [72] Xiaohua Zhai, Basil Mustafa, Alexander Kolesnikov, and
+                    Lucas Beyer.    Sigmoid Loss for Language Image Pre-
+                    Training. In ICCV, 2023. 4
+               [73] Hao Zhang, Feng Li, Xueyan Zou, Shilong Liu, Chunyuan
+                    Li, Jianwei Yang, and Lei Zhang.  A Simple Framework
+                    for Open-Vocabulary Segmentation and Detection. In ICCV,
+                    2023. 4
+               [74] Xiang Zhang, Zeyuan Chen, Fangyin Wei, and Zhuowen Tu.
+                    Uni-3D: A Universal Model for Panoptic 3D Scene Recon-
+                    struction. In ICCV, 2023. 2, 3
+               [75] ShuaifengZhi,TristanLaidlow,StefanLeutenegger,andAn-
+                    drew J. Davison. In-Place Scene Labelling and Understand-
+                    ing with Implicit Scene Representation. In ICCV, 2021. 1,
+                    2
+               [76] Bolei Zhou, Hang Zhao, Xavier Puig, Sanja Fidler, Adela
+                    Barriuso, and Antonio Torralba.  Scene Parsing through
+                    ADE20KDataset. In CVPR, 2017. 6
+               [77] Zhen Zhou, Yunkai Ma, Junfeng Fan, Shaolin Zhang, Feng-
+                    shui Jing, and Min Tan. EPRecon: An Efficient Framework
+                    for Real-Time Panoptic 3D Reconstruction from Monocular
+                    Video. arXiv:2409.01807, 2024. 3
+               [78] Runsong Zhu, Shi Qiu, Qianyi Wu, Ka-Hei Hui, Pheng-Ann
+                    Heng, and Chi-Wing Fu. PCF-Lift: Panoptic Lifting by
+                    Probabilistic Contrastive Fusion. In ECCV, 2024. 3, 6, 7
+                                                                           5866

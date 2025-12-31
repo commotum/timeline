@@ -1,0 +1,64 @@
+                                                                                 the memory to process streaming point clouds in real time.
+                                                                                 The overall inference latency is primarily determined by
+                                                                                 the inference thread, which is lightweight and fast, while
+                                                                                 the predictive thread maintains long-term spatio-temporal
+                                                                                 memories by continuously updating them with the latest
+                                                                                 features. At each timestamp, the inference thread retrieves
+                                                                                 relevant features from memory through motion alignment,
+                                                                                 ensuring real-time inference.
+                                                                                 4.2. Geometric Memory Update
+                                                                                    Oursystemisgeneralandcanbeintegratedintoboth3D
+                                                                                 and 4D segmentation backbones, where features are stored
+               Figure 3.   Point-level and voxel-level methods in inference      at the voxel level for fast query in the inference thread and
+               thread: orangepointsindicatetheextractedfeaturescorresponding     aggregated to update using the latest keyframe via motion
+               keyframe points, while blue points indicate the aligned incoming  alignment. The memory system leverages a sparse variant
+               frame points querying the features from memory.                   of ConvGRU[3,25]toperformgeometricmemoryupdates
+                                                                                 efficiently.
+               memoryupdatetomaintainspatial-temporalinformationof                  Uponthe arrival of a keyframe, we first perform motion
+               geometric and motion features, ego-pose future alignment          alignment by transforming the previous memory state ht−k
+                                                                                 to the current frame, resulting in the aligned memory h′    :
+               to cancel ego-motion, and dynamic object future alignment                                                                 t−k
+               to eliminate dynamic object movement.                                            ′
+                                                                                               h     =f        (p        · h   )           (1)
+               4.1. Dual-thread system                                                          t−k      t−k→t    t−k→t    t−k
+                                                                                    where pt−k→t denotes ego-pose transformation and
+                  Unlike previous works in 2D streaming perception,              ft−k→t represents dynamic object flow transformation.
+               which focus on object detection and tracking by predicting        Both transformation are applied to convert the memory
+               thetransformationofboundingboxes,4Dpanopticsegmen-                coordinates into the current keyframe’s coordinate space,
+               tation must establish correspondences between past predic-        aligning both static and dynamic objects.
+               tions and unseen future point clouds across multiple frames          Subsequently, the geometric memory is updated using
+                                                                                 the current frame’s feature embeddings f :
+               due to the latency. To address this challenge, we simplify                                                  t
+               the real-time inference problem using a dual-thread system.
+               This system consists of a Predictive Thread for memory up-                                        ′
+                                                                                                z =σ(Ψ (f ,h         )),
+               dating and future dynamics forecasting and an Inference                           t        z   t  t−k
+                                                                                                                 ′
+                                                                                                r =σ(Ψ (f ,h         )),
+               Thread that allows incoming future points to quickly re-                          t        r   t  t−k                       (2)
+                                                                                                ˆ                       ′
+               trieve the corresponding features from memory, ensuring                          h =tanh(Ψ (f ,r ,h          )),
+                                                                                                 t            u t t t−k
+               efficient inference within the limited time constraints.                               ˆ        ˆ
+                                                                                                h =h ·z +h           · (1 − z ),
+               Predictive thread. We continuously update the geometric                           t     t   t    t−k         t
+               and motion memories with the latest available frame as a             where Ψ ,Ψ ,Ψ are sparse 3D convolution blocks. z
+                                                                                             r    z   u                                      t
+               key frame. Leveraging the spatial-temporal information in         and r are activation gate and reset gate to update and reset
+                                                                                       t
+               the motion memories, we forecast the future camera and            the memory. The updated memory retains the latest spatial-
+               dynamic object movement to align future frames with cor-          temporal information to support future dynamics forecast-
+               responding features in geometric memory, thereby acceler-         ing and efficient feature queries.
+               ating the inference in the inference thread.                      4.3. Ego-pose Future Alignment
+               Inference thread. Each incoming frame is geometrically
+               aligned with the latest memory using forecasted pose and             As seen in Fig. 4, the static car in the incoming frame
+               flow. Thecorrespondingfeaturesarethenretrievedfromthe             is positioned differently from the same car in memory. To
+               geometric memoryusingtwoquerystrategies, as illustrated           ensure temporal consistency in dynamic environments, we
+               in Fig. 3. In our approach, we use a hash table-style mem-        utilize ego-pose forecasting to compensate for camera mo-
+               orythatallowsdirectaccesstocorrespondingvoxelfeatures             tion and align the current memory with future frames.
+               via their indices and apply nearest neighbor search only for         In many outdoor applications, such as autonomous driv-
+               points querying empty voxels. These retrieved features are        ing, ego-pose information is typically available from on-
+               subsequently passed through a lightweight prediction head         board sensors. However, in indoor scenarios, such as an
+               to produce the final output.                                      embodied robot operating in a room, obtaining pose infor-
+                  The dual-thread system operates in parallel and shares         mation is often challenging and requires pose estimation.
+                                                                              4

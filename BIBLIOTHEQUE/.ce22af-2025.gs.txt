@@ -1,0 +1,594 @@
+                      4DSegStreamer: Streaming 4D Panoptic Segmentation via Dual Threads
+                                                          Ling Liu1*     Jun Tian1*      Li Yi1,2,3†
+                                                              1IIIS, Tsinghua University
+                                                  2Shanghai Qi Zhi Institute         3Shanghai AI Lab
+                                                      https://llada60.github.io/4DSegStreamer
+                                        Abstract
+                  4Dpanoptic segmentation in a streaming setting is crit-
+               ical for highly dynamic environments, such as evacuating
+               dense crowds and autonomous driving in complex scenar-
+               ios, where real-time, fine-grained perception within a con-
+               strained time budget is essential. In this paper, we introduce
+               4DSegStreamer, a novel framework that employs a Dual-
+               Thread System to efficiently process streaming frames. The
+               framework is general and can be seamlessly integrated into
+               existing 3D and 4D segmentation methods to enable real-
+               time capability. It also demonstrates superior robustness
+               compared to existing streaming perception approaches,
+               particularly under high FPS conditions. The system con-
+               sists of a predictive thread and an inference thread. The pre-
+               dictive thread leverages historical motion and geometric in-      Figure 1.   Comparison of streaming performance at different
+               formation to extract features and forecast future dynamics.       FPS settings on the SemanticKITTI dataset. Our 4DSegStreamer
+               The inference thread ensures timely prediction for incom-         demonstrates significant performance gains and exhibits a slower
+               ing frames by aligning with the latest memory and compen-         performancedeclineastheFPSincreases,indicatingitsrobustness
+               sating for ego-motion and dynamic object movements. We            as a more advanced 4D streaming system for panoptic segmenta-
+               evaluate 4DSegStreamer on the indoor HOI4D dataset and            tion tasks, particularly in high-FPS scenarios.
+               the outdoor SemanticKITTI and nuScenes datasets. Com-
+               prehensiveexperimentsdemonstratetheeffectivenessofour
+               approach, particularly in accurately predicting dynamic           to generate accurate predictions for each incoming frame
+               objects in complex scenes.                                        within a limited time budget, ensuring that perception re-
+                                                                                 sults remain up-to-date and relevant to the current state of
+                                                                                 the environment.
+         arXiv:2510.17664v1  [cs.CV]  20 Oct 20251. Introduction                    Existing streaming perception research mainly focuses
+                  Map-free autonomous agents operating in highly dy-             on tasks such as 2D object detection [13, 14, 17–20, 23,
+               namic environments require a comprehensive understand-            26, 44, 46], 2D object tracking [22, 33], and 3D object de-
+               ing of their surroundings and rapid response capabilities,        tection [1, 6, 12, 16, 24, 37] in autonomous driving appli-
+               essential for tasks such as outdoor autonomous driving and        cation, aiming to balance accuracy and latency. However,
+               indoor robotic manipulation. While low latency may not            object bounding boxes are usually insufficient to provide
+               be critical in static or map-available settings, it becomes a     finer-grained knowledge like the object shape or scene con-
+               significant challenge in dynamic, map-free environments,          text, which is critical for downstream decision-making. For
+               where effective navigation and interaction rely on real-time      instance, in autonomous driving, relying solely on object
+               perception. The primary goal of streaming perception is           detection does not allow the system to accurately identify
+                                                                                 areas like construction zones or sidewalks, which are essen-
+                  *Equal contribution                                            tial to avoid for safe navigation.
+                  †Corresponding author                                             To achieve a more comprehensive understanding of the
+                                                                              1
+                sceneinastreamingsetup,wefocusonthechallengingtask                   perior robustness compared to other streaming perception
+                of streaming 4D panoptic segmentation. Given a stream-               methods shown in Fig. 1, particularly under high-FPS
+                ing sequence of point clouds, the goal is to predict panoptic        scenarios. These results highlight the effectiveness and
+                segmentation on each frame within a strict time budget, en-          value of our method for 4D streaming segmentation.
+                abling real-time scene perception. This task is particularly
+                difficult due to the computational overhead and fine-grained       2. Related Work
+                perception requirements. Most existing 4D methods [2, 8–           2.1. Streaming Perception
+                11, 21, 25, 29, 34, 39, 40, 43, 45, 47, 48] fail to achieve
+                real-time perception and the fluctuations in computing re-            In the streaming perception, the inherent challenge lies
+                sourcesintroduceadditionallatencyinconsistencies, further          in predicting results in the future state, in order to mini-
+                complicating streaming 4D panoptic segmentation task.              mize the temporal gap between input and output timestep.
+                   To address the challenges of real-time dense percep-            Most previous studies concentrate on developing forecast-
+                tion in streaming 4D panoptic segmentation, we intro-              ing modules specifically tailored for this streaming setting.
+                duce 4DSegStreamer, a general system designed to en-               Stream [26] firstly introduces the streaming setting and uti-
+                able existing segmentation methods to operate in real time.        lizes the Kalman Filters to predict future bounding boxes.
+                4DSegStreamer utilizes a novel dual-thread system with a           StreamYOLO [44] designs a dual-flow perception module,
+                predictive thread maintaining geometry and motion mem-             which incorporates dynamic and static flows from previous
+                ories in the scene and an inference thread facilitating            and current features to predict the future state. DAMO-
+                rapid inference at each time step.     The key idea behind         StreamNet [17] and LongShortNet [23] leverages spatial-
+                4DSegStreamer involves dividing the streaming input into           temporal information by extracting long-term temporal mo-
+                key frames and non-key frames based on the model’s la-             tion from previous multi-frames and short-term spatial in-
+                tency. In the predictive thread, we meticulously compute           formation from the current frame for future prediction. Dif-
+                geometric and motion features at key frames and utilize            ferent from previous researches which only forecast one
+                these features to continuously update the memories, en-            frameaheadandthusthepredictionoutputislimitedwithin
+                abling long-term spatial-temporal perception. To support           a single frame, DaDe [20] and MTD [19] considering pre-
+                efficient memory queries, the memories are also utilized to        vious prediction time, adaptively choose the correspond-
+                predict future dynamics, guiding how a future frame can ef-        ing future features. Transtreaming [46] designs an adaptive
+                fectively adjust for potential movement when querying the          delay-awaretransformertoselectthepredictionfrommulti-
+                geometry memory. In the inference thread, each incoming            frames future that best matches future time.
+                frame is first positionally aligned with the current geometry         Several studies have explored streaming perception in
+                memorybycompensatingfortheforecastedmotion. Itthen                 LiDAR-based 3D detection [1, 6, 12, 16, 24, 37]. Lidar
+                swiftly queries the hash table-style memory to obtain per-         Stream [16] segments full-scan LiDAR points into multi-
+                point labels. The two threads together allow both fast and         ple slices, processing each slice at a higher frequency com-
+                high-quality streaming 4D panoptic segmentation.                   pared to using the full-scan input. Although ASAP [38]
+                   Ourcontributions to this work can be summarized as:             introduces a benchmark for online streaming 3D detection,
+                • We introduce a new task for streaming 4D panoptic seg-           it relies on camera-based methods using images as input.
+                  mentation, advancing real-time, fine-grained perception          2.2. 4D Point Cloud Sequence Perception
+                  for autonomous systems in dynamic environments.
+                • We propose a novel dual-thread system that includes a               4D point cloud sequence perception methods integrate
+                  predictive thread and an inference thread, which is gen-         temporal consistency and spatial aggregation through ad-
+                  eral and applicable to existing segmentation methods to          vanced memory mechanisms. These methods are generally
+                  achieve real-time performance.      The predictive thread        categorized into voxel-based [8, 25, 43, 45] and point-based
+                  continuously updates memories by leveraging historical           [2, 9–11, 21, 21, 28, 29, 31, 34, 39, 40, 47, 48] approaches.
+                  motion and geometric features to forecast future dynam-             For the point-based methods, SpSequenceNet [34] ag-
+                  ics. The inference thread retrieves relevant features from       gregates 4D information on both a global and local scale
+                  the memory through geometric alignment with the fore-            through K-nearest neighbours. NSM4D [10] introduces a
+                  casted motion, using ego-pose transformation and inverse         historical memory mechanism that maintains both geomet-
+                  flow iteration.                                                  ric and motion features derived from motion flow infor-
+                • Through extensive evaluations in outdoor datasets Se-            mation, thereby enhancing perception capabilities. Eq-4D-
+                  manticKITTIandnuScenes,aswellastheindoorHOI4D                    StOP [48] introduces a rotation-equivariant neural network
+                  dataset, our system significantly outperforms existing           that leverages the rotational symmetry of driving scenarios
+                  SOTA streaming perception and 4D panoptic segmenta-              onthe ground plane.
+                  tion methods. Moreover, our approach demonstrates su-               For the voxel-based methods, SVQNet [8] develops a
+                                                                               2
+                   Figure 2. 4DSegStreamer: The dual-thread system consists of a predictive thread and an inference thread, enabling real-time query for
+                   unseen future frames. The predictive thread updates the geometric and motion memories with the latest extracted feature and leverages
+                   the historical information to forecast future dynamics. The inference thread retrieves per-point predictions by geometrically aligning them
+                   withthecurrentmemoryusingego-poseanddynamicobjectalignment. Here,mem denotesthememoryupdatedwiththelatestkeyframe
+                                                                                                               i
+                   f , while f   represents incoming frame              .
+                   i          i:j                              i,i+1,...,j
+                   voxel-adjacent framework that leverages historical knowl-                      pipeline, enabling seamless interaction between memory
+                   edgewithbothlocalandglobalcontextunderstanding. This                           updates and real-time queries.
+                   work is further optimized by the implementation of hash
+                   query mechanisms for computation acceleration, and is fur-                     3. Streaming 4D Panoptic Segmentation
+                   ther accelerated by hash query mechanisms. MemorySeg
+                   [25] incorporates both point and voxel representations for                         We propose a new task of streaming 4D panoptic seg-
+                   contextual and fine-grained details learning. Mask4Former                      mentation. Similar to the traditional streaming perception
+                   [45] introduces a transformer-based approach unifying se-                      paradigm, streaming 4D panoptic segmentation conducts
+                   mantic instance segmentation and 3D point cloud tracking.                      the panoptic segmentation in an online manner. The key
+                                                                                                  challenge is ensuring that each incoming frame is processed
+                   2.3. Fast-slow Dual System Methods                                             and predicted within an ignorant small time budget, even if
+                   The fast-slow         system     paradigm,       merging       efficient       the processing of the current frame is not complete. Our
+                   lightweight models with powerful large-scale models,                           goalistodevelopanapproachthatfindsatrade-offbetween
+                   has gained attention. For instance, DriveVLM-Dual [35]                         accuracyandefficiencytoenablereal-timeinferenceforthe
+                   integrates 3D perception and trajectory planning with                          Streaming 4D Panoptic Segmentation task.
+                   VLMs for real-time spatial reasoning, while FASIONAD                           4. Method
+                   [32] introduces an adaptive feedback framework for
+                   autonomous driving, combining fast and slow thinking to                            In this section, we introduce 4DSegStreamer (see Fig. 2)
+                   improve adaptability in dynamic environments.                                  to address the challenges of streaming 4D panoptic segmen-
+                      While 4DSegStreamer is not explicitly designed as a                         tation. The key idea is to divide the streaming frames into
+                   fast-slow system, its dual-thread architecture shares some                     key frames and non-key frames, where geometric and mo-
+                   conceptual similarities. The predictive thread acts as a slow                  tion features are continuously extracted at key frames to
+                   component, responsible for maintaining memory and fore-                        update the memories, and subsequently used to accelerate
+                   casting future dynamics, while the inference thread acts as                    inference for each future frame. 4DSegStreamer employs a
+                   a fast component, enabling real-time inference through effi-                   noveldual-threadsystemcomprisingapredictivethreadand
+                   cient feature retrieval. However, unlike traditional fast-slow                 an inference thread, which is general and can be applied to
+                   systemsthatrelyonseparatemodelsforfastandslowtasks,                            various segmentation methods to enable their real-time per-
+                   4DSegStreamer integrates both components into a unified                        formance. The system contains three key stages, including
+                                                                                              3
+                                                                                 the memory to process streaming point clouds in real time.
+                                                                                 The overall inference latency is primarily determined by
+                                                                                 the inference thread, which is lightweight and fast, while
+                                                                                 the predictive thread maintains long-term spatio-temporal
+                                                                                 memories by continuously updating them with the latest
+                                                                                 features. At each timestamp, the inference thread retrieves
+                                                                                 relevant features from memory through motion alignment,
+                                                                                 ensuring real-time inference.
+                                                                                 4.2. Geometric Memory Update
+                                                                                    Oursystemisgeneralandcanbeintegratedintoboth3D
+                                                                                 and 4D segmentation backbones, where features are stored
+               Figure 3.   Point-level and voxel-level methods in inference      at the voxel level for fast query in the inference thread and
+               thread: orangepointsindicatetheextractedfeaturescorresponding     aggregated to update using the latest keyframe via motion
+               keyframe points, while blue points indicate the aligned incoming  alignment. The memory system leverages a sparse variant
+               frame points querying the features from memory.                   of ConvGRU[3,25]toperformgeometricmemoryupdates
+                                                                                 efficiently.
+               memoryupdatetomaintainspatial-temporalinformationof                  Uponthe arrival of a keyframe, we first perform motion
+               geometric and motion features, ego-pose future alignment          alignment by transforming the previous memory state ht−k
+                                                                                 to the current frame, resulting in the aligned memory h′    :
+               to cancel ego-motion, and dynamic object future alignment                                                                 t−k
+               to eliminate dynamic object movement.                                            ′
+                                                                                               h     =f        (p        · h   )           (1)
+               4.1. Dual-thread system                                                          t−k      t−k→t    t−k→t    t−k
+                                                                                    where pt−k→t denotes ego-pose transformation and
+                  Unlike previous works in 2D streaming perception,              ft−k→t represents dynamic object flow transformation.
+               which focus on object detection and tracking by predicting        Both transformation are applied to convert the memory
+               thetransformationofboundingboxes,4Dpanopticsegmen-                coordinates into the current keyframe’s coordinate space,
+               tation must establish correspondences between past predic-        aligning both static and dynamic objects.
+               tions and unseen future point clouds across multiple frames          Subsequently, the geometric memory is updated using
+                                                                                 the current frame’s feature embeddings f :
+               due to the latency. To address this challenge, we simplify                                                  t
+               the real-time inference problem using a dual-thread system.
+               This system consists of a Predictive Thread for memory up-                                        ′
+                                                                                                z =σ(Ψ (f ,h         )),
+               dating and future dynamics forecasting and an Inference                           t        z   t  t−k
+                                                                                                                 ′
+                                                                                                r =σ(Ψ (f ,h         )),
+               Thread that allows incoming future points to quickly re-                          t        r   t  t−k                       (2)
+                                                                                                ˆ                       ′
+               trieve the corresponding features from memory, ensuring                          h =tanh(Ψ (f ,r ,h          )),
+                                                                                                 t            u t t t−k
+               efficient inference within the limited time constraints.                               ˆ        ˆ
+                                                                                                h =h ·z +h           · (1 − z ),
+               Predictive thread. We continuously update the geometric                           t     t   t    t−k         t
+               and motion memories with the latest available frame as a             where Ψ ,Ψ ,Ψ are sparse 3D convolution blocks. z
+                                                                                             r    z   u                                      t
+               key frame. Leveraging the spatial-temporal information in         and r are activation gate and reset gate to update and reset
+                                                                                       t
+               the motion memories, we forecast the future camera and            the memory. The updated memory retains the latest spatial-
+               dynamic object movement to align future frames with cor-          temporal information to support future dynamics forecast-
+               responding features in geometric memory, thereby acceler-         ing and efficient feature queries.
+               ating the inference in the inference thread.                      4.3. Ego-pose Future Alignment
+               Inference thread. Each incoming frame is geometrically
+               aligned with the latest memory using forecasted pose and             As seen in Fig. 4, the static car in the incoming frame
+               flow. Thecorrespondingfeaturesarethenretrievedfromthe             is positioned differently from the same car in memory. To
+               geometric memoryusingtwoquerystrategies, as illustrated           ensure temporal consistency in dynamic environments, we
+               in Fig. 3. In our approach, we use a hash table-style mem-        utilize ego-pose forecasting to compensate for camera mo-
+               orythatallowsdirectaccesstocorrespondingvoxelfeatures             tion and align the current memory with future frames.
+               via their indices and apply nearest neighbor search only for         In many outdoor applications, such as autonomous driv-
+               points querying empty voxels. These retrieved features are        ing, ego-pose information is typically available from on-
+               subsequently passed through a lightweight prediction head         board sensors. However, in indoor scenarios, such as an
+               to produce the final output.                                      embodied robot operating in a room, obtaining pose infor-
+                  The dual-thread system operates in parallel and shares         mation is often challenging and requires pose estimation.
+                                                                              4
+                                                                                        objects and fast query, we introduce the Future Flow Fore-
+                                                                                        casting in the predictive thread and the Inverse Forward
+                                                                                        Flowintheinference thread.
+                                                                                        Future Flow Forecasting.            During training, we use
+                                                                                        FastNSF[27]toobtainsupervisedgroundtruthflows. Inin-
+                                                                                        ference time, the process is similar to ego-pose future align-
+                                                                                        ment in Sec 4.3. We utilize zeroFlow [36], a lightweight
+                                                                                        model distilled from FastNSF, to estimate key flows be-
+                 Figure 4. Ego-pose Alignment and Dynamic Object Alignment:             tween keyframes. These key flows are then input into the
+                 Thegreenpointsrepresentthepreviouslyprocessedframethathas              LSTM [15] to forecast future flows, supporting the fast
+                 been used to update the memories and the blue points are the cur-      alignment of dynamic objects across memory and incom-
+                 rent querying frame. The yellow box highlights static objects that     ing frames.
+                 can be aligned through ego-pose alignment. The red box indi-           Inverse Forward Flow Iteration. To enable efficient fea-
+                 cates dynamic objects, which require dynamic object alignment to       ture querying during inference, we leverage forecasted for-
+                 achieve proper alignment.
+                                                                                        ward flows to align the geometric memory with future
+                                                                                        frames. However, directly applying forward flows to the
+                    Depending on whether the camera pose is available, we               memory is time-consuming for the predictive thread, as it
+                 define two settings:                                                   requiresconstructinganewnearest-neighbortreeateachfu-
+                 • Known pose setting: we directly use the relative pose to             ture timestamp to enable fast access to the geometric mem-
+                   align future frames with the feature memory coordinates.             ory. Although backward flow is more efficient that it maps
+                 • Unknown pose setting: we utilize the pose estimated by               incomingpointstothepre-built nearest-neighbor tree of the
+                   Suma++[7]betweenkeyframestoupdatetheego-motion                       latest memory, directly forecasting backward flow is chal-
+                   memory, and then use the ego-pose forecaster to propa-               lenging due to the unknown number and positions of future
+                   gate the future ego-pose motion, ensuring proper align-              points, which leads to degraded performance (see Tab. 9).
+                   mentandeliminating ego motion.                                          To balance the efficiency and accuracy, we propose the
+                    Here we introduce the unknown pose setting. When a                  Inverse Forward Flow Iteration. The goal of our method is
+                 keyframe x is coming, the estimator E will estimate the                to find the corresponding point x in history memory with
+                              t                                                         the current query point y. The correspondence satisfies:
+                 relative ego motion between last keyframe xt−k and current
+                 keyframe xt:                                                                              g(x) = x = y −flow(x)                      (6)
+                                    p         =E(x       , x )                 (3)      whereflow(x)indicatestheforecastedforwardflowatpoint
+                                      t−k→t          t−k    t                           x, and -flow(x) represents the inverse forward flow.
+                    Then, utilize the key pose to update the ego-pose mem-                 Then we want to find a fixed point x∗ such that x∗ =
+                 ory mempt−k, we have:                                                  g(x∗). Given an initial guess x0 = y, define the iteration
+                              memp =W(p                , memp      )           (4)      as:
+                                      t         t−k→t          t−k                                     x     =g(x )=y−flow(x )                        (7)
+                                                                                                        n+1         n                   n
+                                                                                                                                                      ∗
+                    where W indicates the memory update function which                     Thesequence{xn}willconvergetothefixedpointx if
+                 we use the LSTM [15]. In order to forecast the relative                g(x) is a contraction mapping, i.e., if there exists a constant
+                 pose m frames ahead for the future frame x           using pose        L≤1,suchthatforallx1 andx2 satisfy:
+                                                                 t+m
+                 forecaster F, we have:                                                                 |g(x ) −g(x )| ≤ L|x −x |                     (8)
+                                                                                                             1        2          1      2
+                                   p         =F(memp,m)                        (5)
+                                    t→t+m                 t                                Thestopping iteration condition is
+                    wheretheego-poseforecasterisdesignedinamulti-head                                          |x      −x |≤ϵ                         (9)
+                 structure, with each head predicting the future pose for a                                       n+1      n
+                 fixed number of frames ahead.                                          where ϵ is the predefined tolerance, indicating x       has con-
+                                                                                                                                              n
+                 4.4. Dynamic Object Future Alignment                                   verged to the solution. To hold this condition, we need
+                                                                                        g(x) to be Lipschitz continuous, and its Lipschitz constant
+                    Comparedtostaticobjects, dynamicobjectsexhibitboth                  L≤1.Thus,weassume|flow′(x)| ≤ 1foreachdifferen-
+                 ego-motion and independent self-movement, with varying                 tiable point x. The detailed proof is provided in Supp. B.
+                 velocities and directions, as seen in the moving car in Fig. 4.           Thequerypointiteratively finds the local forecasted for-
+                 To achieve fine-grained self-motion alignment for dynamic              ward flow in memory, then backtracks through the inverse
+                                                                                    5
+               of this forward flow. The process continues until the dis-       wedividethesPQintofourcomponents: sPQd fordynamic
+                                                        ′
+               tance between current query position p and the point p           objects, sPQ for static objects, sPQ   for thing classes, and
+                                                                                             s                      th
+               closely approximates the inverse of the forward flow. The        sPQst for stuff classes. In the streaming setting, evaluation
+               pseudo-code for this process is as follows:                      of each frame must occur at every input timestamp, accord-
+                                                                                ing to the dataset’s frame rate. If the computation for the
+               Algorithm 1 Iterative Inverse Forward Flow Method                current frame is not completed in time, we use the features
+               Require: forecast forward flow query Q, stop threshold ϵ,        from the last completed frame to query the results and per-
+                   maximumiterations N                                          form the evaluation.
+                                          max                                   Implementation details. We choose P3Former [42] and
+                 1: for each point p in the non-key frame do
+                 2:    Initialize current query position p′ ← p                 Mask4Former [45] as our backbone model, which is origi-
+                 3:    Initialize iteration counter n ← 0                       nallyaSOTAmethodfor3Dand4Dpanopticsegmentation.
+                 4:    Inverse(f) ← −f                                          Byincorporatingtheegoposeandflowalignmentstrategies
+                                 ′            ′                                 we proposed, along with memory construction, they can
+                 5:    while ∥(p −p)+Q(p )∥ ≥ ϵandn < N                do
+                                                                  max
+                 6:        Query local forecast forward flow f ← Q(p′)          also achieve good performance in 4D streaming panoptic
+                                                   ′                            segmentation. We first train the model on each dataset, then
+                 7:        Update track position: p ← p + Inverse(f)            freeze it for feature extraction. The remaining components,
+                 8:        Increment iteration counter: n ← n + 1               including ego-pose forecasting, forward flow forecasting,
+                 9:    endwhile                                                 and history memory aggregation, are trained subsequently.
+                10: end for                                                     For the inverse flow iteration, the maximum iterations pa-
+                                                                                tience is set to 10. All models are trained on 4 NVIDIA
+               5. Experiments                                                   GTX3090GPUsandevaluated on a single NVIDIA GTX
+                                                                                3090GPU.
+                  We present the experimental setup and benchmark re-           5.2. Streaming 4D Panoptic Segmentation in Out-
+               sults on two widely used outdoor LiDAR-based panoptic                   doordatasets
+               segmentationdatasets, SemanticKITTI[4]andnuScenes[5],
+               as well as the indoor dataset HOI4D[30].                         SemanticKITTI [4]. Tab. 1 and 2 compare streaming 4D
+               5.1. Settings                                                    panoptic segmentation on the SemanticKITTI validation
+                                                                                split in the unknown and known pose settings. We compare
+               SemanticKITTI [4].        SemanticKITTI is a large-scale         our method with StreamYOLO [44], LongShortNet [23],
+               dataset for LiDAR-based panoptic segmentation, contain-          DAMO-StreamNet [17], Mask4Former [45], Eq-4D-StOP
+               ing 23,201 outdoor scene frames at 10 fps. Unlike tradi-         [48] and PTv3 [41]. Originally designed for 2D streaming
+               tional 4D panoptic segmentation, streaming 4D panoptic           object detection via temporal feature fusion, the first three
+               segmentation also involves distinguishing between moving         modelsareadaptedto4Dstreamingbyreplacingtheirback-
+               and static objects, since the ability to perceive moving ob-     bones with P3Former [42]. Mask4Former and Eq-4D-StOP
+               jects is significant in streaming perception.  This adds 6       are designed for 4D panoptic segmentation but are not op-
+               additional classes for moving objects (e.g., ”moving car”)       timized for streaming. PTv3 is a state-of-the-art method
+               to the standard 19 semantic classes. In total, there are 25      designed for 3D perception. We adapt it to 4D panoptic
+               classes, including 14 thing classes and 11 stuff classes.        segmentation with flow propagation according to [2].
+               nuScenes[5]. nuScenes is a publicly available autonomous            Frombothtables,weobservethat2Dstreamingmethods
+               driving dataset with 1,000 scenes captured at 2 fps. We ex-      performpoorlyduetotheirrelianceonreal-timebackbones,
+               tend the per-point semantic labels to distinguish between        which are difficult to achieve in such a high-granularity
+               moving and non-moving objects using ground truth 3D              task.  Similarly, 4D panoptic segmentation methods also
+               bounding box attributes. This extension includes 8 mov-          suffer significant performance degradation due to computa-
+               ing object classes and 16 static object classes, totaling 18     tional latency. PTv3 performs better than 4D methods due
+               thing classes and 6 stuff classes.                               to its high efficiency, but it still suffers from performance
+               HOI4D [30]. HOI4D is a large-scale egocentric dataset            drop. In contrast, our method outperforms all baseline mod-
+               focused on indoor human-object interactions. It contains         els by a large margin in the streaming setting. Notably,
+               3,865 point cloud sequences, with 2,971 for training and         in the unknown pose setting, our method achieves signifi-
+               892 for testing. Each sequence has 300 frames captured at        cantimprovementsof7.7%and15.2%insLSTQoverPTv3
+               15fps.                                                           [41]when integrated with P3Former and Mask4Former re-
+               Evaluation metrics. We use PQ and LSTQ in streaming              spectively, demonstrating the effectiveness of our alignment
+               setting (denoted as sPQ and sLSTQ) as our main metrics to        strategies across both dynamic and static classes. When
+               evaluate panoptic segmentation performance. Furthermore,         combined with Mask4Former, our method outperforms its
+                                                                             6
+                Table 1. SemanticKITTI validation set result in unknown pose streaming setting. The best is highlighted in bold. sX indicates the metric
+                Xinthestreaming setting. PQ and PQ refer to the evaluation for dynamic and static points, respectively. PQ   evaluates the thing class
+                                             d        s                                                                   th
+                and PQst evaluates the stuff class.
+                  Method                               sLSTQ      S          S        sPQ      sRQ      sSQ      sPQ      sPQ      sPQ       sPQ
+                                                                   assoc      cls                                    d        s        th        st
+                  StreamYOLO[44]                        0.415     0.321     0.536    0.373    0.478    0.664    0.429     0.371    0.388     0.364
+                  LongShortNet [23]                     0.430     0.341     0.541    0.392    0.472    0.673    0.452     0.391    0.400     0.386
+                  DAMO-StreamNet[17]                    0.432     0.341     0.546    0.392    0.472    0.674    0.459     0.391    0.400     0.388
+                  Mask4Former[45]                       0.515     0.464     0.572    0.485    0.594    0.691    0.571     0.413    0.538     0.422
+                  Eq-4D-StOP[48]                        0.504     0.452     0.563    0.477    0.578    0.691    0.543     0.412    0.529     0.423
+                  PTv3[41]                              0.536     0.492     0.586    0.567    0.612    0.704    0.638     0.464    0.575     0.459
+                  4DSegStreamer (P3Former)              0.613     0.627     0.599    0.602    0.679    0.723    0.711     0.479    0.625     0.481
+                  4DSegStreamer (Mask4Former)           0.688     0.706     0.621    0.634    0.701    0.752    0.744     0.486    0.660     0.497
+                Table 2. SemanticKITTI validation set result in known pose streaming setting. The best is highlighted in bold. sX indicates the metric X in
+                the streaming setting. PQd and PQs refer to the evaluation for dynamic and static points, respectively. PQth evaluates the thing class and
+                PQ evaluates the stuff class.
+                   st
+                  Method                               sLSTQ      S          S        sPQ      sRQ      sSQ      sPQ      sPQ      sPQ       sPQ
+                                                                   assoc      cls                                    d        s        th        st
+                  StreamYOLO[44]                        0.439     0.356     0.541    0.384    0.468    0.715    0.432     0.383    0.392     0.382
+                  LongShortNet [23]                     0.446     0.360     0.553    0.412    0.489    0.719    0.459     0.410    0.413     0.399
+                  DAMO-StreamNet[17]                    0.446     0.362     0.551    0.425    0.489    0.724    0.460     0.412    0.414     0.401
+                  Mask4Former[45]                       0.564     0.539     0.592    0.520    0.613    0.734    0.623     0.460    0.592     0.467
+                  Eq-4D-StOP[48]                        0.557     0.530     0.585    0.520    0.619    0.732    0.625     0.459    0.594     0.465
+                  4DSegStreamer (P3Former)              0.655     0.703     0.610    0.687    0.774    0.816    0.782     0.560    0.704     0.531
+                  4DSegStreamer (Mask4Former)           0.701     0.722     0.648    0.704    0.811    0.838    0.803     0.579    0.741     0.552
+                Table 3. nuScenes validation set result in unknown pose streaming    Table 4. nuScenes validation set result in known pose streaming
+                setting. The best is highlighted in bold.                            setting. The best is highlighted in bold.
+                  Method                      sLSTQ       sPQ     sPQ       sPQ        Method                      sLSTQ       sPQ       sPQ      sPQ
+                                                                       d        s                                                            d        s
+                  StreamYOLO[44]               0.596     0.581    0.569    0.591       StreamYOLO[44]               0.613      0.593    0.583     0.613
+                  LongShortNet [23]            0.610     0.603    0.579    0.607       LongShortNet [23]            0.628     0.6116    0.599     0.621
+                  DAMO-StreamNet[17]           0.623     0.607    0.601    0.612       DAMO-StreamNet[17]           0.633      0.625    0.607     0.639
+                  Mask4Former[45]              0.648     0.636    0.634    0.641       Mask4Former[45]              0.681      0.665    0.655     0.683
+                  Eq-4D-StOP[48]               0.650     0.642    0.633    0.658       Eq-4D-StOP[48]               0.695      0.673    0.654     0.693
+                  PTv3[41]                     0.662     0.659    0.627    0.670       4DSegStreamer (P3)           0.747      0.723    0.711     0.733
+                  4DSegStreamer (P3)           0.693     0.683    0.675    0.690       4DSegStreamer (M4F)          0.765      0.751    0.734     0.786
+                  4DSegStreamer (M4F)          0.721     0.733    0.701    0.699
+                                                                                     approaches in both known and unknown pose settings. Ad-
+                combination with P3Former, as Mask4Former is specifi-                ditionally, all models perform better in the known pose set-
+                cally designed for 4D panoptic segmentation.                         ting, as pose estimation in the unknown pose setting takes
+                nuScenes [5]. We also compare the performance of 4D                  moretime, further degrading performance.
+                streaming panoptic segmentation on the nuScenes valida-              5.3.Streaming4DPanopticSegmentationinIndoor
+                tion split [5].  Compared to SemanticKITTI[4], it has a                     dataset
+                slower frame rate, which allows many baseline methods
+                to achieve real-time computation. However, in a stream-              HOI4D [30]. We also evaluate our model in indoor sce-
+                ing setting, even real-time methods experience at least a            narios. We compare our approach with StreamYOLO [44],
+                one-frame delay, leading to performance degradation. As              LongShortNet [23], DAMO-StreamNet [17], NSM4D [10]
+                showninTab.3and4,ourmethodoutperformsallbaseline                     and PTv3 [41]. As shown in Tab. 5, our method outper-
+                                                                                 7
+                 Table 5. HOI4D test set result in unknown pose streaming setting.      Table 8. Ablation study in known pose streaming setting. Pose
+                 Thebest is highlighted in bold.                                        is given and Flow is multi-head forecasting. Mem represents the
+                                                                                        memorymodule. Flow denotes multi-frame future flow forecast-
+                  Method                        sLSTQ       sPQ      sPQd     sPQs      ing.
+                  StreamYOLO[44]                 0.373     0.336     0.362    0.324       Method                         sLSTQ      sLSTQ        sLSTQ
+                  LongShortNet [23]              0.377     0.335     0.354    0.323                                                         d           s
+                  DAMO-StreamNet[17]             0.375     0.335     0.351    0.324       P3+Mem+GTpose                   0.563      0.534        0.592
+                  NSM4D[10]                      0.314     0.305     0.315    0.303       P3+Mem+GTpose+Flow              0.655      0.698        0.601
+                  PTv3[41]                       0.445     0.417     0.397    0.445
+                  4DSegStreamer (P3)             0.483     0.455     0.431    0.490       Table 9. Ablation study of different flow forecasting methods.
+                  4DSegStreamer (M4F)            0.511     0.482     0.457    0.533
+                                                                                           Method                    sLSTQ      sLSTQ        sLSTQ
+                                                                                                                                        d            s
+                 Table   6.      General   evaluation  of   different  backbones.          Backwardflow               0.565       0.637       0.483
+                 w/o streamer is vanilla backbone.        w streamer is 3D or              Forward flow               0.589       0.667       0.497
+                 4Dbackbonewithour4DSegStreamer.                                           Inverse forward flow       0.586       0.662       0.502
+                  Method                  sLSTQ                     sLSTQ                  Inverse brute search       0.591       0.669       0.501
+                                                  w/o streamer              wstreamer      Inverse flow iteration     0.613       0.682       0.516
+                  Mask4Former[45]                 0.515                   0.688
+                  Eq-4D-StOP[48]                  0.504                   0.674
+                  P3former [42]                   0.304                   0.613         and sLSTQ . Building on this, incorporating flow align-
+                                                                                                     s
+                                                                                        ment further refines the handling of moving objects, sig-
+                 Table 7. Ablation study in unknown pose streaming setting. P3          nificantly boosting the model’s performance on sLSTQd.
+                 indicates the P3former backbone. Mem represents the memory             Weevaluate our method under both unknown-pose (Tab. 7)
+                 module. Pose and Flow denote multi-frames future pose and              and known-pose settings (Tab. 8), where the latter provides
+                 flow forecasting, respectively. M Flow indicates the moving            ground-truth ego poses. Results demonstrate that our mem-
+                 masktoassign non-zero flow only to moving objects.                     ory module, pose alignment, and dynamic object alignment
+                  Method                         sLSTQ      sLSTQ        sLSTQ          continuously enhance streaming performance. Moreover,
+                                                                    d            s      applyinganon-movingobjectmaskbringsadditionalgains.
+                  P3[42]                          0.304       0.265       0.357         Flow Forecasting Strategies. We compare different flow
+                  P3+Mem                          0.349       0.292       0.408         forecasting strategies in Tab. 9.       The ”Inverse Forward
+                  P3+Mem+Pose                     0.497       0.488       0.501         Flow” represents a single iteration of the Inverse Flow Iter-
+                  P3+Mem+Pose+Flow                0.591       0.667       0.514         ation algorithm, while the ”Inverse Brute Search” algorithm
+                  P3+Mem+Pose+MFlow               0.613       0.682       0.516         directly searches for the forward flow within a restricted re-
+                                                                                        gionthatpointstothetargetposition. Asshowninthetable,
+                                                                                        forward flow forecasting does not achieve the best perfor-
+                 forms all other approaches, surpassing the runner-up by                mance due to the high time consumption associated with
+                 6.6%intermsofsLSTQ.Thisdemonstratesthatourmethod                       repeated kd-tree construction. Additionally, backward flow
+                 exhibits strong generalization ability, performing well not            forecasting performs poorly, as it is challenging to predict
+                 only in outdoor scenarios but also in indoor scenes.                   thebackwardflowwithoutknowledgeofthefutureposition.
+                                                                                        In contrast, our proposed Inverse Flow Iteration algorithm
+                 5.4. Ablations for System                                              shows superior performance in terms of sLSTQ.
+                    In this section, we conduct several groups of ablation              6. Conclusion
+                 studies on SemanticKITTI [4] validation set to demonstrate
+                 the effectiveness of 4DSegStreamer.                                       In this work, we propose 4DSegStreamer, an efficient
+                 Generalto3Dand4Dbackbone. Tab6demonstratesthat                         4Dstreamingpanopticsegmentationmethodthatoptimizes
+                 integrating our plug-and-play 4DSegStreamer consistently               accuracy-latency trade-offs. We develop a dual-thread sys-
+                 boosts the perfomance across various SOTA 3D and 4D                    tem to synchronize current and future point clouds within
+                 backbones, with significnt improvements observed. This                 temporal constraints, complemented by an ego-pose fore-
+                 highlightsthegeneralityandeffectivenessofourframework                  caster and inverse forward flow iteration for motion align-
+                 in enabling real-time capability.                                      ment. Evaluatedacrossdiverseindoorandoutdoorpanoptic
+                 Effects of Components. Pose alignment mitigates the ego-               segmentationdatasets, our method demonstrates robust per-
+                 pose motion, resulting in improvements to both sLSTQd                  formance in streaming scenarios.
+                                                                                    8
+                    References                                                                           [13] Weizhen Ge, Xin Wang, Zhaoyong Mao, Jing Ren, and
+                     [1] Mazen Abdelfattah, Kaiwen Yuan, Z Jane Wang, and Rabab                                 Junge Shen.        Streamtrack:      real-time meta-detector for
+                          Ward. Multi-modal streaming 3d object detection. IEEE                                 streaming perception in full-speed domain driving scenarios.
+                          Robotics and Automation Letters, 2023. 1, 2                                           Applied Intelligence, pages 1–17, 2024. 1
+                     [2] Mehmet Aygun, Aljosa Osep, Mark Weber, Maxim Maxi-                              [14] Anurag Ghosh, Vaibhav Balloli, Akshay Nambi, Aditya
+                                                                                                ´               Singh, and Tanuja Ganu. Chanakya: Learning runtime deci-
+                          mov, Cyrill Stachniss, Jens Behley, and Laura Leal-Taixe.                             sions for adaptive real-time perception. Advances in Neural
+                          4d panoptic lidar segmentation.             In Proceedings of the                     Information Processing Systems, 36, 2024. 1
+                          IEEE/CVF Conference on Computer Vision and Pattern                             [15] AlexGravesandAlexGraves. Longshort-termmemory. Su-
+                          Recognition, pages 5527–5537, 2021. 2, 6                                              pervised sequence labelling with recurrent neural networks,
+                     [3] Nicolas Ballas, Li Yao, Chris Pal, and Aaron Courville.                                pages 37–45, 2012. 5
+                          Delving deeper into convolutional networks for learning                        [16] Wei Han, Zhengdong Zhang, Benjamin Caine, Brandon
+                          video representations.        arXiv preprint arXiv:1511.06432,                        Yang, Christoph Sprunk, Ouais Alsharif, Jiquan Ngiam, Vi-
+                          2015. 4                                                                               jay Vasudevan, Jonathon Shlens, and Zhifeng Chen. Stream-
+                     [4] Jens Behley, Martin Garbade, Andres Milioto, Jan Quen-                                 ing object detection for 3-d point clouds. In European Con-
+                          zel, Sven Behnke, Cyrill Stachniss, and Jurgen Gall. Se-                              ference on Computer Vision, pages 423–441. Springer, 2020.
+                          mantickitti: A dataset for semantic scene understanding of                            1, 2
+                          lidar sequences.       In Proceedings of the IEEE/CVF inter-                   [17] Jun-YanHe,Zhi-QiCheng,ChenyangLi,WangmengXiang,
+                          national conference on computer vision, pages 9297–9307,                              Binghui Chen, Bin Luo, Yifeng Geng, and Xuansong Xie.
+                          2019. 6, 7, 8                                                                         Damo-streamnet: Optimizing streaming perception in au-
+                     [5] Holger Caesar, Varun Bankiti, Alex H Lang, Sourabh Vora,                               tonomous driving. arXiv preprint arXiv:2303.17144, 2023.
+                          Venice Erin Liong, Qiang Xu, Anush Krishnan, Yu Pan, Gi-                              1, 2, 6, 7, 8
+                          ancarlo Baldan, and Oscar Beijbom. nuscenes: A multi-                          [18] Xiang Huang, Zhi-Qi Cheng, Jun-Yan He, Chenyang Li,
+                          modal dataset for autonomous driving. In Proceedings of                               WangmengXiang,BaiguiSun, and Xiao Wu. Dyronet: Dy-
+                          the IEEE/CVF conference on computer vision and pattern                                namicroutingandlow-rankadaptersforautonomousdriving
+                          recognition, pages 11621–11631, 2020. 6, 7                                            streaming perception. CoRR, 2024.
+                     [6] Qi Chen, Sourabh Vora, and Oscar Beijbom. Polarstream:                          [19] Yihui Huang and Ningjiang Chen. Mtd: Multi-timestep de-
+                          Streaming object detection and segmentation with polar pil-                           tector for delayed streaming perception. In Chinese Confer-
+                          lars.  Advances in Neural Information Processing Systems,                             ence on Pattern Recognition and Computer Vision (PRCV),
+                          34:26871–26883, 2021. 1, 2                                                            pages 337–349. Springer, 2023. 2, 1
+                     [7] Xieyuanli Chen, Andres Milioto, Emanuele Palazzolo,                             [20] Wonwoo Jo, Kyungshin Lee, Jaewon Baik, Sangsun Lee,
+                          Philippe Giguere, Jens Behley, and Cyrill Stachniss.                                  Dongho Choi, and Hyunkyoo Park.                      Dade:      delay-
+                          Suma++: Efficient lidar-based semantic slam.                  In 2019                 adaptive detector for streaming perception. arXiv preprint
+                          IEEE/RSJ International Conference on Intelligent Robots                               arXiv:2212.11558, 2022. 1, 2
+                          and Systems (IROS), pages 4530–4537. IEEE, 2019. 5                             [21] Lars Kreuzberg, Idil Esen Zulfikar, Sabarinath Mahadevan,
+                     [8] XuechaoChen,ShuangjieXu,XiaoyiZou,TongyiCao,Dit-                                       Francis Engelmann, and Bastian Leibe. 4d-stop: Panoptic
+                          Yan Yeung, and Lu Fang. Svqnet: Sparse voxel-adjacent                                 segmentation of 4d lidar using spatio-temporal object pro-
+                          querynetworkfor4dspatio-temporallidarsemanticsegmen-                                  posal generation and aggregation. In European Conference
+                          tation. In Proceedings of the IEEE/CVF International Con-                             onComputerVision, pages 537–553. Springer, 2022. 2
+                          ference on Computer Vision, pages 8569–8578, 2023. 2                           [22] Bowen Li, Ziyuan Huang, Junjie Ye, Yiming Li, Sebastian
+                     [9] Ayush Dewan and Wolfram Burgard.                   Deeptemporalseg:                    Scherer, Hang Zhao, and Changhong Fu. Pvt++: a sim-
+                          Temporally consistent semantic segmentation of 3d lidar                               ple end-to-end latency-aware visual tracking framework. In
+                          scans. In 2020 IEEE International Conference on Robotics                              Proceedings of the IEEE/CVF International Conference on
+                          and Automation (ICRA), pages 2624–2630. IEEE, 2020. 2                                 ComputerVision, pages 10006–10016, 2023. 1
+                    [10] Yuhao Dong, Zhuoyang Zhang, Yunze Liu, and Li Yi.                               [23] Chenyang Li, Zhi-Qi Cheng, Jun-Yan He, Pengyu Li, Bin
+                          Nsm4d: Neural scene model based online 4d point cloud                                 Luo, Hanyuan Chen, Yifeng Geng, Jin-Peng Lan, and Xuan-
+                          sequence understanding. arXiv preprint arXiv:2310.08326,                              song Xie. Longshortnet: Exploring temporal and semantic
+                          2023. 2, 7, 8                                                                         features fusion in streaming perception. In ICASSP 2023-
+                    [11] HeheFan,YiYang,andMohanKankanhalli. Point4dtrans-                                      2023 IEEE International Conference on Acoustics, Speech
+                          formernetworksforspatio-temporalmodelinginpointcloud                                  andSignal Processing (ICASSP), pages 1–5. IEEE, 2023. 1,
+                          videos. In Proceedings of the IEEE/CVF conference on com-                             2, 6, 7, 8
+                          puter vision and pattern recognition, pages 14204–14213,                       [24] Dianze Li, Jianing Li, and Yonghong Tian.                   Sodformer:
+                          2021. 2                                                                               Streamingobjectdetectionwithtransformerusingeventsand
+                    [12] Davi Frossard, Shun Da Suo, Sergio Casas, James Tu, and                                frames. IEEETransactionsonPatternAnalysisandMachine
+                          Raquel Urtasun. Strobe: Streaming object detection from li-                           Intelligence, 2023. 1, 2
+                          dar packets. In Conference on Robot Learning, pages 1174–                      [25] Enxu Li, Sergio Casas, and Raquel Urtasun. Memoryseg:
+                          1183. PMLR, 2021. 1, 2                                                                Online lidar semantic segmentation with a latent memory. In
+                                                                                                     9
+                    Proceedings of the IEEE/CVF International Conference on           segmentationwithpolarpillars,2023. USPatent11,798,289.
+                    ComputerVision, pages 745–754, 2023. 2, 3, 4                      1, 2
+               [26] Mengtian Li, Yu-Xiong Wang, and Deva Ramanan.        To-     [38] Xiaofeng Wang, Zheng Zhu, Yunpeng Zhang, Guan Huang,
+                    wards streaming perception.   In Computer Vision–ECCV             Yun Ye, Wenbo Xu, Ziwei Chen, and Xingang Wang. Are
+                    2020: 16th European Conference, Glasgow, UK, August 23–           we ready for vision-centric driving streaming perception?
+                    28, 2020, Proceedings, Part II 16, pages 473–488. Springer,       the asap benchmark. In Proceedings of the IEEE/CVF Con-
+                    2020. 1, 2                                                        ference on Computer Vision and Pattern Recognition, pages
+               [27] Xueqian Li, Jianqiao Zheng, Francesco Ferroni, Jhony Kae-         9600–9610, 2023. 2, 1
+                    semodel Pontes, and Simon Lucey. Fast neural scene flow.     [39] Hao Wen, Yunze Liu, Jingwei Huang, Bo Duan, and Li
+                    In Proceedings of the IEEE/CVF International Conference           Yi. Point primitive transformer for long-term 4d point cloud
+                    onComputerVision, pages 9878–9890, 2023. 5                        video understanding. In European Conference on Computer
+               [28] Zhiheng Li, Yubo Cui, Jiexi Zhong, and Zheng Fang.                Vision, pages 19–35. Springer, 2022. 2
+                    Streammos: Streaming moving object segmentation with         [40] Xiaopei Wu, Yuenan Hou, Xiaoshui Huang, Binbin Lin,
+                    multi-viewperceptionanddual-spanmemory. arXivpreprint             Tong He, Xinge Zhu, Yuexin Ma, Boxi Wu, Haifeng Liu,
+                    arXiv:2407.17905, 2024. 2                                         DengCai,etal. Taseg: Temporal aggregation network for li-
+               [29] Jiahui Liu, Chirui Chang, Jianhui Liu, Xiaoyang Wu, Lan           dar semantic segmentation. In Proceedings of the IEEE/CVF
+                    Ma, and Xiaojuan Qi. Mars3d: A plug-and-play motion-              Conference on Computer Vision and Pattern Recognition,
+                    aware model for semantic segmentation on multi-scan 3d            pages 15311–15320, 2024. 2
+                    point clouds. In Proceedings of the IEEE/CVF Conference      [41] Xiaoyang Wu, Li Jiang, Peng-Shuai Wang, Zhijian Liu, Xi-
+                    on Computer Vision and Pattern Recognition, pages 9372–           hui Liu, Yu Qiao, Wanli Ouyang, Tong He, and Hengshuang
+                    9381, 2023. 2                                                     Zhao. Point transformer v3: Simpler faster stronger. In Pro-
+               [30] Yunze Liu, Yun Liu, Che Jiang, Kangbo Lyu, Weikang Wan,           ceedings of the IEEE/CVF Conference on Computer Vision
+                    HaoShen,BoqiangLiang, Zhoujie Fu, He Wang, and Li Yi.             and Pattern Recognition, pages 4840–4851, 2024. 6, 7, 8
+                    Hoi4d: A 4d egocentric dataset for category-level human-     [42] Zeqi Xiao, Wenwei Zhang, Tai Wang, Chen Change Loy,
+                    object interaction. In Proceedings of the IEEE/CVF Con-           DahuaLin,andJiangmiaoPang. Position-guidedpointcloud
+                    ference on Computer Vision and Pattern Recognition, pages         panoptic segmentation transformer. International Journal of
+                    21013–21022, 2022. 6, 7                                           ComputerVision, pages 1–16, 2024. 6, 8
+               [31] Rodrigo Marcuzzi, Lucas Nunes, Louis Wiesmann, Jens          [43] Xiuwei Xu, Chong Xia, Ziwei Wang, Linqing Zhao,
+                    Behley, andCyrillStachniss. Mask-basedpanopticlidarseg-           Yueqi Duan, Jie Zhou, and Jiwen Lu.       Memory-based
+                    mentation for autonomous driving. IEEE Robotics and Au-           adapters for online 3d scene perception.  arXiv preprint
+                    tomation Letters, 8(2):1141–1148, 2023. 2                         arXiv:2403.06974, 2024. 2
+               [32] Kangan Qian, Zhikun Ma, Yangfan He, Ziang Luo, Tianyu        [44] Jinrong Yang, Songtao Liu, Zeming Li, Xiaoping Li, and
+                    Shi, Tianze Zhu, Jiayin Li, Jianhui Wang, Ziyu Chen, Xiao         Jian Sun.   Real-time object detection for streaming per-
+                    He, et al. Fasionad: Fast and slow fusion thinking systems        ception.  In Proceedings of the IEEE/CVF conference on
+                    for human-like autonomous driving with adaptive feedback.         computer vision and pattern recognition, pages 5385–5395,
+                    arXiv preprint arXiv:2411.18013, 2024. 3                          2022. 1, 2, 6, 7, 8
+               [33] Gur-Eyal Sela, Ionel Gog, Justin Wong, Kumar Krishna         [45] Kadir Yilmaz, Jonas Schult, Alexey Nekrasov, and Bastian
+                    Agrawal, Xiangxi Mo, Sukrit Kalra, Peter Schafhalter, Eric        Leibe.  Mask4former: Mask transformer for 4d panoptic
+                    Leong, Xin Wang, Bharathan Balaji, et al. Context-aware           segmentation. In 2024 IEEE International Conference on
+                    streamingperceptionindynamicenvironments. InEuropean              Robotics and Automation (ICRA), pages 9418–9425. IEEE,
+                    Conference on Computer Vision, pages 621–638. Springer,           2024. 2, 3, 6, 7, 8
+                    2022. 1                                                      [46] Xiang Zhang, Yufei Cui, Chenchen Fu, Weiwei Wu, Zihao
+               [34] Hanyu Shi, Guosheng Lin, Hao Wang, Tzu-Yi Hung, and               Wang, Yuyang Sun, and Xue Liu. Transtreaming: Adaptive
+                    ZhenhuaWang. Spsequencenet: Semanticsegmentationnet-              delay-aware transformer for real-time streaming perception.
+                    work on 4d point clouds. In Proceedings of the IEEE/CVF           arXiv preprint arXiv:2409.06584, 2024. 1, 2
+                    conference on computer vision and pattern recognition,       [47] Yunsong Zhou, Hongzi Zhu, Chunqin Li, Tiankai Cui, Shan
+                    pages 4574–4583, 2020. 2                                          Chang, and Minyi Guo. Tempnet: Online semantic segmen-
+               [35] Xiaoyu Tian, Junru Gu, Bailin Li, Yicheng Liu, Yang Wang,         tation on large-scale point cloud series. In Proceedings of
+                    Zhiyong Zhao, Kun Zhan, Peng Jia, Xianpeng Lang, and              the IEEE/CVF International Conference on Computer Vi-
+                    Hang Zhao. Drivevlm: The convergence of autonomous                sion, pages 7118–7127, 2021. 2
+                    driving and large vision-language models. arXiv preprint     [48] Minghan Zhu, Shizhong Han, Hong Cai, Shubhankar Borse,
+                    arXiv:2402.12289, 2024. 3                                         MaaniGhaffari, and Fatih Porikli. 4d panoptic segmentation
+               [36] Kyle Vedder, Neehar Peri, Nathaniel Chodosh, Ishan Khatri,        as invariant and equivariant field prediction. In Proceedings
+                    Eric Eaton, Dinesh Jayaraman, Yang Liu, Deva Ramanan,             of the IEEE/CVF International Conference on Computer Vi-
+                    and James Hays. Zeroflow: Scalable scene flow via distilla-       sion, pages 22488–22498, 2023. 2, 6, 7, 8
+                    tion. arXiv preprint arXiv:2305.10424, 2023. 5
+               [37] Sourabh Vora and Qi Chen. Streaming object detection and
+                                                                             10
+                       4DSegStreamer: Streaming 4D Panoptic Segmentation via Dual Threads
+                                                                 Supplementary Material
+                                                                                        Table S1. Performance of different GPUs with different latency.
+                                                                                                        4DSegStreamer(M4F)          PTv3     Mask4Former
+                                                                                        sLSTQ                    0.681              0.526        0.501
+                                                                                                A40
+                                                                                        sLSTQ                    0.688              0.536        0.504
+                                                                                                3090
+                                                                                        sLSTQ                    0.702              0.561        0.538
+                                                                                                A100
+                                                                                                                                           
+                                                                                             ′        ∂f(x,t)      ∂(v+ω×(x−xc))
+                                                                                          |f (x)| =             =                          
+                                                                                                         ∂x                  ∂x            
+                                                                                                                               
+                                                                                                                     ∂(ω ×x)            
+                                                                                                                                        
+                                                                                                                  =               = [ω]      =|ω|
+                                                                                                                        ∂x             ×
+                                                                                          where x is the rotation center of the rigid body, v is
+                                                                                                   c
+                Figure S1. Streaming Perception Setting: Green points denote dy-       the translational velocity, ω is angular velocity, [ω]× is the
+                namic objects from the processed frame, whereas blue points rep-       cross-product matrix. The iteration converges when |ω| ≤
+                resent the current frame at the time of prediction generated by the    1. In real-world scenarios, most rigid objects exhibit low
+                algorithm.                                                             angular velocity, allowing the iteration converges reliably.
+                                                                                          Whileperfectconvergencecannotbeguaranteedinprac-
+                                                                                       tice, our experiments show robust convergence in 97.4% of
+                A. Streaming Perception Setting                                        scenes in the SemanticKITTI dataset.
+                Based on previous works [17, 19, 20, 23, 26, 38, 44, 46] in            C. Performance of different GPUs
+                streamingperception, our4Dstreamingpanopticsegmenta-
+                tion addresses a similar challenge by explicitly considering           TableS1presentstheperformanceofourmethodacrossdif-
+                the impact of algorithmic processing latency on the final              ferent GPUs under streaming settings. Since the model’s
+                prediction and the scene at output time. As illustrated in             runtime speed and GPU processing capability significantly
+                Fig. S1, predictions from existing methods are misaligned              impact the metric performance, the choice of hardware
+                with the actual scene due to this latency. This misalignment           plays a crucial role. Notably, the A40 and 3090 graphics
+                can lead to perception inaccuracies, posing potential risks            cards exhibit comparable performance due to their simi-
+                when robotic systems operate in highly dynamic environ-                lar computational efficiency. In contrast, the A100 demon-
+                ments.                                                                 strates a substantial speed advantage over the 3090, leading
+                                                                                       to a 1.4% improvement in our model’s performance on the
+                B. Forward Flow Iteration Proof                                        A100.
+                Tofindtheflowbetweenthecurrentquerypointandhistory
+                position in geometric memory, we use the forward flow it-
+                eration.   The iteration converges if Eq. 8 holds, then the
+                following equation holds
+                              |g(x +∆x)−g(x −∆x)|
+                    1 ≥ L ≥        0                0
+                                |(x +∆x)−(x −∆x)|
+                                  0              0           
+                              f(x +∆x)−f(x −∆x)
+                           =      0                0            =|f′(x )|
+                                (x +∆x)−(x −∆x)                         0
+                                   0               0
+                    For point x on a rigid object and the flow f(x,t) rep-
+                resenting velocity, the derivative |f′(x)| can be expressed
+                as:
+                                                                                   1

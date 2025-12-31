@@ -1,0 +1,50 @@
+                          Learning program synthesis with self-improving language models: A case study on ARC-AGI
+            D.2. Majority voting data selection for test time training data
+            To select data for Test Time Training, we employed our greedy-diverse data selection process, introducing a minor
+            modification to the sampling strategy within the greedy component. Since test accuracy is unavailable during this phase, we
+            utilize a majority voting procedure to identify the most probable correct solution, which is then used to train our models (see
+            Algorithm 2).
+            Algorithm 2 Weighted Sampling from Categories
+            Require: Ensemble of responses with associated training accuracy; N: number of responses to sample
+            Ensure: List of sampled responses
+             1: Group responses according to their test output grids
+             2: For each group g , compute the majority voting weight
+                              i
+             3: Normalize the weights
+             4: Allocate ngi samples to each group gi by drawing from a multinomial distribution with parameters (group weights, N)
+             5: Initialize an empty list for sampled responses
+             6: for each group g do
+                             i
+             7:   For each response in gi, compute quality score (c × train_accuracy)
+             8:   Normalize quality scores within the group (use uniform weights if all scores are zero)
+             9:   Sample n  responses from g , weighted by quality scores
+                          gi              i
+            10:   Addthesampledresponses to the output list
+            11: end for
+            12: return the list of sampled responses
+            D.3. REXModification
+            For the REX (Refinement through EM-based sampling) algorithm, we adopted the hyperparameter C = 20, aligning with
+            the recommendations from the hyperparameter analysis presented in the original REX publication (Tang et al., 2024).
+            Recognizing that REX’s inherent sequential processing can lead to substantial computational time, we implemented two key
+            modifications to enhance its efficiency:
+              1. Accelerated Refinement via Multiple Completions: To speed up the REX algorithm, we modified the sampling
+                process. Instead of generating a single completion per prompt, we sampled four completions simultaneously. This
+                approach leverages the efficiency of modern inference systems where the computational cost associated with prompt
+                processing is incurred only once, even when generating multiple output sequences.
+              2. Parallelized REX Instances: To further reduce overall execution time, we parallelized the execution of REX itself.
+                RatherthanrunningasingleREXprocess,welaunchedfourindependentREXinstancesthatwereexecutedconcurrently
+                across multiple compute nodes. This approach draws conceptual parallels to island genetic algorithms, where a global
+                population is partitioned into isolated subpopulations that evolve independently. Such parallelization strategies offer
+                several advantages: they promote greater diversity in the search space, mitigate the risk of premature convergence, and
+                have demonstrated promising results in recent work such as FunSearch (Romera-Paredes et al., 2024).
+            D.4. Training
+            Wefine-tuned our model using Unsloth (Daniel et al., 2023), starting from the Instruct model at each iteration. The training
+            setup included a warmup ratio of 0.1, the AdamW optimizer with a learning rate of 5e-5, a batch size of 1, gradient
+            accumulation over 64 steps, and a weight decay of 0.05. Training was performed only on the response using RS-LoRA or
+            RS-QLoRAforlargermodels(those exceeding 14 billion parameters) in bfloat16 precision. Additionally, for each training
+            example, the order of the grid was randomly shuffled to improve generalization.
+            D.5. Inference
+            Forinference, weemployedSGLang(Zhengetal.,2024)asourengine. Toaccelerategeneration,wesampled50completions
+            in parallel for each task. Each task’s prompt included one few-shot example drawn from the ARC training set, selected from
+            a different task from the previous generation (or from the current generation for the first iteration). To reduce computational
+                                                              18

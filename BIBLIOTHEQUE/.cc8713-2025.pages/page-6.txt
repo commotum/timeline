@@ -1,0 +1,56 @@
+                                 Learning program synthesis with self-improving language models: A case study on ARC-AGI
+               models: (1) single-shot sampling, (2) sampling 6k candi-            mancetoavoidoverfitting the method to test tasks.
+               date programs (Sample-6k), and (3) using half the bud-
+               get for initial sampling and half for targeted refinements          Learning to sample programs.           Akeychallenge in im-
+               (Sample&Refine-6k). Table 1 shows that both sampling and            proving sampling capabilities is extracting meaningful train-
+               sample&refine search dramatically improve performance,              ing signal from search attempts. While we could only train
+               with Sample&Refine-6k achieving the best results across             onsuccessful solutions, this would severely limit our train-
+               all model sizes. Notably, this allows smaller open-source           ing data since many tasks remain unsolved. Instead, we
+               models to outperform much larger closed-source ones by              explore several strategies for creating synthetic training data
+               leveraging additional computation: the 7B model beats GPT-          fromallsampledprogramsthroughhindsightrelabeling(see
+               4.1, and ≥32B models beat Claude-4-Sonnet. Only state-              Section 3.3). For each ARC-train task:
+               of-the-art reasoning models (o3-mini and Gemini-2.5-Pro                • correct-only: sample uniformly up to 50 solutions that
+               outperform Sample&Refine-6k with Qwen ≥32B (see more                      solved the task (no hindsight learning);
+               model evaluations in Appendix 6).
+               However, search performance typically scales logarithmi-               • uniform: sample uniformly 50 candidate solutions,
+               cally with compute budget and is ultimately bounded by                    then apply hindsight learning to create corresponding
+               the capabilities of the base model used for sampling and                  problem-solution pairs;
+               refinement. This observation motivates our key question:               • greedy: sample the 50 solutions that solved the most
+               can we learn to search more effectively by improving these                train and test examples, then apply hindsight learning;
+               underlying capabilities? Our experiments demonstrate how               • greedy-diverse: sample 25 solutions greedily, then 25
+               iterative self-improvement breaks through this barrier.                   solutions that solved the fewest training examples (for
+                                                                                         diversity), before applying hindsight learning.
+                 Model               1-shot    Sample     Sample&      SOAR        Table 2 compares these strategies by measuring sampling
+                                                 -6k      Refine-6k     -6k        accuracy after finetuning (% of train tasks solved using 3k
+                 Qwen-2.5-C-7B        1.00      5.63        14.25      36.25       samples). While all methods leveraging finetuned mod-
+                 Qwen-2.5-C-14B       1.00      12.63       19.87      42.75       els improve over the baseline, the greedy-diverse method
+                 Qwen-2.5-C-32B       1.50      12.88       25.25      44.38       performed best—suggesting the importance of balancing
+                 Qwen-2.5-72B         1.75      18.50       25.62      44.88       between learning from successful solutions and maintaining
+                 Mistral-Large-2      2.50      19.75       26.25      45.50
+                 GPT-4.1              8.00        –           –          –         diversity in the training data.
+                 Claude-4-Sonnet      20.75       –           –          –
+                 Reasoners                                                                                               Sample-3k acc
+                 o3-mini              33.00       –           –          –                               nofinetuning        29.29
+                 Gemini-2.5-pro       38.25       –           –          –                       finetune: correct-only      34.67
+               Table 1. Performance on ARC-test (% solved). Scores are com-                          finetune: uniform       32.38
+               puted using LLMs performing program synthesis. Sampling small                          finetune: greedy        34.3
+               open-source models 6k times with majority voting (Sample-6k)                   finetune: greedy-diverse       36.46
+               or sampling them 3k times and executing 3k refinement steps         Table 2. Sampling finetuning. ARC-train performance after sam-
+               before majority voting (Sample&Refine-6k) outperforms the one-      pling 3k samples with Qwen-2.5-Coder-14B models finetuned for
+               shot program synthesis performance of much larger non-reasoning     program sampling (% solved).
+               closed-source models. SOAR nearly doubles search performance        Learning to refine programs.         Beyond sampling initial
+               for all models. Sample&Refine and SOAR not run with closed-         solutions, we aim to improve the model’s ability to refine
+               source models for budget reasons.                                   programs using execution feedback. We explore two strate-
+                                                                                   gies for curating refinement examples from search traces.
+               4.2. Learning to sample and refine programs                         For each ARC task:
+               Our framework for learning to search alternates between                • uniform: sample uniformly up to 50 successful refine-
+               search and learning phases: first using the model to sample               mentexamples;
+               and refine solutions, then using these attempts to improve             • diverse: balance that sample based on the training
+               the model’s capabilities. This section analyzes how to ef-                scores of the incorrect parent program (0%, 1–34%,
+               fectively extract training signal from search attempts, exam-             34–98%,and100%withincorrecttest outputs).
+               ining three key questions: (1) how to learn better program
+               sampling, (2) how to learn better program refinement, and           Table3showstheARC-trainperformanceofsearchmethods
+               (3) whether and how these capabilities can be learned jointly.      leveraging a non-finetuned model for sampling (3k samples)
+               Weconducttheseexperiments using Qwen-2.5-Coder-14B                  andafinetuned model for refinement (3k refinements) using
+               and make design choices based on the ARC-train perfor-              either of these two data generation methods. Both strategies
+                                                                                6

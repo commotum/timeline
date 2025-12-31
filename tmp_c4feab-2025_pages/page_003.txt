@@ -1,0 +1,80 @@
+                                 Control Suite                Atari                    ProcGen                    DMLab                     Minecraft
+            Fig. 2 | Diverse visual domains used in the experiments. Dreamer succeeds       which require spatial and temporal reasoning, to the complex and infinite 
+            across these domains, ranging from robot locomotion and manipulation tasks      world of Minecraft. We also evaluate Dreamer on non-visual domains.
+            over Atari games, procedurally generated ProcGen levels, and DMLab tasks, 
+                            27                                                                 Because the critic regresses targets that depend on its own predic-
+            autoencoders . To prevent this, we parameterize the categorical dis-
+            tributions of the encoder and dynamics predictor as mixtures of 1%              tions, we stabilize learning by regularizing the critic towards predicting 
+            uniform and 99% neural network output, making it impossible for them            the outputs of an exponentially moving average of its own parameters. 
+            to become deterministic and thus ensuring well-behaved Kullback–                This is similar to target networks used previously in reinforcement 
+                                                                                                     9
+            Leibler losses. Further model details and hyperparameters are inclu-            learning  but allows us to compute returns using the current critic net-
+            ded in Supplementary Information.                                               work. We further noticed that the randomly initialized reward predictor 
+                                                                                            and critic networks at the start of training can result in large predicted 
+            Critic learning                                                                 rewards that can delay the onset of learning. We thus initialize the out-
+            The actor and critic neural networks learn behaviours purely from               put weight matrix of the reward predictor and critic to zeros, which 
+                                                                                       15
+            abstract trajectories of representations predicted by the world model .         alleviates the problem and accelerates early learning.
+            For environment interaction, we select actions by sampling from the 
+            actor network without lookahead. The actor and critic operate on                Actor learning
+            model states s ≐ {h, z} and thus benefit from the Markovian represen-           The actor learns to choose actions that maximize return while explor-
+                            t    t  t
+            tations ht learned by the recurrent world model. The actor aims to              ing through an entropy regularizer. However, the correct scale for this 
+            maximize the return            ∞    τ     with a discount factor γ = 0.997      regularizer depends on both the scale and the frequency of rewards 
+                                    Rγ≐∑         r
+                                      tτ=0 tτ+
+            for each model state, where τ denotes imagined future time steps. To            in the environment. Ideally, we would like the agent to explore more 
+            consider rewards beyond the prediction horizon T = 16, the critic learns        if rewards are sparse and exploit more if rewards are dense or nearby.  
+                                                            28
+            to approximate the distribution of returns  for each state under the            At the same time, the exploration amount should not be influenced 
+            current actor behaviour:                                                        by arbitrary scaling of rewards in the environment. This requires nor-
+                            Actor: aπ       (|as)Critic: vR(|s )                           malizing the return scale while preserving information about reward 
+                                       tθtt                      ψtt                        frequency.
+                                                                                               To use a fixed entropy scale of η = 3 × 10−4 across domains, we nor-
+               Here, θ and ψ are the parameters of the actor and critic neural              malize returns to be approximately contained in the interval [0, 1].  
+            networks, respectively. Starting from representations of replayed               In practice, subtracting an offset from the returns does not change the 
+            inputs, the world model and actor generate a trajectory of imagined             actor gradient and thus dividing by the range S is sufficient. Moreover, 
+            model states s1:T, actions a1:T, rewards r1:T and continuation flags c1:T.      to avoid amplifying noise from function approximation under sparse 
+            Because the critic predicts a distribution, we read out its predicted           rewards, we scale down only large return magnitudes and leave small 
+            values                   as the expectation of the distribution. To esti-       returns below the threshold of L = 1 untouched. We use the Reinforce 
+                    vv≐E[ (⋅|)s ]
+                     tψt
+                                                                                                       29
+            mate returns that consider rewards beyond the prediction horizon,               estimator  for both discrete and continuous actions, resulting in the 
+            we compute bootstrapped λ returns that integrate the predicted                  surrogate loss function, where H denotes the policy entropy:
+            rewards and the values. The critic learns to predict the distribution of                      T
+            the return estimates Rλ using the maximum likelihood loss:                                              λ
+                                     t                                                          L()θR≐−sg((−vS)/max(1, ))logπa(|sη)+ H[πa(|s )]
+                                                                                                          ∑        t    tθtt θtt
+                                            T                                                             t=1
+                                                       λ
+                                    ψp≐              Rs
+                                  L()−ln(|)
+                                            ∑      ψ   t  t                                    The return distribution can be multi-modal and include outliers, 
+                                            t=1
+                                      λ                         λ                           especially for randomized environments where some episodes have 
+                                    Rr≐       γc      λv λR
+                                            +    ((1−)+)
+                                      t    tt tt+1                                          higher achievable returns than others. Normalizing by the smallest and 
+                                      λ
+                                    Rv≐
+                                      T    T                                                largest observed returns would then scale returns down too much and 
+                                                                                            may cause suboptimal convergence. To be robust to these outliers, we 
+               Although a simple choice would be to parameterize the critic output          compute the range from the 5th to the 95th return percentile (Per) over 
+            as a normal distribution, the return distribution can have multiple             the batch dimension and smooth out the estimate using an exponential 
+            modes and vary by orders of magnitude across environments. To sta-              moving average (EMA):
+            bilize and accelerate learning under these conditions, we parameterize                                           λ              λ
+                                                                                                             SR≐EMA(Per(      ,95)−Per(,R      5),0.99)
+            the critic output as a categorical distribution with exponentially spaced                                        t              t
+            bins, decoupling the scale of gradients from the prediction targets as 
+                                                                                                                                                  7
+            described later. To improve value prediction in environments where                 Previous work typically normalizes advantages  rather than returns, 
+            rewards are challenging to predict, we apply the critic loss both to            emphasizing returns and entropy equally regardless of whether sig-
+            imagined trajectories with loss scale β  = 1 and to trajectories sampled        nificant returns are within reach or not. Scaling up advantages when 
+                                                     val
+            from the replay buffer with a lower loss scale βrepval = 0.3. The critic        rewards are sparse can amplify noise that outweighs the entropy regu-
+            replay loss uses the imagination returns R λ at the start states of the         larizer and stagnates exploration. Normalizing rewards or returns 
+                                                            t
+            imagination rollouts as on-policy value annotations for the replay tra-         by their standard deviation can fail under sparse rewards where the 
+            jectory to then compute λ returns over the replay rewards.                      standard deviation is near zero, which overly amplifies rewards and can 
+                                                                                                                              Nature | Vol 640 | 17 April 2025 | 649

@@ -1,0 +1,857 @@
+                 Article – Control
+                                                                                                                         Transactions of the Institute of
+                                                                                                                         Measurement and Control
+                 BEVtransformerfor visual 3D object                                                                      1–15
+                                                                                                                         TheAuthor(s) 2025
+                 detection applied with retentive                                                                        Article reuse guidelines:
+                                                                                                                         sagepub.com/journals-permissions
+                 mechanism                                                                                               DOI:10.1177/01423312241308367
+                                                                                                                         journals.sagepub.com/home/tim
+                 Jincheng Pan , Xiaoci Huang, Suyun Luo and Fang Ma
+                 Abstract
+                 Three-dimensional (3D) vision perception tasks utilizing multiple cameras are pivotal for autonomous driving systems, encompassing both 3D object
+                 detection and map segmentation. We introduce a novel approach dubbed RetentiveBEV, leveraging Transformer to learn spatiotemporal features from
+                 Bird’s Eye View (BEV) perspectives. These BEV representations form the foundational layer for further autonomous driving tasks. Succinctly, spatial fea-
+                 tures within regions of interest (ROIs) are harvested via spatial cross-attention, while temporal dynamics are integrated using temporal self-attention,
+                 enriching the BEV with historical data. Our spatial cross-attention is enhanced with a retentive mechanism, prioritizing information surrounding the
+                 focal points and enabling the decomposition of this attention mechanism to bolster computational efficiency. On the nuScenes data set test split, our
+                 approach achieves a nuScenes Detection Score (NDS) score of 60.4%, without additional training data, which is an 8.7% improvement over the baseline
+                 (BEVFormer-base), and is close to the current state-of-the-art method SparseBEV, which gets NDS 65.7% as of August 2024. On the Val split of
+                 nuScenes, our method achieves the performance of 55.8 NDS while maintaining a real-time inference speed of 25.3 FPS, and we are currently working
+                 on further accelerating inference using TensorRTon the existing basis (the specification of mAP and NDS would be illustrated by equations (12) and
+                 (13)). The integration of the retentive mechanism notably boosts the precision and recall in 3D object detection while also expediting the inference
+                 process.
+                 Keywords
+                 3Dobject detection, bird eye’s view, transformer, deep learning, retentive
+                 Introduction                                                        efficiency. For example, in complex urban environments where
+                                                                                     precise distance measurements are essential for collision avoid-
+                 Three-dimensional (3D) spatial perception technology serves         ance and navigation, the reduced accuracy of camera-based
+                 as a cornerstone for implementing various autonomous driv-          systems may lead to incorrect positioning of objects and
+                 ing features in smart vehicles and robotics. Cameras, by cap-       potential safety hazards. In addition, camera sensors are more
+                 turing 2D images, offer rich semantic and textural information      susceptible to adverse weather conditions like fog, rain, or
+                 for 3D spatial perception, outperforming light detection and        low-light situations, which can further degrade their perfor-
+                 ranging (LiDAR) in aspects like long-range object detection         mance, whereas LiDAR systems can maintain more consistent
+                 and cost efficiency. And Camera-based 3D Object Detection           detection capabilities under such conditions (Bijelic et al.,
+                 (Huang et al., 2022a, 2022b: 1, 6; Li et al., 2022, 2023b; Liu      2020). These limitations highlight the need for continued
+                 et al., 2022; Lu et al., 2023) has witnessed great progress over    research to improve camera-based 3D object detection meth-
+                 the past few years. Compared with the LiDAR-based counter-          ods and bridge the performance gap with LiDAR-based
+                 parts (Chen et al., 2023; Lang et al., 2019; Lu et al., 2023; Yin   approaches.
+                 et al., 2021), camera-based approaches have lower deployment            According to the pipeline, we can divide previous camera-
+                 cost and can detect long-range objects. However, despite these      based methods into two paradigms. BEV (Bird’s Eye View)-
+                 advancements, camera-based methods still face significant lim-      based methods (Huang et al., 2022a; Huang and Huang,
+                 itations in terms of detection accuracy and depth estimation        2022; Li et al., 2022, 2023b; Park et al., 2022) follow a two-
+                 comparedtoLiDAR-basedmethods. For instance, as of 2023,             stage pipeline which first constructing an explicit dense BEV
+                 on the nuScenes benchmark data set, state-of-the-art camera-        feature from multi-view features and then performing object
+                 based detectors achieve an mAP (mean Average Precision) of
+                 approximately 40%, whereas leading LiDAR-based detectors
+                 can attain mAP scores exceeding 65%, indicating a perfor-           Shanghai University of Engineering Science, China
+                 mance gap of about 25% (Caesar et al., 2020; Yin et al.,            Correspondingauthor:
+                 2021). This substantial disparity underscores the challenges in     Xiaoci Huang, Shanghai University of Engineering Science, Shanghai
+                 depth perception using cameras alone. In practical scenarios,       201620, China.
+                 such limitations can critically affect safety and operational       Email: hxc8011@163.com
+                2                                                                    Transactions of the Institute of Measurement and Control 00(0)
+                detection in BEV space. Those methods achieve remarkable             networks that adopt BEV for spatial representation, the
+                progress but suffering from high computation cost. Another           Vision Transformer (ViT) (Dosovitskiy et al., 2021) emerges
+                line of work (Liu et al., 2022, 2023b; Wang et al., 2021b)           as a pivotal module. However, the self-attention’s structure
+                explores the sparse query-based paradigm by initializing a set       inherently lacks explicit spatial priors, rendering it unable to
+                of sparse reference points in 3D space. Specifically, DETR3D         directly process the spatial relationships among image pixels
+                (Wang et al., 2021b) links the queries to image features using       and features. Motivated by these challenges, we aim to devise
+                3D-to-two-dimensional (2D) projection. It has simpler struc-         a BEV generation technique that not only demands lower
+                ture and faster speed, but its performance still lags far behind     computational power but also either maintains or slightly
+                the dense ones. PETR series (Liu et al., 2022, 2023b; Wang           enhances     the   benchmarks      for   3D object      detection
+                et al., 2022b) uses dense global attention for the interaction       performance.
+                between query and image feature, which is computationally                The self-attention mechanism, central to the visual trans-
+                expensive and buries the advantage of the sparse paradigm.           former, incurs significant computational costs in multi-camera
+                Therefore, there remains a vast potential for exploration and        BEVperceptiontasksdue toits quadratic computational time
+                optimization in BEV-based methods. This leads us to the cen-         complexity. Previous optimization methods for attention
+                tral theme of our work: accelerating the training and infer-         mechanisms (Fan et al., 2023; Guo et al., 2022; Liu et al.,
+                ence speed of BEV-based methods through an improved                  2021; Wu et al., 2021; Yang et al., 2022) compromise the spa-
+                retentive mechanism.                                                 tial priors of the retentive mechanism. To address this, we
+                   In this paper, our approach introduces the integration of         have integrated a decay method based on the Manhattan dis-
+                decay weights of the retentive mechanism into the network’s          tance between ROI and query area in input images within the
+                surround-view imagery, which addresses these challenges by           BEV perception framework. This structure’s decomposed
+                enhancing detection precision while also reducing inference          form enables the network model to model global information
+                latency. The existing BEV methods either sparsely construct          with linear complexity while preserving the spatial informa-
+                target information within the perception range (Chambon              tion matrix inherent to the decay mechanism.
+                et al., 2024; Liu et al., 2023a; Vedder and Eaton, 2022; Xu
+                et al., 2022) or densely process every BEV grid (Huang               Related works.
+                et al., 2022a; Huang and Huang, 2022; Li et al., 2022; Liu               Transformer. The transformer architecture, initially pro-
+                et al., 2022, 2023b; Wang et al., 2021b), our approach inte-         posed in Vaswani et al. (2023), was designed to overcome the
+                grates the strengths of both. Specifically, we draw inspira-         challenges associated with model training, quickly becoming
+                tion from the sparse BEV detection approach, which is                a pivotal technology in numerous Natural Language
+                based on the observation that ‘‘most of the vehicle’s percep-        Processing (NLP) tasks. This architecture has found extensive
+                tion area is actually empty space, so first determine which          application across the fields of NLP and computer vision,
+                areas contain targets to be detected, and then perform BEV           areas that were once led by Recurrent Neural Networks
+                attention mechanism queries.’’ Our baseline, BEVFormer,              (RNNs) and Convolutional Neural Networks (CNNs) (Chu
+                which follows a dense construction approach, merges the              et al., 2021a; Dosovitskiy et al., 2021; Pan et al., 2022; Xia
+                tasks of determining whether each BEV grid is empty and              et al., 2022; Yao et al., 2022). When handling image inputs,
+                detecting target labels simply by one transformer. Although          ViT (Dosovitskiy et al., 2021; Vaswani et al., 2023) divides
+                this approach yields excellent results, it is relatively slow        the image into a series of non-overlapping blocks (Vaswani
+                due to the need to execute the complete attention query              et al., 2023), which are then processed through its Query-
+                mechanism across all BEV grids. To address this, we intro-           Value-Key attention mechanism. To enhance training effi-
+                duced a decay mechanism based on the Manhattan distance              ciency and reduce computational costs, various studies have
+                from image pixels to the ROI into the BEV network. This              proposed spatial priors and sparse attention strategies (Chu
+                mechanism is decomposed along the horizontal and vertical            et al., 2021b; Hassani et al., 2023; Touvron et al., 2021).
+                directions of the image and applied in the attention query           These advancements facilitate more efficient training and
+                process. We achieved a significant improvement in detection          inference, especially in scenarios involving large data sets or
+                precision on the nuScenes validation set, along with a nota-         complex spatial relationships. Also, there is much research
+                ble reduction in inference latency, surpassing the baseline          aimed at decreasing the computational costs associated with
+                BEVFormer-pure under similar conditions, and approach-               training and inferring self-attention (Fan et al., 2023; Wang
+                ing the nuScenes Detection Score (NDS) score of existing             et al., 2021a, 2022a; Wu et al., 2021).
+                state-of-the-art methods (Li et al., 2023a).
+                                                                                         Prior knowledge in transformer. In visual transformers,
+                Related works and motivation                                         prior knowledge is crucial for understanding universal pat-
+                                                                                     terns within image data, such as the structure of images and
+                Motivation. To enable vehicles to comprehend driving scenes,         the spatial distribution of objects. Integrating explicit spatial
+                employing a BEV paradigm based on inputs from multiple               priors enhances the efficiency of the self-attention mechanism
+                cameras serves as an effective spatial representation. BEV dis-      by clarifying spatial connections within the data. The early
+                tinctly displays the location and size of objects in space, offer-   version of ViT (Dosovitskiy et al., 2021; Vaswani et al., 2023)
+                ing an understanding of the surrounding scene from multi-            used trigonometric functions for positional encoding to inte-
+                camera perspectives, making it apt for tasks like autonomous         grate pixel information into relevant feature dimensions.
+                driving planning and perception. In the realm of neural              Recent advancements (Fan et al., 2024) have introduced a 2D
+                Pan et al.                                                                                                                    3
+                bidirectional spatial decay matrix grounded in Manhattan         SOLOFusion (Park et al., 2022) and ViideoBEV (Han et al.,
+                distance, enriching the model with dynamic prior knowledge       2024) investigate the application of long-term temporal fusion
+                concerning variations in distance. This innovation empowers      for advanced multi-view 3D perception, showcasing the evol-
+                the self-attention mechanism to pinpoint spatial relationships   ving landscape of BEV technology in understanding complex
+                with heightened precision in the context of global information   environments.
+                modeling, thus aligning with the intricate demands of 3D            DETR3D (Wang et al., 2021b) marks the advent of the
+                object detection tasks.                                          first transformer-based BEV technique, which establishes
+                   In particular, RetentiveBEV employs a decay weight            object queries within a 3D space and leverages a transformer
+                matrix, D2d, derived from camera imagery to facilitate the       decoder to extract learnings from features across multiple
+                          nm
+                computational processes of the attention mechanism, as deli-     image viewpoints. On DETR3D’s foundation, PETR (Liu
+                neated in equation (6). This method underscores a refined        et al., 2022) has further refined this approach by incorporating
+                approach to embedding spatial awareness within the model,        positional embedding transformations. BEVFormer (Li et al.,
+                ensuring a nuanced understanding of spatial relationships,       2022) advances the field by adaptively synthesizing BEV fea-
+                pivotal for enhancing the precision and reliability of 3D        tures from the spatiotemporal characteristics captured by
+                object detection.                                                cameras from various perspectives, thereby reducing its reli-
+                                                                                 ance on explicit depth cues and 3D assumptions. UniAD (Hu
+                   2D-to-3D transform. Extracting cues and features from         et al., 2023) expands on BEVFormer’s capabilities, facilitating
+                2D images gathered by single or multiple cameras represents      multi-task learning within the BEV spatial context. Despite
+                a straightforward strategy for performing environment per-       the impressive efficacy shown by these BEV perception meth-
+                ception tasks in autonomous driving. However, feature trans-     odologies, they typically initialize using models either pre-
+                formation methods based on views from a single camera fall       trained on ImageNet with single-view images (Russakovsky
+                short by not providing a unified space for information repre-    et al., 2015) or through deep pre-training techniques (Park
+                sentation. This requires individual processing of the data col-  et al., 2021), highlighting a common foundation in their
+                lected by different cameras, which compromises the efficiency    development.
+                of both training and inference processes.                           Among the transformer-based BEV techniques, BEV
+                   BEVserves as a unified framework for spatial representa-      Former stands out by nearly matching the performance of
+                tion. Utilizing BEV requires the reconstruction of depth infor-  previous LiDAR-based methods, setting a reference point for
+                mation from camera images, either through direct depth           further innovations. However, the computational demands of
+                estimation or supported by categorized depth estimation, to      BEVFormer and its successors inspire ongoing research into
+                enable the transformation of image features into BEV fea-        optimizing BEV representation learning for greater efficiency.
+                tures. Specifically, the transformation of image features into
+                BEVfeatures typically involves several key steps. First, depth   Main contribution
+                information is used to project 2D image features into a 3D
+                space, creating a point cloud or voxel grid that represents the  To incorporate spatial priors directly within the attention
+                scene from multiple perspectives. These 3D representations       mechanism, the image utilize a 2D bidirectional spatial
+                are then mapped onto a BEV plane by aggregating features         decay matrix based on the Manhattan distance before for-
+                from different views. In many approaches, neural networks        ward propagation process, introducing the concept of
+                such as CNNs or transformers are employed to refine the          Manhattan Self-Attention (MaSA): the greater the distance
+                BEV features, enhancing spatial coherence and accuracy. In       from a target token, the more significant the decay in atten-
+                autonomous driving, visual-input-based 3D perception BEV         tion weight for the other tokens. This feature ensures that
+                approaches have drawn significant interest recently (Huang       while global information is processed, varying levels of
+                et al., 2022b; Jiang et al., 2023; Zhang et al., 2022). These    attention are allocated to the tokens based on proximity.
+                approaches fall into two primary categories: set-based meth-     Addressing the considerable computational load posed by
+                ods, which employ geometric relationships for the 2D to 3D       modeling global information with traditional attention
+                transformation, and learning-based methods, which leverage       mechanisms, numerous studies (Liu et al., 2021; Tu et al.,
+                deep learning networks, such as transformers, for accomplish-    2022; Zhu et al., 2023) have attempted solutions, yet often
+                ing the conversion.                                              at the expense of disrupting the spatial decay matrix essen-
+                   LSS (Philion and Fidler, 2020), a geometry-based              tial for embedding spatial priors within MaSA. To circum-
+                approach, generates spatial point clouds from categorized        vent this, the retentive mechanism employs a decomposition
+                depth estimation, transforming each image into feature frus-     approach along the image’s horizontal and vertical axes.
+                tums for each camera and merging them into a rasterized          This approach enables MaSA to model global information
+                BEV view. Extending LSS’s capabilities, BEVDet (Huang            efficiently with linear computational overhead and retain
+                et al., 2022b) integrates techniques for augmenting both image   the original MaSA’s receptive field. Consequently, we intro-
+                views and BEV data. BEVDepth (Li et al., 2023b) improves         duce the Retentive BEV, a BEV encoder leveraging the
+                the quality of its BEV features by incorporating explicit depth  retentive mechanism. It is designed to explicitly furnish spa-
+                cues from LiDAR, underscoring the significance of depth          tial  prior  information while bolstering the attention
+                information in BEV perception. BEVStereo (Li et al., 2023a)      mechanism, allowing for global information modeling of
+                and STS (Wang et al., 2022c) enhance depth accuracy using        the BEV perspective with linear time complexity. Key fea-
+                temporal    multi-view   stereo   techniques.   Furthermore,     tures of our RetentiveBEV include the following:
+                4                                                                    Transactions of the Institute of Measurement and Control 00(0)
+                   1.  A grid-shaped BEV query reference set, integrating            results into the feature vector represented by (x0,y0). This
+                       spatiotemporal features via the attention mechanism.          comprehensive process of ‘‘temporal information aggregation,
+                   2.  The Retentive-Spatial Cross-Attention (RSCA) mod-             spatial feature aggregation, forward propagation’’ is executed
+                       ule, which amalgamates spatial features across multi-         six times across the network, culminating in high-dimensional
+                       ple camera inputs and generates a weight decay matrix         BEVfeatures Bt for subsequent object detection or segmenta-
+                       to furnish attention with spatial priors.                     tion tasks.
+                                                                                         Figure 1 shows the following. (a) The decoder of
+                   By integrating features generated by RetentiveBEV with            RetentiveBEV features an array of BEV queries, each deter-
+                task-specific heads for various applications, such as DETR3D         mined by the grid’s resolution. It incorporates TSA that
+                (Wangetal., 2021b) and OpenOccupancy (Wang et al., 2023),            synthesizes both historical and current frame data, alongside
+                it is possible to detect 3D objects in an end-to-end manner.         spatial cross-attention mechanisms designed to convert 2D
+                Ourcontributions are as follows:                                     image data into depth information aligned with the world
+                                                                                     coordinate system. (b) The retentive mechanism operates by
+                   1.  Introduced a BEV utilizing a Manhattan distance-              calculating decay weights for feature vectors along both hori-
+                       based spatial decay matrix, which offers explicit spa-        zontal and vertical image axes. These weights are then com-
+                       tial priors to the attention mechanism.                       bined via a Hadamard product to form a 2D decay weight
+                                                                                                2d
+                                                                                     matrix D , which is instrumental for conducting BEV
+                   2.  AdoptedanewMaSAdecompositionapproachwithin                               nm
+                       the BEV framework, enabling global information                queries. Such queries selectively engage with image data from
+                                                                                                                                       2d
+                                                                                     ROIs, factoring in the spatial influence of D        within these
+                       modeling with linear complexity.                                                                                nm
+                                                                                     interaction zones. (c) The TSA component plays a pivotal
+                   We tested our network model on the Val split of the               role in merging information from both historical and current
+                nuScenes data set using a single V100 GPU, achieving a com-          frames, enabling BEV queries to dynamically interact with
+                prehensive NDS score of 0.558, an mAP accuracy score of              immediate surroundings and corresponding segments from
+                0.423, and an inference performance of 25.3 frames per               prior frames. This facilitates a nuanced and context-aware
+                second.                                                              analysis, enhancing the model’s ability to accurately interpret
+                                                                                     and predict spatial dynamics.
+                                                                                         For image inputs from multiple cameras (with surround-
+                Methods                                                              view images collected by Nref =6 cameras as provided by the
+                                                                                     nuScenes data set), the network sequentially extracts multi-
+                In this research, we introduce a new method for transforming         dimensional features Ft from each camera using a backbone
+                features from multi-view camera images into BEV features,            network. These features are then combined with the temporal
+                offering a unified representation of the surrounding environ-        information from BEV historical frames through the TSA
+                ment that enhances various autonomous driving perception             module. This combination serves as input to the RSCA mod-
+                tasks. Our method, developed within the Retentive frame-             ule for aggregating spatial features. Within this module, when
+                work, leverages spatiotemporal data gathered from multiple           targeting a specific area of interest in the BEV, the system
+                camera perspectives. For spatial feature calculation, it incor-      first identifies the location Vhit of this area (denoted by BEV
+                porates the Manhattan Cross-Attention mechanism from the             coordinates (x0,y0)) across Nref =6 images. It then calculates
+                retentive approach, explicitly providing spatial priors to the                                                     2d
+                                                                                     the Manhattan distance decay matrix D            for the current
+                transformer and significantly reducing the computational                                                           nm
+                                                                                     position in each image and proceeds with QKV query compu-
+                demands for model training and inference. For temporal fea-          tations. A BEV coordinate grid samples several layers verti-
+                tures, it employs an RNN-based approach to efficiently cap-                  0
+                                                                                     cally (z , for j=1,2, ...,n ) and integrates these samples
+                                                                                              j                     z
+                ture historical BEV features, ensuring minimal computational         into the feature vector represented by (x0,y0). This ‘‘temporal
+                overhead.                                                            information aggregation, spatial feature aggregation, pooling,
+                                                                                     forward propagation, and pooling’’ sequence is repeated six
+                Architecture                                                         times throughout the network, ultimately producing high-
+                                                                                     dimensional BEV features Bt for use in subsequent target
+                For image inputs from multiple cameras, where the nuScenes           detection or segmentation tasks.
+                data set provides surround-view images from Nref =6 cam-                 Within the RetentiveBEV, the attention mechanism is tai-
+                eras, the network starts by extracting multi-dimensional fea-        lored to engage with specific ROIs, by sampling K points near
+                tures from each camera through a backbone network. These             reference points in each camera’s coordinate system, facilitat-
+                features are then integrated with temporal information from          ing the calculation of attention outcomes
+                historical BEV frames via a Temporal Self-Attention (TSA)
+                                                                                                                 N       N
+                module and fed into an RSCA module for spatial feature                                            head    key         
+                                                                                                                  P P                0              ð1Þ
+                                                                                        RetentiveAttnðÞq,p,x =       W       A Wxp+Dp
+                aggregation. Within this module, when querying a Region Of                                              i      ij    i         ij
+                                                                                                                 i =1    i =1
+                Interest (ROI) in BEV, the mechanism first identifies the
+                ROI’s location (in BEV grid coordinates (x0,y0)) across the              In this equation, q,p,andx are designated as the query
+                images from the six cameras, calculates a Manhattan distance         vector features, reference point features, and input features,
+                                2d
+                decay matrix D     for these positions Vhit in each image, and       respectively. The variable i refers to the specific attention head
+                                nm
+                performs a QKV query calculation. Each BEV grid samples              being considered, with Nhead denoting the overall number of
+                                            0
+                several layers vertically (z ,j=1,2,:::,n ), incorporating the       such heads. The index j is used for the keys that are sampled,
+                                            j              j
+                  Pan et al.                                                                                                                                   5
+                  Figure 1. Depicts the comprehensive architecture of RetentiveBEV, which comprises multiple integral components.
+                  whereN      represents the total keys sampled for each attention                 feature dimension, the time complexity is O(M2  D).
+                           key
+                                 C3C C           0      C3C C                                      Since it involves all pairwise interactions between his-
+                  head. W 2 R         Head and W   2R       Head signify the learnable
+                           i                      i
+                  weights associated with each attention head, where C is the                      torical and current queries, the complexity grows
+                  dimensionality of the features. A 2 ½0,1 symbolizes the com-                    quadratically with the number of BEV queries. In the
+                                                      ij
+                                                              N                                    self-attention module, the attention matrix between
+                                                                key
+                  puted attention weights, initialed by P A =1. Dp 2 R2                            historical and current BEV has size M M, leading to
+                                                                     ij         ij
+                                                              j =1                                 a space complexity of O(M2). Besides, storing the
+                  represents the predicted offset for the reference point p, facili-               input feature representations contributes a complexity
+                  tating a dynamic adjustment to the point’s location. The fea-                    of O(2M D), giving a total space complexity of
+                  ture extraction at the adjusted location p+Dp is denoted by                           2
+                                                                      ij                           O(M +2MD).
+                  x(p+Dpij), with bilinear interpolation being the default
+                  method for obtaining these features (Dai et al., 2017), illus-               Combiningthese two modules, the overall time complexity
+                  trating the model’s capacity to adaptively focus and refine its          of our network is O(M  N  D+M2 D), and the space com-
+                  perception based on the spatial context.                                 plexity is O(N  M +M2+(N +M)D).
+                     For the time and space complexity analysis of our work
+                  shown in Figure 1, there are two key modules: RSCA and
+                  TSA. These two modules determine the inference time com-                 Attention queries
+                  plexity and space complexity of the network:
+                                                                                           The Attention Query is a critical element within the attention
+                     1.   RSCA: In this module, cross-attention is performed               mechanism, serving as the vector or tensor that directs the
+                          based on multi-view input features. Let N be the num-            focus of attention. This query vector is essential for calculating
+                          ber of multi-view features, M be the number of BEV               attention scores, determining the areas of focus within the
+                          queries, and D be the feature dimension. The time                mechanism. The key and value vectors, essential for the atten-
+                          complexity is O(M N D). The attention calculation              tion calculation, are derived from the feature extraction of the
+                          scales linearly with the number of input views and               input image: after the original image is processed through the
+                          BEV queries. During cross-attention calculation, the             backbonenetwork, it is transformed into a tensor representing
+                          attention matrix of size N M needs to be stored.                high-dimensional features. Additional convolution layers then
+                          Therefore, the space complexity is O(N  M). In addi-            produce the key and value vectors for the targeted ROI. In the
+                          tion, storing the feature representations contributes a          traditional method of computing visual attention, a query vec-
+                          complexity of O((N +M)D), resulting in a total                  tor q, along with a set of key vectors k1,k2,:::,kn,isspecified
+                          space complexity of O(N M +(N +M)D).                           for an ROI. The attention score a for the given area results
+                                                                                                                                  i
+                     2.   TSA: This module involves self-attention between his-            from the dot product between the query vector and each key
+                          torical and current BEV queries. Assuming both his-              vector ki followed by normalization via a softmax function to
+                          torical and current BEV have M queries, and D is the             yield the attention weight b . The final attention output is
+                                                                                                                            i
+                               6                                                                                                                                           Transactions of the Institute of Measurement and Control 00(0)
+                               achieved by summing the products of these attention weights                                                                                 with temporal priors, thereby bolstering its ability to handle
+                               and their corresponding value vectors, completing the process                                                                               sequential data. In the context of parallel training, this
+                               as described                                                                                                                                method is executed in a highly efficient matrix format. The
+                                                                                                                                                                           retention step involves processing the input X through a
+                                                                         qk
+                                                                                   i                                                                                       sequence of transformations and then multiplying it with the
+                                                             ai = pﬃﬃﬃﬃﬃ                                                                                                   time decay matrix D to compute the final output. This strat-
+                                                                              d
+                                                                                 k
+                                                                                                               expðÞa                                                      egy not only retains the temporal information within the
+                                                             b =softmaxðÞa = P                                              i
+                                                                i                            i               n        expðÞa                                  ð2Þ          sequences but also drastically lowers computational complex-
+                                                                                                             j =1                  i
+                                                                           n                                                                                               ity. Consequently, it empowers the model to more effectively
+                                                             O=Xbv                                                                                                         learn the long-range dependencies inherent in sequence data
+                                                                                    i   i
+                                                                         i =1                                                                                                                                                               
+                                                                                                                                                                                                                                 Q= XW Y
+                                      In the context of object detection tasks, the model’s atten-                                                                                                                                                   Q
+                                                                                                                                                                                                                                                                 
+                                                                                                                                                                                                                                 K=ðÞXW Y
+                               tion output serves as an indicator of its focus on various                                                                                                                                                            K
+                                                                                                                                                                                                                                 V=XW
+                               regions within the image. Higher levels of attention output                                                                                                                                                         V
+                               signal that the model regards certain areas as encompassing                                                                                                                                    Y =einu0
+                                                                                                                                                                                                                                   n        (                                                             ð4Þ
+                               critical targets or information. Conversely, lower levels of                                                                                                                                                     gnm,                  n.m
+                               attention output imply that the model either overlooks these                                                                                                                                 Dnm=
+                               areas or considers them to be of minor significance to the task                                                                                                                                                  0,                      nłm
+                                                                                                                                                                                                                                            
+                               at hand. Within the attention mechanism designed for learn-                                                                                                             RetentionðÞX = QKT D V
+                               ing BEV representations from a combination of multiple
+                               images and items as inputs, each BEV query vector is indica-                                                                                       on is calculated as the weighted sum of outputs from all
+                               tive of a significant feature or region within the scene. These                                                                             positions m, where the weights are determined by the similar-
+                               BEVquery vectors, derived from learning across images cap-                                                                                  ity between the query Q and key K vectors, alongside a time-
+                               tured from diverse camera angles, facilitate the model’s capa-                                                                              based decay factor gnm. The decay factor g, raised to the
+                               bility to link and recognize features across varying camera                                                                                 power of nm for cases, where n.m, represents how influ-
+                               perspectives.                                                                                                                               ence diminishes over time, making distant past events have
+                                      RetentiveBEV employs query vectors to acquire a BEV                                                                                  lesser impact on the current state; each query vector Qn is
+                               representation of the space surrounding ego car, utilizing                                                                                  generated by transforming the input X through a weight
+                               surround-view images, LiDAR point clouds, and the bound-                                                                                    matrix W and is further modified by an element-wise com-
+                                                                                                                                                                                                P
+                               ing box (bbox) ground truths from the nuScenes data set.                                                                                    plex multiplication with Yn, a complex number embodying
+                               These queries are formulated by a set of learnable parameters,                                                                              the positional information with an angle of nu . Similarly,
+                                                                      H3W3C                                                                                                                                                                                                           0
+                               denoted as Q 2 R                                        , where H and W indicate the spa-                                                   each key vector K                             is produced by transforming X via W
+                                                                                                                                                                                                                    m                                                                                         K
+                               tial resolution of the RetentiveBEV perception plane in terms                                                                               and undergoing a similar complex multiplication with Y .
+                                                                                                                                                                                                                                                                                                             m
+                               of BEV grid numbers, and C represents the count of sampling                                                                                 The matrix D                         defines the relationship between positions n
+                                                                                                                                                                                                          nm
+                               points within the vertical sections across the BEV grid. Each                                                                               and m, adopting a value of gnm to reflect temporal decay for
+                               grid on the BEV plane equates to a real-world area of s                                                                                     n.m,and0 for n\m, thus enforcing causal masking to
+                               meters, with the plane’s center aligning with the ego car’s                                                                                 ensure information flow is unidirectional, from past to future.
+                               coordinate                     system’s                  center.               Before                entering                  the          This decay matrix D, containing causal masks and exponen-
+                               RetentiveBEV’s attention mechanism, the query vector Q is                                                                                   tial decay components, underscores the relative distances in a
+                               enriched with feature dimensions and spatial priors through a                                                                               one-dimensional sequence, embedding a clear temporal prior
+                               process of learnable position encoding.                                                                                                     into text data analysis. The value vector V results from the
+                                                                                                                                                                           transformation of X via W . The Hadamard product ()sig-
+                                                                                                                                                                                                                                     V
+                               Retentive decay matrix                                                                                                                      nifies element-wise multiplication; X is the input data matrix,
+                                                                                                                                                                           and W ,W ,W are the trainable matrices used for convert-
+                                                                                                                                                                                          P        K        V
+                               One-dimensional inputs. To augment the transformer model’s                                                                                  ing X into the respective queries Q,keysK, and values V,
+                               performance, a temporal decay mechanism is incorporated                                                                                     enabling the model to efficiently process sequential data while
+                               within the retentive mechanism, offering a temporal prior for                                                                               accounting for time-based relevance and dependencies.
+                               sequential modeling. This mechanism assigns decay weights
+                               based on time when processing one-dimensional input. For                                                                                    2D inputs: MSA, MSA decomposition, and RSCA.
+                               any given position n, the output, after undergoing temporal                                                                                        Manhattan distance. Manhattan distance refers to the dis-
+                               decay, can be expressed as follows                                                                                                          tance between two points in a grid-like space, which is calcu-
+                                                                          n                                                                                                lated as the sum of the absolute differences along the
+                                                                         P nm                       inu                imu      T
+                                                                                                          0                  0
+                                                           o =                   g         ðÞQ e             ðÞK e                  v                         ð3Þ
+                                                             n                                   n                 m                  m                                    coordinate axes, rather than the direct Euclidean distance. In
+                                                                       m=1                                                                                                 other words, the distance is measured by ‘‘walking the
+                                      Through these operations, the retentive mechanism intro-                                                                             blocks’’ rather than taking a straight line.
+                               duces time decay and positional encoding into self-attention
+                               computations, aiming to mimic the temporal relationships                                                                                           MSA. We involve the decay of one-dimensional input
+                               present in sequential data. This approach endows the model                                                                                  shown in equation (3) into self-attention as MaSA. We
+                    Pan et al.                                                                                                                                                        7
+                                                                                                                                    2d       x x + y y
+                                                                                                                                             jjjj
+                    transform the unidirectional and one-dimensional decay                                                        D =g n m              n  m                        ð6Þ
+                                                                                                                                    nm
+                    observed in retention into bidirectional and 2D spatial decay
+                    (shown in equation (6)). This spatial decay introduces an                           and then the RSCA can be presented as
+                    explicit spatial prior linked to Manhattan distance into the                                                        
+                                                                                                                                                         T       2d
+                    vision backbone.                                                                                    MaSAðÞX = SoftmaxðÞQK               D V                    ð7Þ
+                                                                                                        wherein, the K and V matrix are generated according to the
+                        MSAdecomposition. The Manhattan attention mechanism                             ground true of nuScenes LiDAR point cloud.
+                    utilizes the Manhattan distance between pixels in an image as                           Global attention mechanisms are known for their ability
+                    its  guiding metric, preferentially allocating higher decay                         to capture comprehensive information across an entire data
+                    weights to pixels further from a focal pixel. This approach                         set. However, this capability comes at the cost of significant
+                    expands the one-dimensional sequence decay found within                             computational overhead. Research has indicated that while
+                    the Retentive Network into a 2D format by applying it across                        sparse attention mechanisms attempt to mitigate this issue,
+                    both the horizontal and vertical axes of the image, thereby                         they inadvertently disrupt the spatial decay matrices governed
+                    creating a 2D spatial decay matrix. This matrix serves as a                         by Manhattan distances (Dong et al., 2022; Hassani et al.,
+                    spatial prior, informing the query process within the self-                         2023; Wang et al., 2021a; Yang et al., 2021), thereby eliminat-
+                    attention framework. Moreover, Manhattan attention facili-                          ing the utility of spatial priors. In response, our approach
+                    tates the decomposition of this spatial decay matrix along the                      involves calculating the MaSA scores independently along the
+                    image’s horizontal and vertical planes. This strategic decom-                       image’s vertical and horizontal axes. These scores are then
+                    position enables the preservation of the receptive field’s                          integrated with bidirectional decay matrices specific to each
+                    dimensions while simultaneously optimizing the computa-                             axis (i.e. one-dimensional decay matrices that quantify the
+                    tional efficiency of the attention mechanism during both                            horizontal and vertical distances between tokens, represented
+                    training and inference phases. The concept of bidirectional                               2d       jx x j+jy y j
+                                                                                                        as D     =g n m           n  m ). As Figure 2 shows, the process is
+                    2D decay, as an extension of the retentive mechanism’s one-                               nm
+                                                                                                        outlined as follows
+                    dimensional sequence decay, is articulated through
+                                                                                                                                                   
+                                                                                                                                    H                  H T          H
+                                                                                                                             Attn =Softmax Q K               D
+                                       BiRetentionðÞX = QKT                Bi                                                                      
+                                                                      D V                                                         W                   W T          W
+                                                       Bi       jjnm                           ð5Þ                           Attn    =Softmax Q K             D                   ð8Þ
+                                                     D =g                                                                                       
+                                                       nm                                                                                     H        W     T
+                                                                                                                         MaSAðÞX =Attn Attn V
+                    wherein, QKT represents the standard dot product in the self-
+                    attention mechanism, where Q (Query) and K (Key) are the
+                    matrices derived from the input features. The dot product                           2D-to-3D transform: RSCA. In models for 3D object detec-
+                    captures the similarity between different elements within the                       tion involving inputs from multiple cameras, the scale of
+                                                  Bi
+                    feature space. And D            is the Hadamard product (element-                  inputs is large due to the inclusion of views from Nview cam-
+                    wise multiplication) between the dot product QKT and the                            eras. Directly applying a conventional multi-head attention
+                                                          Bi                    Bi
+                    bidirectional decay matrix D . This matrix D                    incorporates        mechanism to model this vast global information could lead
+                    the Manhattan distance-based decay, which adjusts the atten-                        to prohibitive computational costs. To mitigate this, we have
+                    tion weights based on the spatial distance between pixels. The                      crafted a spatial feature aggregation module within the
+                    decay matrix introduces a spatial prior that biases the atten-                      RetentiveBEV model, leveraging the principles of retentive’s
+                    tion toward specific regions, depending on their distance from                      spatial decay (done by MaSA) and Manhattan attention
+                    a reference point. The value matrix V in the self-attention                         decomposition. This module enables each BEV query vector
+                    mechanism, which holds the actual information that will be                          to engage with the relevant section of the camera image’s
+                    weighted and aggregated based on the calculated attention                           ROI, taking into account the decay weights applicable to that
+                    scores. DBi represents the matrix multiplication that applies                      section. The methodology unfolds as follows:
+                    the spatially decayed attention weights to the value matrix V,
+                    generating the final output of the attention mechanism. The                                 Initially, the BEV query vectors are projected onto a
+                              nm
+                             jj
+                    term g          indicates the decay factor, where jjn  m is the                             pillar-shaped region on the BEV plane. From this
+                    Manhattan distance between two points, modulating the                                        region, a set number of reference points (N                3Drefer-
+                    influence of one point on another in the final attention                                                                                            ref
+                                                                                                                 ence points) are selected, each accumulating spatial
+                    output.                                                                                      features from its vicinity. The surrounding spatial fea-
+                                                                                                                 tures of each reference point are then mapped to the
+                        RSCA. In scenarios where images are divided into numer-                                  image coordinate system via the camera’s intrinsic and
+                    ous non-overlapping pixels, these segments undergo position                                  extrinsic matrices.
+                    encoding and linear transformation to be individually con-                                  If the projection of a reference point lands within the
+                    verted into vector representations, known as tokens, which                                   view of any of the Nview cameras, this particular view
+                    represents our ROI. Derived from the MaSA Decomposition,                                     is designated as Vhit.
+                    we assuming the location of a specific token within the image                               Upon mapping the reference points’ spatial coordi-
+                    is denoted by coordinates (xn,yn), and then the bidirectional                                nates to 2D coordinates in the image coordinate sys-
+                    decay factor for this token, in relation to the vector represen-                             tem, these 2D points become the reference for query
+                    tations of other pixel tokens, can be described as                                           Qp. Features are extracted from the vicinity of these
+                                8                                                                                                                                                  Transactions of the Institute of Measurement and Control 00(0)
+                                Figure 2. The details of the retentive decay matrix computation of RSCA. Different shades of blue squares represent the weights of the multi-
+                                dimensional features corresponding to the BEV grid in the RSCA calculation, with darker shades indicating larger weights.
+                                                 points in the 2D image, with their significance                                                                                    cross-attention for multiple data types, clarifies their respec-
+                                                 weighted according to the decay matrix Dnm2d. The                                                                                  tive roles and methodologies.
+                                                 aggregation of these weighted features then forms the
+                                                 output for spatial feature aggregation, efficiently sum-                                                                           TSA
+                                                 marizing the expansive spatial information while
+                                                 mindful of computational efficiency.                                                                                               RetentiveBEV utilizes RNN to derive temporal BEV fea-
+                                                                                                                                                                                    tures, facilitating the representation and estimation of
+                                                                                                                                                                                    object velocities, as well as the detection of objects obscured
+                                        Steps below can be represented as                                                                                                           by height differences. For the BEV query vector Q at a
+                                                                                                                                                                                    given timestamp t, and the historical BEV feature B
+                                                                                            N                                                                                                                                                                                                                            t1
+                                               ref                                                                                
+                                                                           1       P P                                                                                 i            stored at timestamp t 1, the process begins with calculat-
+                                  RSCA Q ,F =                                                       RetentiveAttn Q ,PðÞp,i,j ,F
+                                                     p      t            V                                                                p                            t
+                                                                        jj
+                                                                            hit  i2V       j =1                                                                                     ing the vehicle’s relative displacement between these two
+                                                                                       hit
+                                                                                                                                                                     ð9Þ            time points within the ego car’s coordinate system. This cal-
+                                                                                                                                                                                    culation is based on the motion data gathered from the
+                                wherein, the Q is the query according to the reference point                                                                                        vehicle itself. The aim is to align the historical BEV feature
+                                                                  p                                                                                                                 B          with the query vector Q, ensuring that the BEV grids
+                                p, and the P is the projection with index i,j between p and                                                                                            t1
+                                extracted feature Fi.                                                                                                                               for both timestamps correspond accurately to the same
+                                                                           t                                                                                                        locations in physical space. The resulting aligned historical
+                                                                                                                                                                                                                                                     0
+                                                                                                                                                                                    BEVfeature is denoted as B t1. Subsequently, a mechanism
+                                        MaSA and RSCA. The relationship between RSCA (a                                                                                             of TSA is introduced to establish a connection between fea-
+                                cross-attention mechanism) and MaSA (a self-attention                                                                                               tures from different timestamps within the same BEV grid,
+                                mechanism) is defined within the context of training pro-                                                                                           post alignment. This TSA mechanism highlights the signifi-
+                                cesses, where RSCA simultaneously handles inputs from both                                                                                          cance of temporal dynamics in understanding the spatial
+                                2D surround images and LiDAR point cloud ground truths.                                                                                             arrangement and movement of objects over time
+                                In this setup, the query (Q) is derived from 2D surround                                                                                                                                                                                                     
+                                images, while the keys (K) and values (V) originate from the                                                                                            TSA Q , Q,B0                                  = P DeformAttn Q ,p,V #
+                                                                                                                                                                                                       p                 t1                               0                                           p
+                                                                                                                                                                                                                                             V2 Q,B
+                                                                                                                                                                                                                                                  fg
+                                LiDAR point cloud data. For images undergoing RSCA,                                                                                                                                                                         t1
+                                decay weights D are computed exclusively based on the                                                                                                                                                                                                                                 ð10Þ
+                                image itself, embodying MaSA’s principle. Essentially, MaSA
+                                functions as a component of RSCA, focusing solely on                                                                                                       Herein, Q is a BEV query vector positioned at the coordi-
+                                                                                                                                                                                                                 p
+                                inputs from surround-view images during training. In                                                                                                                                                                                                                    0
+                                contrast, RSCA integrates inputs from two distinct sources.                                                                                         nates p=(x,y). For the initial frame, the pair fQ,B t1g tran-
+                                This delineation between the two, with MaSA leveraging self-                                                                                        sitions to fQ,Qg, indicating that at the start, both the current
+                                                                                                                                                                                    and historical BEV features are considered to be the same,
+                                attention for singular input sources and RSCA employing                                                                                             essentially treating the initial query vector Q as its own
+                Pan et al.                                                                                                                         9
+                historical data. This approach ensures continuity and pro-          For each TP metric, we calculate the mTP metric across all
+                vides a baseline for comparison in the absence of prior frame       classes, and all TP metrics are calculated using a center dis-
+                information.                                                        tance of d =2 m for counting NDS scores in equation (13)
+                                                                                                           mTP= 1 XTP                           ð12Þ
+                Experiments                                                                                         C         c
+                                                                                                                   jj
+                Metrics                                                                                                c2C
+                                                                                                    "#
+                The nuScenes 3D detection benchmark data set comprises                   NDS= 1 5mAP+ X ðÞ1minðÞ1,mTP                          ð13Þ
+                1000videosegments, each 20 secondsin length, featuring key-                      10             mTP2TP
+                frames sampled at a 2-Hz rate. Each keyframe captures a 360
+                panoramic view through the integration of six cameras. The
+                data set is segmented into 700 videos for training, 150 for vali-          Higher values indicate better performance for NDS
+                dation, and another 150 for testing, spanning 10 categories,                and mAP. NDS assesses object detection models by
+                and encompassing approximately 14 million annotated 3D                      combining accuracy and recall, reflecting how well-
+                detection boxes. For assessing model performance, we rely on                detected objects match with actual ones. mAP, a key
+                the nuScenes data set’s supported unified metrics.                          metric in object detection, calculates the area under
+                    The evaluation metric provided by the nuScenes data set                 the precision-recall curve to represent the system’s
+                still uses the commonly used AP (Average Precision) from                    average precision across different recall levels.
+                object detection. However, instead of using Intersection over              Conversely, lower values are preferable for metrics
+                Union (IoU) for threshold matching, it uses the 2D center                   such as ATE, ASE, AOE, AVE, and AAE, which
+                distance d on the ground plane. This approach decouples the                 evaluate errors in vehicle displacement, scale, orienta-
+                impact of object size and orientation on the AP calculation                 tion, speed, and acceleration estimations compared to
+                                             1   XX                                         actual measurements, respectively.
+                                  mAP=                   AP                  ð11Þ
+                                           jjC jjD           c,d
+                                                 c2C d2D                                In the realm of 3D object detection, NDS and mAP serve
+                    In the equation, C represents the categories of object detec-   as the primary metrics for evaluation, whereas ATE and AOE
+                tion, and D denotes the difficulty weight parameters for pre-       shed light on a model’s accuracy in map segmentation.
+                dicting different object categories and distances.
+                    In addition to mAP, nuScenes also introduces another            Environment settings and baseline
+                metric called NDS, which is calculated using the true positive
+                (TP) metric. NDS is half based on detection performance             The experiments were carried out on V100 GPUs, setting the
+                (mAP) and the other half on detection quality, which is mea-        default number of training epochs to 30 and a learning rate (lr)
+                sured by position, size, orientation, attributes, and velocity      of 23104. Drawing from the insights of previous projects
+                (ATE,ASE,AOE,AVE,AAE):                                              (Park et al., 2021; Wang et al., 2021a, 2021b), we opted for
+                                                                                    ResNet101-DCN, initialized from FCOS3D checkpoints, and
+                       mATE (Average Translation Error): The Average               VoVnet99, which initiated from DD3D checkpoints, as our
+                        Translation Error (ATE) is the 2D Euclidean center          backbone networks. The experiments employed multi-scale fea-
+                        distance measured in meters.                                tures created by Feature Pyramid Networks (FPN), which
+                       mASE (Average Scale Error): The Average Scale               downscaled the backbone-derived image features to 1 , 1,and
+                                                                                                                                          16  32
+                        Error (ASE) is calculated as 1  IoU, where IoU is the       1 of their original sizes across various configurations. Before
+                                                                                    64
+                        Intersection over Union after aligning the angles in        entering TSA, the feature dimension (C) was set to 256.
+                        3Dspace.                                                        OnthenuScenesdataset, BEVqueries were defaulted to a
+                       mAOE (Average Orientation Error): The Average               resolution of 200 3 200. The data set defines the vehicle’s
+                        Orientation Error (AOE) is the smallest yaw angle dif-      perception range from the coordinate system’s origin, span-
+                        ference between the predicted and ground truth val-         ning the X and Y axes from [251.2 m to 51.2 m] and the Z-
+                        ues. The angle deviations for all categories are within     axis from [25 m to 3 m]. Each BEV grid’s resolution (s)
+                        360, except for the barrier category, where the angle      matches a real-world square region with sides of 0.512 m.
+                        deviations are within 180.                                 Within the RSCA, every BEV query sampled N           =4anchor
+                                                                                                                                      ref
+                       mAVE (Average Velocity Error): The Average                  points evenly distributed in the real-world 3D space within
+                        Velocity Error (AVE) is the L2 norm of the 2D velo-         [25 m, 3 m]. Each anchor point was mapped to its corre-
+                        city difference, measured in meters per second (m/s).       sponding 2D image feature (Vhit) by sampling four surround-
+                       mAAE (Average Attribute Error): The Average                 ing reference points.
+                        Attribute Error (AAE) is defined as 1  acc, where acc
+                        is the classification accuracy for different categories.
+                                                                                    Benchmark comparison. To effectively assess the RetentiveBEV
+                    For the metrics above, we calculate the mean true positive      neck network’s performance, we included VPN, Lift-Splat, and
+                (mTP) across all categories. In equation (12), c represents the     BEVFormerasbenchmarks,applyingthe same head network for
+                categories for the corresponding metrics mentioned above.           tasks of BEV detection and segmentation.
+               10                                                                Transactions of the Institute of Measurement and Control 00(0)
+               Table 1. 3D object detection results on nuScenes Val set.
+               Method                Modality             Backbone      NDS        mAP         mATE       mASE       mAOE       mAVE       mAAE
+               SSN                   LiDAR                –             0.569      0.463       –          –          –          –          –
+               CenterPoint-Voxel     LiDAR                –             0.655      0.582       –          –          –          –          –
+               PointPainting         LiDAR & Camera       –             0.583      0.464       0.388      0.271      0.498      0.247      0.111
+               FCOS3D                Camera               R101          0.415      0.343       0.725      0.263      0.422      1.298      0.153
+               PGD                   Camera               R101          0.428      0.369       0.638      0.261      0.439      1.263      0.185
+               DETR3D                Camera               R101          0.425      0.346       0.773      0.268      0.383      0.842      0.216
+               BEVFormer             Camera               R101          0.448      0.375       0.725      0.272      0.391      0.802      0.211
+               RetentiveBEV          Camera               R101          0.517      0.416       0.673      0.274      0.372      0.394      0.198
+               DD3D                  Camera               V2-99         0.477      0.418       0.572      0.249      0.369      1.014      0.124
+               DETR3D                Camera               V2-99         0.48       0.412       0.641      0.255      0.389      0.865      0.133
+               BEVFormer             Camera               V2-99         0.495      0.435       0.589      0.254      0.402      0.843      0.142
+                               a
+               SparseBEV(SOTA)       Camera               V2-99         0.627      0.543       0.502      0.244      0.324      0.251      0.126
+               RetentiveBEV          Camera               V2-99         0.556      0.467       0.578      0.256      0.372      0.477      0.127
+               a
+                Data from original paper/project. Bolded texts refer to best performance within specific metrics.
+               Table 2. 3D object detection results on nuScenes Val set.
+               Method                 Modality      Backbone       NDS         mAP         mATE        mASE        mAOE        mAVE        mAAE
+               FCOS3D                 Camera        R101           0.415       0.343       0.724       0.263       0.422        1.292      0.153
+               PGD                    Camera        R101           0.428       0.366       0.688       0.248       0.434        1.264      0.185
+               DETR3D                 Camera        R101           0.423       0.347       0.772       0.267       0.383        0.897      0.217
+               BEVFormer              Camera        R101           0.447       0.376       0.734       0.272       0.391        0.763      0.211
+                               a
+               SparseBEV(SOTA)        Camera        R101           0.592       0.501       0.562       0.265       0.321        0.243      0.195
+               RetentiveBEV           Camera        R101           0.518       0.411       0.674       0.274       0.372       0.455       0.198
+               a
+                Data from original paper/project. Bolded texts refer to best performance within specific metrics.
+               3D object detection                                                      Local Attention confines its interaction to designated
+               In Tables 1 and 2, we have detailed and contrasted the perfor-            anchor points for each BEV query, enhancing focus
+               mance outcomes of various networks executed on the                        on vital information by assigning higher weight to sig-
+               nuScenes test and validation data sets. Notably, VoVNet-99                nificant features within its limited receptive field,
+               was enhanced with additional data sets during its pre-training            thereby outperforming global attention.
+               phase for depth estimation tasks, potentially influencing its            Manhattan Attention (MaSA) skillfully decomposes
+               comparative results.                                                      the global perspective while preserving essential prior
+                  According to the insights drawn from Tables 1 and 2,                   information. By offering a wider receptive field than
+               RetentiveBEV surpasses DETR and BEVFormer across all                      local attention and diminishing the influence of distant
+               key metrics on the nuScenes data set. It also demonstrates                irrelevant data, MaSA achieves the optimal balance
+               performance nearing that of LiDAR-based methods on cer-                   between computational efficiency and scope of aware-
+               tain metrics, highlighting its advanced capabilities in both              ness, making it the most effective among the tested
+               detection accuracy and efficiency.                                        attention strategies.
+                                                                                     In Table 5, we delve into the performance impacts of vary-
+               Ablation study                                                     ing configurations, utilizing an R101-DCN backbone with
+                                                                                  900 3 1600 pixel input images on a V100 GPU. Key vari-
+               The efficacy of the retentive mechanism is illustrated in Table    ables include the following:
+               4, showcasing how various attention mechanisms influence
+               the model’s performance. Notably:                                        Multi-Scale Feature Utilization: When enabled, fea-
+                                                                                         tures extracted from the original camera images by the
+                     Global Attention operates on a comprehensive scale,                backbonearefurther processed by FPN for downsam-
+                      engaging with extensive features, which might dilute               pling; otherwise, features are fed directly into the neck
+                      the emphasis on crucial information due to its vast                network without additional scaling.
+                      memory consumption and excessively broad receptive                BEVQueryResolution: Adjustments to the resolution
+                      field.                                                             can influence detail capture and performance.
+                 Pan et al.                                                                                                                               11
+                 Table 3. 3D object detection results with different attention on nuScenes Val set.
+                 Method                Attention         NDS           mAP           mATE           mAOE           #Param.          FLOPs            Memory
+                 VPN                   –                 0.334         0.252         0.926          0.598          111.2M           924.5G           ~20G
+                 Lift-Splat            –                 0.395         0.348         0.784          0.537          74.0M            1087.7G          ~20G
+                 BEVFormer             Global            0.404         0.324         0.837          0.442          62.1M            1245.1G          ~36G
+                 BEVFormer             Points            0.423         0.335         0.753          0.431          68.1M            1264.3G          ~20G
+                 BEVFormer             Local             0.448         0.375         0.725          0.391          68.7M            1303.5G          ~20G
+                 RetentiveBEV          MaSA              0.553         0.46          0.618          0.367          68.4M            1224.3G          ~20G
+                 Table 4. 3D object detection results with different attentions on nuScenes Val set.
+                 Method                Attention         NDS           mAP           mATE           mAOE           #Param.          FLOPs            Memory
+                 VPN                   –                 0.334         0.252         0.926          0.598          111.2M           924.5G           ~20G
+                 Lift-Splat            –                 0.395         0.348         0.784          0.537          74.0M            1087.7G          ~20G
+                 RetentiveBEV          Global            0.423         0.335         0.753          0.431          68.1M            1264.3G          ~20G
+                 RetentiveBEV          Local             0.448         0.375         0.725          0.391          68.7M            1303.5G          ~20G
+                 RetentiveBEV          MaSA              0.553         0.46          0.618          0.367          68.4M            1224.3G          ~20G
+                 Figure 3. Performance results listed in label order ‘‘FPS, NDS, mAP’’ of different RetentiveBEV configurations and baseline (BEVFormer);
+                 configuration details could be found in Table 5.
+                        Model Layer Count: Varying the number of layers                 offering insights into optimizing performance for 3D detection
+                         affects the model’s depth and can significantly impact          andsegmentation tasks.
+                         both accuracy and inference speed, one layer repre-                Weconfigured different settings for the RetentiveBEV model,
+                         sents a gray block content shown in Figure 1.                   and their comparisons with the baseline BEVFormer in terms of
+                                                                                         inference performance (FPS) and detection performance (NDS
+                     These comparisons highlight the nuanced trade-offs between          and mAP) are shown in Table 5, the visualization of
+                 different attention mechanisms and model configurations,                RetentiveBEV varied by configuration is shown in Figure 3. It is
+                12                                                                       Transactions of the Institute of Measurement and Control 00(0)
+                Figure 4. Visualization of RetentiveBEV inference on nuScenes Val set. Green is the ground truth, and blue is the pre-edited result.
+                Table 5. Latency (ms) and inference performance of different model config on nuScenes Val set.
+                Configuration             BEVgrid size     Layer    Backbone latency      RSCAlatency      Detection head latency     FPS      NDS      mAP
+                BEVFormer (baseline)      200 3 200        –        78                     –               4.1                        16.6     0.517    0.416
+                RetentiveBEV-Base         200 3 200        6        80.6                  22.3             4.5                        25.3     0.558    0.423
+                RetentiveBEV-A            200 3 200        1        78.4                  12.8             5                          28.1     0.378    0.365
+                RetentiveBEV-C            100 3 100        6        76.9                  24.2             4.7                        30.6     0.493    0.404
+                RetentiveBEV-D            100 3 100        1        81.3                  14.7             5.2                        34.8     0.322    0.311
+                noticeable that RetentiveBEV-E, with its configuration of single-        accelerating the generation of BEV query results and
+                scale features, a singular network layer, and the lowest BEV             facilitating subsequent 3D detection and map segmentation
+                query resolution, achieves the quickest results in terms of back-        tasks. In comparison with BEVFormer, our novel approach,
+                bone and neck network latencies and inference frame rate.                incorporating the retentive mechanism within the neck net-
+                However, this setup falls short in 3D detection accuracy. Across         work, demonstrates enhanced inference speed under equiva-
+                the five different setups tested for RetentiveBEV, the variant uti-      lent   training   parameters     and hardware setups. This
+                lizing  single-scale  features,  a six-layer architecture, and a         advancement in receptive field technology significantly bol-
+                200 3 200 BEV query resolution strikes an optimal balance                sters the model’s accuracy in 3D object detection and map
+                between inference speed (FPS), accuracy (mAP), and overall per-          segmentation.      The    performance       efficiency    of   both
+                formance (NDS). The analysis reveals that the backbone net-              BEVFormer and Retentive BEV networks during the infer-
+                work’s processing time is disproportionately long, representing          ence phase is primarily constrained by the backbone network,
+                the primary bottleneck to efficiency in the network inference pro-       where generating feature vectors from camera surround ima-
+                cess. This bottleneck suggests a critical area for potential effi-       gery emerges as the most time-intensive process. Adopting a
+                ciency improvements and underscores the importance of strategic          more efficient backbone could potentially improve the neural
+                model configuration to achieve a desirable balance of speed and          network’s overall data processing speed. Utilizing R101-DCN
+                accuracy in 3D object detection tasks.                                   as the backbone and configuring the input images to
+                                                                                         900 3 1600 pixels, our methodology attained an inference
+                Conclusion                                                               pace of 25.3 frames per second on a V100 GPU.
+                                                                                         Concurrently, it achieved NDS and mAP scores of 0.558 and
+                Weintroducedtheretentive mechanism and MaSA decompo-                     0.423, respectively, on the nuScenes data set Val split. This
+                sition within the attention module for BEV queries, aimed at             marks a 34.4% acceleration in inference speed and a 7.35%
+               Pan et al.                                                                                                            13
+                       n
+                                                                             elevation in NDS score compared to BEVFormer, albeit with
+                       egetatio                                              a slight decline in mAP from 0.416 to 0.423.
+                       V      79.885.784.487.463.276.586.5                      The introduction of this retentive decay mechanism, which
+                                                                             precedes the more time-consuming BEV attention transformer,
+                       made                                                  allows the attention query mechanism to converge faster,
+                       Man    83.187.386.790.571.078.291.2                   thereby significantly accelerating the execution speed of dense
+                                                                             BEVnetworks. We believe this innovation effectively addresses
+                                                                             the trade-off between accuracy and speed in dense BEV meth-
+                       errain                                                ods. While our current work focuses on optimizing the execu-
+                       T      70.174.071.575.452.861.177.1                   tion speed of dense BEV methods, we acknowledge the need for
+                                                                             further innovation to solve deeper, fundamental issues in BEV
+                       walk                                                  perception. As we outline in this paper, future research will
+                       Side   63.574.771.576.450.559.875.7                   explore extending the decay mechanism to three dimensions,
+                                                                             corresponding to the xyz axes of the world coordinate system.
+                       therat .6 .1.8 .6.1   .7   .3                         This extension will be integrated more deeply with the BEV
+                       O fl   66 7170 7158   60   69                         transformer, aiming to better balance the accuracy and speed of
+                       e.     .1 .5.0 .8.5   .7   .2                         dense BEV methods in target detection. The performance com-
+                       Drivsurf949696 9688   81   90                         parison of various detection targets supported by different net-
+                                                                             work models on the nuScenes dataset is shown in Table 6.
+                       ruck   72.376.176.584.465.573.649.2
+                       T
+                                                                             Limitations
+                       railer           88.5 93.0 53.4
+                       T      54.257.461.362.1                               The precision and efficiency of purely visual-based methods
+                         e                                                   in 3D object detection—considering aspects such as training
+                       rafficcon52.158.863.165.965.524.183.7                 recall—remain   inferior  to   LiDAR-based     approaches.
+                       T                                                     Overcoming the challenge of reconstructing 3D information
+                       an                                                    from 2Dimages, which lack depth data, continues to be a sig-
+                                                                             nificant hurdle for purely visual techniques.
+                       edestri          54.7 44.9 65.8
+                       P      69.671.372.278.9
+                       cycle                                                 Acknowledgements
+                  .    r                                                     The authors thank Professor Xiaoci Huang for critically
+                  t
+                  e
+                  s    Moto   66.877.572.478.024.727.464.0                   reviewing the manuscript.
+                  l
+                  a
+                  V
+                  nes  ction                                                 Authorcontributions
+                  nuSce                                                      JP and XH conceived and designed the study. JP wrote the
+                       Construehicle    45.8 38.3 35.6
+                  the    v    30.235.142.251.3                               paper. XH reviewed and edited the manuscript. All authors
+                  on                                                         read and approved the manuscript.
+                       Car    80.990.988.493.874.082.876.3
+                  esults
+                  r                                                          Declaration of conflicting interests
+                  gory Bus    77.285.385.991.276.773.244.2
+                       e                                                     The author(s) declared no potential conflicts of interest with
+                                                                             respect to the research, authorship, and/or publication of this
+                  subcateBicycl21.328.234.140.322.827.053.7                  article.
+                  tion
+                  detecBarrier66.074.474.876.454.064.976.8                   Funding
+                  ect                                    Camera..            The author(s) received no financial support for the research,
+                  obj  mIoU   65.571.072.276.156.259.362.3foroject           authorship, and/or publication of this article.
+                  D
+                  3
+                  f   a
+                  o                                      standser/pr
+                  n                                      C  pap              ORCIDiD
+                  arisoodalityL  L L  L                  AR,al               Jincheng Pan    https://orcid.org/0009-0008-5962-5140
+                       M                C    C    C
+                                                         LiDorigin
+                  Comp               b
+                             betb b     er ) eBEV V      forom               Dataavailability statement
+                  6.                    orm         b)      fr
+                       od        rNet nder3DFntiv   A       ta
+                  able        geN  anext   aseliners)arseBETstands           The data supporting the findings of this study are available
+                              Ranola                     L  Da               from the corresponding author upon reasonable request.
+                  T    Meth      P SalsCyliBEV(bRete(ouSp(SOab
+                14                                                                       Transactions of the Institute of Measurement and Control 00(0)
+                References                                                               Huang J, Huang G, Zhu Z, et al. (2022b) BEVDet: High-perfor-
+                Bijelic M, Gruber T, Mannan F, et al. (2020) Seeing through fog with-        mance multi-camera 3D object detection in bird-eye-view
+                    out seeing fog: Deep multimodal sensor fusion in unseen adverse          (arXiv:2112.11790). arXiv. Available at: http://arxiv.org/abs/
+                    weather (arXiv:1902.08913). arXiv. Available at: http://arxiv.org/       2112.11790 (accessed 11 September 2023).
+                    abs/1902.08913(accessed 14 October 2024).                            Jiang Y, Zhang L, Miao Z, et al. (2023) Polarformer: Multi-camera
+                Caesar H, Bankiti V, Lang AH, et al. (2020) nuScenes: A multimodal           3Dobject detection with polar transformer. In: Proceedings of the
+                    dataset for autonomous driving (arXiv:1903.11027). arXiv. Avail-         AAAI conference on artificial intelligence, vol. 37, Washington,
+                    able at: http://arxiv.org/abs/1903.11027 (accessed 14 October            DC,7–14February,pp.1042–1050. New York: ACM.
+                    2024).                                                               Lang AH, Vora S, Caesar H, et al. (2019) PointPillars: Fast encoders
+                Chambon L, Zablocki E, Chen M, et al. (2024) PointBeV: A sparse              for object detection from point clouds. In: Proceedings of the
+                    approach for BeV predictions. In: Proceedings of the IEEE/CVF            IEEE/CVF conference on computer vision and pattern recognition,
+                    conference on computer vision and pattern recognition, pp. 15195–        LongBeach,CA,pp.12697–12705. NewYork:IEEE.
+                    15204.   Available    at:  https://openaccess.thecvf.com/content/    Li Y, Bao H, Ge Z, et al. (2023a) BEVStereo: Enhancing depth esti-
+                    CVPR2024/papers/Chambon_PointBeV_A_Sparse_Approach_                      mation in multi-view 3D object detection with temporal stereo. In:
+                    for_BeV_Predictions_CVPR_2024_paper.pdf                                  Proceedings of the AAAI conference on artificial intelligence, vol.
+                Chen Y, Liu J, Zhang X, et al. (2023) LargeKernel3D: Scaling up              37, Washington, DC, 7–14 February, pp. 1486–1494. New York:
+                    Kernels in 3D sparse CNNs. In: Proceedings of the IEEE/CVF               ACM.
+                    conference on computer vision and pattern recognition, pp. 13488–    Li Y, Ge Z, Yu G, et al. (2023b) BEVDepth: Acquisition of reliable
+                    13498.   Available    at:  https://openaccess.thecvf.com/content/        depth for multi-view 3D object detection. In: Proceedings of the
+                    CVPR2023/papers/Chen_LargeKernel3D_Scaling_Up_Kernels_                   AAAI conference on artificial intelligence, vol. 37, Washington,
+                    in_3D_Sparse_CNNs_CVPR_2023_paper.pdf                                    DC,7–14February,pp.1477–1485. New York: ACM.
+                ChuX,TianZ,WangY,etal.(2021a)Twins:Revisitingthedesignof                 Li Z, Wang W, Li H, et al. (2022) BEVFormer: Learning bird’s-eye-
+                    spatial attention in vision transformers. Advances in Neural Infor-      view representation from multi-camera images via spatiotemporal
+                                                                                                                                          ´
+                    mation Processing Systems 34: 9355–9366.                                 transformers. In: Avidan S, Brostow G, Cisse M, et al. (eds) Eur-
+                ChuX,TianZ,ZhangB,etal.(2021b)Conditional positional encod-                  opean Conference on Computer Vision. Cham: Springer, pp. 1–18.
+                    ings for vision transformers. Epub ahead of print 18 March. DOI:     Li Z, Yu Z, Wang W, et al. (2023c) FB-BEV: BEV representation
+                    10.48550/ARXIV.2102.10882.                                               from forward-backward view transformations. In: Proceedings of
+                Dai J, Qi H, Xiong Y, et al. (2017) Deformable convolutional net-            the IEEE/CVF international conference on computer vision, Paris,
+                    works. In: Proceedings of the IEEE international conference on           1–6 October, pp. 6919–6928. New York: IEEE.
+                    computervision, Venice, 22–29 December, pp.764–773.NewYork:          Liu H, Teng Y, Lu T, et al. (2023a) SparseBEV: High-performance
+                    IEEE.                                                                    sparse 3D object detection from multi-camera videos. In: Proceed-
+                Dosovitskiy A, Beyer L, Kolesnikov A, et al. (2021) An image is              ings of the IEEE/CVF international conference on computer vision,
+                    worth 16x16 words: Transformers for image recognition at scale           Paris, 1–6 October, pp. 18580–18590. New York: IEEE.
+                    (arXiv:2010.11929). arXiv. Available at: http://arxiv.org/abs/       Liu Y, Wang T, Zhang X, et al. (2022) PETR: Position embedding
+                    2010.11929 (accessed 5 March 2024).                                      transformation for multi-view 3D object detection. In: Avidan S,
+                                                                                                             ´
+                Fan Q, Huang H, Chen M, et al. (2024) RMT: Retentive networks                BrostowG,CisseM,etal.(eds)EuropeanConferenceonComputer
+                    meet vision transformers. In: Proceedings of the IEEE/CVF con-           Vision. Cham: Springer, pp. 531–548.
+                    ference on computer vision and pattern recognition, Seattle, WA,     Liu Y, Yan J, Jia F, et al. (2023b) PETRv2: A unified framework for
+                    16–22 June, pp. 5641–5651. New York: IEEE.                               3D perception from multi-camera images. In: Proceedings of the
+                FanQ,HuangH,GuanJ,etal.(2023)Rethinkinglocal perceptionin                    IEEE/CVF international conference on computer vision, Paris, 1–6
+                    lightweight vision transformer. Epub ahead of print 12 May. DOI:         October, pp. 3262–3272. New York: IEEE.
+                    10.48550/ARXIV.2303.17803.                                           Liu Z, Lin Y, Cao Y, et al. (2021) Swin transformer: Hierarchical
+                GuoJ, Han K, Wu H, et al. (2022) CMT: Convolutional neural net-              vision transformer using shifted windows. In: Proceedings of the
+                    works meet vision transformers. In: Proceedings of the IEEE/CVF          IEEE/CVF international conference on computer vision, Montreal,
+                    conference on computer vision and pattern recognition, New               QC,Canada,10–17October,pp.10012–10022. NewYork:IEEE.
+                    Orleans, LA, 18–24 June, pp. 12175–12185. New York: IEEE.            Lu T, Ding X, Liu H, et al. (2023) LinK: Linear Kernel for LiDAR-
+                Han C, Yang J, Sun J, et al. (2024) Exploring recurrent long-term            based 3D perception. In: Proceedings of the IEEE/CVF conference
+                    temporal fusion for multi-view 3D perception. IEEE Robotics and          on computer vision and pattern recognition, Vancouver, BC,
+                    Automation Letters 9: 6544–6551.                                         Canada, 17–24 June, pp. 1105–1115. New York: IEEE.
+                Hassani A, Walton S, Li J, et al. (2023) Neighborhood attention          PanZ,CaiJandZhuangB(2022)FastvisiontransformerswithHiLo
+                    transformer. In: Proceedings of the IEEE/CVF conference on com-          attention. Advances in Neural Information Processing Systems 35:
+                    puter vision and pattern recognition, Vancouver, BC, Canada, 17–         14541–14554.
+                    24 June, pp. 6185–6194. New York: IEEE.                              Park D, Ambrus R, Guizilini V, et al. (2021) Is pseudo-LiDAR
+                Hu Y, Yang J, Chen L, et al. (2023) Planning-oriented autonomous             needed for monocular 3D object detection? In: Proceedings of the
+                    driving. In: Proceedings of the IEEE/CVF conference on computer          IEEE/CVF international conference on computer vision, Montreal,
+                    vision and pattern recognition, Vancouver, BC, Canada, 17–24             QC,Canada,10–17October,pp.3142–3152.NewYork:IEEE.
+                    June, pp. 17853–17862. New York: IEEE.                               Park J, Xu C, Yang S, et al. (2022) Time will tell: New outlooks and a
+                Huang J and Huang G (2022) BEVDet4D: Exploit temporal cues in                baseline for temporal multi-view 3D object detection. In: The ele-
+                    multi-camera 3D object detection. Arxiv:2203.17054. Available at:        venth international conference on learning representations. Avail-
+                    https://arxiv.org/abs/2203.17054                                         able at: https://arxiv.org/abs/2210.02443
+                HuangJ,HuangG,ZhuZ,etal.(2022a)BEVDet:High-performance                   Philion J and Fidler S (2020) Lift, splat, shoot: Encoding images from
+                    multi-camera 3D object detection in bird-eye-view (arXiv:                arbitrary camera rigs by implicitly unprojecting to 3D. In: Vedaldi
+                    2112.117900). arXiv. Available at: http://arxiv.org/abs/2112.11790       A, Bischof H, Brox T, et al. (eds) Computer Vision–ECCV 2020:
+                    (accessed 12 August 2024).                                               16th European Conference Glasgow UK, August 23–28, 2020, Pro-
+                                                                                             ceedings Part XIV 16. Cham: Springer, pp. 194–210.
+                 Pan et al.                                                                                                                                 15
+                 Russakovsky O, Deng J, Su H, et al. (2015) ImageNet large scale          Wang Z, Min C, Ge Z, et al. (2022c) STS: Surround-view temporal
+                     visual recognition challenge. International Journal of Computer          stereo for multi-view 3D detection (arXiv:2208.10145). arXiv.
+                     Vision 115: 211–252.                                                     Available at: http://arxiv.org/abs/2208.10145 (accessed 13 March
+                 Touvron H, Cord M, Douze M, et al. (2021) Training data-efficient            2024).
+                     image transformers & distillation through attention. In: Interna-    WuH,Xiao B, Codella N, et al. (2021) CvT: Introducing convolu-
+                     tional conference on machine learning, pp. 10347–10357. PMLR.            tions to vision transformers. In: Proceedings of the IEEE/CVF
+                     Available at: https://arxiv.org/abs/2012.12877                           international conference on computer vision, Montreal, QC,
+                 Tu Z, Talebi H, Zhang H, et al. (2022) MaxViT: Multi-axis vision             Canada, 10–17 October, pp. 22–31. New York: IEEE.
+                     transformer (supplementary material). Available at: https://         Xia Z, Pan X, Song S, et al. (2022) Vision transformer with deform-
+                     www.ecva.net/papers/eccv_2022/papers_ECCV/papers/                        able attention. In: Proceedings of the IEEE/CVF conference on
+                     136840453-supp.pdf                                                       computer vision and pattern recognition, New Orleans, LA,18–24
+                 Vaswani A, Shazeer N, Parmar N, et al. (2023) Attention is all you           June, pp. 4794–4803. New York: IEEE.
+                     need (arXiv:1706.03762). arXiv. Available at: http://arxiv.org/abs/  XuR,TuZ,XiangH,etal.(2022) CoBEVT: Cooperative bird’s eye
+                     1706.03762 (accessed 5 March 2024).                                      view semantic segmentation with sparse transformers (arXiv pre-
+                 Vedder K and Eaton E (2022) Sparse PointPillars: Maintaining and             print  arXiv:2207.02202).  Available   at:  https://arxiv.org/abs/
+                     exploiting input sparsity to improve runtime on embedded sys-            2207.02202
+                     tems. In: 2022 IEEE/RSJ international conference on intelligent      Yang C, Wang Y, Zhang J, et al. (2022) Lite vision transformer with
+                     robots and systems (IROS), Kyoto, Japan, 23–27 October, pp.              enhanced self-attention. In: Proceedings of the IEEE/CVF confer-
+                     2025–2031. New York: IEEE.                                               ence on computer vision and pattern recognition, New Orleans, LA,
+                 WangT,ZhuX,PangJ,etal.(2021a) FCOS3D:Fully convolutional                     18–24 June, pp. 11998–12008. New York: IEEE.
+                     one-stage monocular 3D object detection. In: Proceedings of the      Yang J, Li C, Zhang P, et al. (2021) Focal self-attention for local-
+                     IEEE/CVF international conference on computer vision, Montreal,          global  interactions in   vision  transformers  (arXiv   preprint
+                     BC,Canada,11–17October,pp.913–922. NewYork:IEEE.                         arXiv:2107.00641). Available at: https://arxiv.org/abs/2107.00641
+                 Wang W, Xie E, Li X, et al. (2021b) Pyramid vision transformer: A        Yao T, Pan Y, Li Y, et al. (2022) Wave-ViT: Unifying wavelet and
+                     versatile backbone for dense prediction without convolutions. In:        transformers for visual representation learning. In: Avidan S,
+                                                                                                               ´
+                     Proceedings of the IEEE/CVF international conference on computer         Brostow G, Cisse M, et al. (eds) European Conference on Com-
+                     vision, Montreal, QC, Canada, 10–17 October, pp. 568–578. New            puter Vision. Cham: Springer, pp. 328–345.
+                     York: IEEE.                                                          Yin T, Zhou X and Krahenbuhl P (2021) Center-based 3D object
+                 WangW,XieE,LiX,etal.(2022a)PVTv2:Improvedbaselineswith                       detection and tracking. In: Proceedings of the IEEE/CVF confer-
+                     pyramid vision transformer. Computational Visual Media 8(3):             ence on computer vision and pattern recognition, Nashville, TN,
+                     415–424.                                                                 20–25 June, pp. 11784–11793. New York: IEEE.
+                 Wang X, Zhu Z, Xu W, et al. (2023) Openoccupancy: A large scale          ZhangY,ZhuZ,ZhengW,etal.(2022)BEVerse:Unifiedperception
+                     benchmark for surrounding semantic occupancy perception. In:             and prediction in birds-eye-view for vision-centric autonomous
+                     Proceedings of the IEEE/CVF international conference on computer         driving (arXiv:2205.09743). arXiv. Available at: http://arxiv.org/
+                     vision, Paris, 1–6 October, pp. 17850–17859. New York: IEEE.             abs/2205.09743 (accessed 13 March 2024).
+                 WangY,Guizilini VC, Zhang T, et al. (2022b) DETR3D: 3D object            Zhu L, Wang X, Ke Z, et al. (2023) BiFormer: Vision transformer
+                     detection from multi-view images via 3D-to-2D queries. In: Con-          with bi-level routing attention. In: Proceedings of the IEEE/CVF
+                     ference on Robot Learning. PMLR, pp. 180–191. Available at:              conference  on    computer   vision   and   pattern   recognition,
+                     https://proceedings.mlr.press/v164/wang22b/wang22b.pdf                   Vancouver, BC, Canada, 17–24 June, pp. 10323–10333. New
+                                                                                              York: IEEE.

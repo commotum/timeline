@@ -1,0 +1,429 @@
+                                Understanding the RoPE Extensions of Long-Context LLMs:
+                                                              AnAttentionPerspective
+                                                1*                    2                 2                  2               2             2
+                            Meizhi Zhong , ChenZhang , YikunLei , XikaiLiu , YanGao , YaoHu ,
+                                                                                1†                   1
+                                                                KehaiChen , MinZhang
+                       1Institute of Computing and Intelligence, Harbin Institute of Technology, Shenzhen, China
+                                                                       2 Xiaohongshu Inc.
+                                      meizhi.zhong.1999@gmail.com, chenzhang9702@outlook.com,
+                                                      {chenkehai,zhangmin2021}@hit.edu.cn,
+                                                {zhizhu,xikai,yadun,xiahou}@xiaohongshu.com
+                                             Abstract                                 leverage extended context that exceeds pretrained
+                                                                                      scope (Chen et al., 2023a; Peng et al., 2023; Liu
+                         Enabling LLMs to handle lengthy context is                   et al., 2023; Han et al., 2023; Rozière et al.,
+                         currently a research hotspot. Most LLMs are                  2023). These RoPE extensions focus on improving
+                         built upon rotary position embedding (RoPE), a               performance on long texts, yet frustratingly, only
+                         popular position encoding method. Therefore,                 a few of them (Liu et al., 2023; Han et al., 2023;
+                         a prominent path is to extrapolate the RoPE                  Men et al., 2024) have explored the underlying
+                         trained on comparably short texts to far longer
+                         texts.  A heavy bunch of efforts have been                   mechanisms in depth.
+                         dedicated to boosting the extrapolation via ex-                 Thus, we systematically analyze common
+                         tending the formulations of the RoPE, however,               RoPEextensions more straightforwardly, from the
+                         fewofthemhaveattemptedtoshowcasetheir                        perspective of attention (Vaswani et al., 2017).
+                         inner workings comprehensively. In this paper,               We include three widely-used RoPE extensions,
+                         we are driven to offer a straightforward yet                 i.e., position interpolation (Chen et al., 2023a),
+                         in-depth understanding of RoPE extensions                    YaRN (Peng et al., 2023), and NTK-Aware
+                         from an attention perspective and on two
+                         benchmarking tasks.          A broad array of                interpolation (Rozière et al., 2023).               To our
+                         experiments reveals several valuable findings:               best knowledge, there is simply no research in
+                         1) Maintaining attention patterns to those at                understanding RoPE extensions for long-context
+                         the pretrained length improves extrapolation;                models thoroughly from an attention perspective.
+                         2) Large attention uncertainty leads to retrieval               As a start, we strive to primarily study these
+                         errors; 3) Using longer continual pretraining                methods on a long-context perplexity test (PPL)
+                         lengths for RoPE extensions could reduce                     and empirically compare their corresponding
+                         attention uncertainty and significantly enhance              attention patterns.        We found that finetuning
+                         extrapolation.
+                                                                                      LLMswiththeseRoPE-extensionmethodswhich
+                    1    Introduction                                                 match the original pretraining length improves
+                                                                                      extrapolation performance.             Particularly with
+                    Large language models (LLMs) (Radford et al.,                     the NTK-Aware interpolation method, one can
+                    2018; Touvron et al., 2023; Zhang et al., 2023;                   extrapolate up to 32× beyond the pretrained
+                    Li et al., 2024; Zhang et al., 2024a,b) have                      length.      To unleash the reasons behind the
+                    accommodated a wide range of natural language                     successes of these methods, we collect the attention
+                    processing applications, such as code completion                  scores respectively distributed in 2K and 8K
+                    (Rozière et al., 2023) and question answering                     lengths during inference. The results demonstrate
+                    (Kamalloo et al., 2023; Jiang et al., 2021; Su et al.,            that these methods maintain attention patterns
+                    2019).     However, a notable challenge limiting                  consistent with those observed at the pretrained
+                    further customization is possibly the inability of                length. In contrast, the attention patterns of the
+                    LLMs to utilize context beyond the pretrained                     RoPEaresubstantially deviated.
+                    length (Minaee et al., 2024; Chen et al., 2023a) due                 Afterward, following literature (Fu et al., 2024),
+                    to the inherent flaw of rotary position embedding                 we examine these RoPE extensions on a more
+                    (RoPE)beingused. Fortunately, RoPE extensions                     challenging long-context test called Needle-in-a-
+                    emerge as key ingredients to enabling LLMs to                     Haystack (Needle) (Kamradt, 2023).                We find
+                        *Workduring Xiaohongshu internship.                           that the RoPE extensions could pass more tests
+                        †Corresponding authors                                        than the RoPE does. Nonetheless, as the context
+                                                                                 8955
+                                  Proceedings of the 31st International Conference on Computational Linguistics, pages 8955–8962
+                                               January 19–24, 2025. ©2025 Association for Computational Linguistics
+                         length increased, the RoPE extensions could hardly                                   Before diving into RoPE extensions, we first
+                         locate the needles. We associate the observation                                 briefly describe RoPE itself. The use of RoPE (Su
+                         with attention uncertainty. We uncover that large                                et al., 2021) has become pervasive in contemporary
+                         uncertainty leads to retrieval errors: the positions                             LLMs (Touvron et al., 2023; Bai et al., 2023;
+                         that incur large attention uncertainty are exactly                               Bi et al., 2024).              RoPE encodes the position
+                         where the incorrect answers are borrowed from.                                   information of tokens with a rotation tensor that
+                             Wefurther hypothesize that this large attention                              naturally incorporates explicit relative position
+                         uncertainty stems from a mismatch between                                        dependency. To illustrate, given a hidden vector
+                         the context lengths in training and inference.                                   h = [h ,h ,...,h                   ],  where d is the hidden
+                                                                                                                        0    1          d−1
+                         Inspired by the conjecture, a natural way to                                     dimension, and a position index m, RoPE operates
+                         ease the mismatch is to directly train on longer                                 as follows:
+                         texts. Experimental results exhibit that, with the                                             h   cosmθ0   −h   sinmθ0 
+                                                                                                                           0                             1
+                                                                                                                        h   cosmθ0   h   sinmθ0 
+                         same amount of training tokens consumed, using                                                 1                     0                       
+                                                                                                                        h   cosmθ1   −h   sinmθ1 
+                                                                                                                        2                     3                       
+                         examples with longer contexts largely alleviates                                               h   cosmθ1   h   sinmθ1 
+                                                                                                            f(h,m)= 3 ⊗                     + 2 ⊗                      (1)
+                                                                                                                        .             .       .                 .     
+                                                                                                                        .             .       .                 .     
+                         uncertainty. Thereby, the ability to digest long                                               .             .       .                 .     
+                                                                                                                                                                      
+                                                                                                                        h           cosmθ            −h           sinmθ
+                         texts is promoted.                                                                               d−2             d/2−1         d−1             d/2−1
+                                                                                                                        h           cosmθ             h           sinmθ
+                             Our key contributions can be summarized as                                                   d−1             d/2−1        d−2              d/2−1
+                         follows:                                                                         where θj = b−2j/d,j ∈ {0,1,...,d/2 − 1}, and b
+                                                                                                          represents the base frequency for RoPE.
+                             • Westudy various RoPE extensions for length                                     Position Interpolation (PI). As described in
+                                extrapolation in perplexity testing and find                              Chen et al. (2023b) and Kaiokendev (2023), PI
+                                that the effectiveness could be yielded from                              involves proportionally downscaling the position
+                                maintaining the original attention patterns.                              index m to m/α in Equation 1.
+                             • We analyze these methods using advanced                                        NTK-AwareInterpolation (NTK). NTK(Roz-
+                                Needle testing and observe that they may fail                             ière et al., 2023) assumes that interpolating all
+                                to extrapolate to regions where large attention                           dimensions equally, as done by PI, may result in
+                                uncertainty persists.                                                     the loss of high-frequency information. Therefore,
+                                                                                                          NTKintroducesanonlinear interpolation strategy
+                             • We hypothesize that large attention uncer-                                 by adjusting the base frequency b.
+                                tainty stems from a context length mismatch                                   Yet another RoPE extensioN (YaRN). Unlike
+                                between training and inference. It is possible                            PI and NTK, which treat each dimension of RoPE
+                                to reduce this large uncertainty by minimizing                            uniformly, YaRN (Peng et al., 2023) employs
+                                the mismatch through continual training with                              a ramp function to combine PI and NTK at
+                                lengths closer to those in inference.                                     varying proportions across different dimensions.
+                                                                                                          Additionally, it introduces a temperature factor
+                         2     Backgroud                                                                  to mitigate the distribution shift of the attention
+                         2.1     Target LLMs                                                              caused by long inputs.
+                                                                                                              Following the default settings of the original
+                         We consider LLaMa series at different sizes to                                   papers (Chen et al., 2023a; Peng et al., 2023; Liu
+                         conduct experiments, including MiniMA-2-3B                                       et al., 2023), we adjust α from 1 to 16 in m/α for
+                         (Zhang et al., 2023), LLaMa-2-7B, and LLaMa-                                     PI and YaRN, while adjusting b from 10,000 to
+                         2-13B(Touvron et al., 2023). All these mentioned                                 1,000,000 for NTK in our experiments.
+                         LLMsconsistently use rotary position embeddings                                  2.3     Long-Context Evaluations
+                         to take position information into consideration.
+                         Owing to space limitation, we only present the                                   Following existing works (Chen et al., 2023a; Peng
+                         experimental results for LLaMa-2-7B, and the                                     et al., 2023; Fu et al., 2024), we use the perplexity
+                         results for MiniMA-2-3B and LLaMa-2-13B,share                                    test (dubbed PPL) as the primary evaluation and the
+                         similar trends with those for LLaMa-2-7B, as                                     Needle-in-a-Haystack test as a more challenging
+                         showninAppendixAandB.                                                            evaluation. The perplexity is a primary measure
+                         2.2     RoPEandItsExtensions                                                     that reflects a model’s ability to handle long texts.
+                                                                                                          The Needle-in-a-Haystack test (dubbed Needle)
+                         Rotary Position Embedding (RoPE).                                                (Kamradt,2023)requiresLLMstoaccuratelyrecall
+                                                                                                    8956
+                                    PI      YaRN NTK RoPE                   to calculate the JS divergence. As illustrated in
+                                                                            the bottom row of Table 1, the JS divergence
+                    LLaMa-2        1.29      0.05      0.06     0.00        between the RoPE extensions and LLaMa-3 is
+                    LLaMa-3        2.29      1.72      1.68     2.57        more minor than between the RoPE and LLaMa-
+                                                                            3.  This indicates that the attention patterns of
+                  Table 1: Jensen–Shannon (JS) divergence of mean           RoPEextensionsresemblethoseofmodelsdirectly
+                  attention distributions between different models at       trained on a longer context.
+                  lengths of 2048 (top row) and 8192 (bottom row). A           NTKandYaRNdonotaffect the attention
+                  lower JS divergence indicates that the two attention      patterns within the pretrained length. Some
+                  distributions are similar.                                RoPEextensions can degrade performance within
+                                                                            the original pretrained length (Peng et al., 2023;
+                  a specific sentence (the Needle) embedded at an           Zhang et al., 2024c). To verify whether RoPE
+                  arbitrary location within a long document (the            extensions alter the attention patterns within
+                  haystack). We obtain the perplexity on the Proof-         the pretrained length, we also calculate the
+                  pile (Azerbayev et al., 2022) dataset. We follow          JS divergence among these models’ attention
+                  the standard described in Fu et al. (2024) for the        distributions at a 2K length.      As illustrated on
+                  Needle-in-a-Haystack accuracy.                            the top row of Table 1, the JS divergence for
+                                                                            the NTK and YaRN is very low, almost zero,
+                  3   RoPEExtensionsonPPL                                   indicating minimal impact on attention distribution.
+                                                                            On the contrary, the JS divergence for the PI is
+                  Westudy RoPE extensions by comparing perfor-              significantly higher. Therefore, we conclude that
+                  manceonlong-contextperplexitytesting. Fromthe             the NTKandYaRNmethodsdonotaffectattention
+                  test, as illustrated in Figure 1, we identify that NTK    patterns within the pretrained length.
+                  can extrapolate from 4K to 128K, whereas PI and
+                  YaRNcanextrapolate to 62K. We observe similar             4    RoPEExtensionsonNeedle
+                  results in both the smaller model MiniMA-2-3B
+                  and the larger model LLaMa-2-13B, as illustrated          To understand the performance and behavior of
+                  in Figures 1(b) and 1(c). To recognize why these          the RoPE extensions on more challenging long-
+                  RoPEextensionsenable train-short-and-test-long            context tasks, we conduct Needle testing (Fu et al.,
+                  properties in PPL, we collect the attention scores        2024).    As shown in Figure 4(a-d), LLaMa-2-
+                  on10sequencesin2Kand8Kandvisualizetheir                   7B with RoPE extensions can pass more needle
+                  attention distributions. The followings are a few         tests than the RoPE. However, as the context
+                  key takeaways from the attention perspective:             length increases, some tests fail, resulting in needle
+                     RoPEextensionsmaintaintheoriginal atten-               retrieval errors.   Eventually, almost all fail in
+                  tion patterns. As shown in Figure 2, similar to the       extremely long contexts. We also conduct Needle
+                  findings from Chen et al. (2023a), we observe that        testing on the MiniMA-2-3B and LLaMa-2-13B
+                  the attention patterns fluctuate when the RoPE is         models with RoPE and PI. Unlike the LLaMa-
+                  tested on 8K sequences (exceeding the training            2-7B, the PI method shows a more significant
+                  length).   However, with RoPE extensions, the             improvement in the LLaMa-2-13B, as depicted in
+                  attention distributions, as illustrated in Figures 2(c-   Figure 7. In contrast, on the MiniMA-2-3B, PI
+                  e), revert to the original pattern seen in Figure 2(a)    passes only a few needle tests at longer lengths,
+                  whentestedon8Ksequences. Similarobservations              as illustrated in Figure 5.      We attribute these
+                  are seen in both LLaMa-2-13B and MiniMA-2-3B,             observations to the impact of model size. Below
+                  as illustrated in Figures 3 and 6.                        are key takeaways from the attention perspective:
+                     RoPE extensions closely resemble the at-                  Attention uncertainty leads to more needle
+                  tention patterns of models trained on longer              retrieval errors. To find the reason behind the
+                  context. To further verify whether RoPE exten-            needle retrieval errors, we calculate the entropy of
+                  sions maintain the original attention patterns, we        attention for each length and depth, as illustrated
+                  aim to directly quantify the Jensen–Shannon (JS)          in Figures 4. For details on the calculation of
+                  divergencebetweendifferentattentiondistributions.         attention entropy, please refer to Appendix C.
+                  Using LLaMa-2 and LLaMa-3 as baselines, we                Our findings demonstrate that the locations of
+                  collected 10,240 samples of attention distributions       needle retrieval errors often coincide with high
+                                                                        8957
+                                 20                                              20                                             20
+                                                           LLaMa-2-7B-RoPE                                MiniMA-2-3B-RoPE                               LLaMa-2-13B-RoPE
+                                 15                        LLaMa-2-7B-PI         15                       MiniMA-2-3B-PI        15                       LLaMa-2-13B-PI
+                                 xity                      LLaMa-2-7B-YaRN      xity                      MiniMA-2-3B-YaRN      xity                     LLaMa-2-13B-YaRN
+                                 erple10                   LLaMa-2-7B-NTK       erple10                   MiniMA-2-3B-NTK       erple10                  LLaMa-2-13B-NTK
+                                 P 5                                            P 5                                             P5
+                                    4     5062    100 128 150     200     250      4 22   50     100  128 150    200      250     4      5062    100 128 150     200     250
+                                                Context Window (K)                             Context Window (K)                             Context Window (K)
+                                            (a) LLaMa-2-7B                                (b) MiniMA-2-3B                                 (c) LLaMa-2-13B
+                                                                   Figure 1: Perplexity on Proof-pile(Lower is better).
+                                    (a) RoPE on 2K sequences.                       (b) RoPE on 8K sequences.                           (c) PI on 8K sequences.
+                                                           (d) YaRNon8Ksequences.                             (e) NTKon8Ksequences.
+                         Figure 2: Attention distributions of RoPE, PI, YaRN, and NTK methods on 2K and 8K sequences. The red line
+                         represents the mean attention scores across all heads, layers, and examples. The other lines indicate the attention
+                         scores for each head in each layer.
+                                   (a) RoPE on 2K sequences.                         (b) RoPE on 8K sequences.                           (c) PI on 8K sequences.
+                                                          (d) YaRNon8Ksequences.                               (e) NTKon8Ksequences.
+                         Figure 3: Attention distributions of RoPE, PI, YaRN, and NTK methods on 2K and 8K sequences on MiniMA-2-3B.
+                         attention entropy.              For example, at the same                        tokens handled by the self-attention mechanism far
+                         depth, the positions with errors are among the                                  exceeds that during training. More tokens lead to
+                         top-k in entropy; similarly, at the same length,                                more dispersed attention, i.e., higher uncertainty,
+                         the error positions also have high entropy. We                                  causing a mismatch between training and inference.
+                         hypothesize that the increase in attention entropy                                  A natural approach to lower attention
+                         withlongertestlengthsisduetothetrain-short-and-                                 uncertainty for enhancing extrapolation.                                A
+                         test-long setting. During inference, the number of                              direct solution is to train on longer contexts,
+                                                                                                   8958
+                                                                       Pressure Testing LLaMa-2-7B-RoPE "Needle In A HayStack"                                                       Pressure Testing LLaMa-2-7B-PI "Needle In A HayStack"
+                                                        0.0 2.9 4 7.3 8.5 9 9.5 9.8 9.9 10 10 10 10 11 11 11 11 11 11 11                                            0.0 3.3 3.5 3.8 3.9 4          4 4.5 4.7 4.8 4.9 4.5 5            5 4.9 5.1 5 5.3 5.5 5.6
+                                                       11.0 2.9 4 7.4 8.5 9 9.5 9.8 9.9 10 10 10 10 10 11 11 11 11 11 11                                          11.0 3.3 3.7 4.1 4 4.4 4.3 4.1 4.8 4.4 5 4.7 5 4.6 4.8 4.7 5.1 5.5 5.5 5.6
+                                                       22.0 3 3.9 7.4 8.5 9 9.5 9.8 9.9 10 10 10 10 11 11 11 11 11 11 11                                          22.0 3.4 3.7 4 3.7 4.3 4.5 4.9 4.9 5 4.7 4.7 4.8 4.6 4.9 4.7 5.1 5.4 5.5 5.6
+                                                    cent33.0 3 3.9 7.4 8.5 9 9.5 9.8 9.9 10 10 10 10 11 11 11 11 11 11 11                                       cent33.0 3.5 3.8 4 4.4 4.3 4.4 4.5 5 4.6 4.7 4.6 4.8 4.7 4.9 4.8 5.1 5.5 5.6 5.6
+                                                    er 44.0 3.1 4 7.4 8.5 9 9.5 9.8 9.9 10 10 10 10 11 11 11 11 11 11 11                                        er44.0 3.4 3.7 4.1 4.4 4.3 4.5 4.2 4.3 4.5 4.7 4.6 5.1 5.1 5 4.8 5.1 5.3 5.6 5.6
+                                                       56.0 3 3.9 7.4 8.5 9 9.5 9.8 9.9 10 10 10 10 11 11 11 11 11 11 11                                          56.0 3.4 3.8 4 4.2 4.2 4.2 4.6 4.6 4.5 4.6 4.8 4.5 4.7 4.9 4.7 5.1 5.5 5.5 5.6
+                                                       67.0 3.2 4 7.4 8.5 9 9.5 9.8 9.9 10 10 10 10 11 11 11 11 11 11 11                                          67.0 3.5 3.7 4 4.1 4.3 4.5 4.4 4.5 4.4 4.5 4.5 4.7 4.6 4.8 4.9 4.9 5.5 5.6 5.6
+                                                    Depth P78.0 3.2 3.9 7.4 8.5 9 9.5 9.8 9.9 10 10 10 10 11 11 11 11 11 11 11                                  Depth P78.0 3.5 3.7 4.4 4.1 4.3 4.3 4.2 4.3 4.4 4.6 4.7 4.5 4.7 4.7 4.8 4.8 5.5 5.6 5.6
+                                                       89.0 3      4 7.4 8.5 9 9.5 9.8 9.9 10 10 10 10 11 11 11 11 11 11 11                                       89.0 3.4 3.7 4         4 4.1 4.3 4.4 4.4 4.3 4.6 4.6 4.5 4.6 4.7 4.8 4.8 5.3 5.4 5.6
+                                                     100.0 2.9 3.9 7.4 8.5 9 9.5 9.8 9.9 10 10 10 10 11 11 11 11 11 11 11                                       100.0 3.3 3.5 3.7 3.9 3.9 3.9 4 4.1 4.1 4.2 4.2 4.3 4.3 4.4 4.4 4.6 4.8 5.5 5.6
+                                                              100044977993                                                                                               100044977993
+                                                                            11490149861848321979254762897232469359663946242959464554995253448569456044163938                           11490149861848321979254762897232469359663946242959464554995253448569456044163938
+                                                                                                 Inference Length                                                                                            Inference Length
+                                                                                              (a) RoPE                                                                                       (b) Finetuning with PI
+                                                                       Pressure Testing LLaMa-2-7B-YaRN "Needle In A HayStack"                                                      Pressure Testing LLaMa-2-7B-NTK "Needle In A HayStack"
+                                                        0.0 3 3.4 3.7 4           4 4.3 4.3 4.4 4.4 4.4 4.4 4.5 4.4 4.7 4.6 4.8 4.8 5.1 5.3                         0.0 3.1 3.6 3.8 4         4 4.1 4.3 4.4 4.5 4.6 4.6 4.7 4.8 5.1 5.1 5.1 5.2 5.1 5.2
+                                                      11.0 3 3.3 3.8 4.3 4.1 4.4 4.4 4.5 4.8 4.4 4.6 4.6 4.7 4.6 4.8 4.7 4.8 5.1 5.4                               11.0 3.1 3.6 4 4.2 4.3 4.4 5.1 4.9 4.6 5.1 5.1 4.8 4.9 5.1 5 5.6 5.2 5.8 5.7
+                                                      22.0 2.9 3.3 3.7 4.5 4.5 4.2 4.5 4.4 4.5 4.5 4.5 4.5 4.6 4.7 4.8 4.8 4.9 5.1 5.3                             22.0 3.2 3.6 4 4.2 4.3 4.6 4.7 4.7 4.8 5.1 4.8 5.3 5.1 5.1 5.2 5.4 5.5 5.9 5.6
+                                                    cent33.0 2.9 3.4 3.6 4.5 4.2 4.1 4.3 4.4 4.5 4.4 4.5 4.7 4.5 4.5 4.8 4.9 4.9 5.1 5.3                        cent33.0 3.2 3.7 4 4.4 4.5 4.7 4.6 4.8 4.9 4.8 4.8 5.2 5.1 5.2 5.3 5.4 5.4 5.3 5.6
+                                                    er44.0 3 3.3 3.7 3.9 4.2 4.1 4.4 4.4 4.4 4.4 4.5 4.7 4.7 4.7 4.8 4.8 4.9 5.1 5.4                            er 44.0 3.1 3.6 4 4.4 4.3 4.7 4.5 4.7 4.8 4.8 4.8 5.2 5.1 5.2 5.3 5.6 5.4 5.4 5.7
+                                                      56.0 2.9 3.3 3.7 4.1 4.3 4.4 4.3 4.5 4.4 4.5 4.5 4.6 4.6 4.6 4.8 4.8 5 5.1 5.4                               56.0 3.1 3.6 3.9 4.5 4.4 4.4 4.6 4.8 4.8 5 4.9 4.9 5 5.2 5.4 5.2 5.3 5.5 5.7
+                                                      67.0 2.9 3.3 3.7 3.8 4.3 4.3 4.3 4.5 4.3 4.5 4.5 4.7 4.5 4.7 4.8 4.8 5 5.1 5.3                               67.0 3.2 3.6 3.9 4.1 4.3 4.4 4.8 4.7 4.9 4.9 4.9 4.9 5 5.2 5.3 5.3 5.3 5.4 5.7
+                                                    Depth P78.0 2.9 3.3 4.1 3.9 4.4 4.2 4.4 4.5 4.4 4.7 4.6 4.5 4.5 4.7 4.8 4.8 5.1 5.1 5.4                     Depth P78.0 3.2 3.6 3.9 4.2 4.2 4.3 4.4 4.5 4.7 4.8 5 4.8 5.1 5.1 5.1 5.3 5.7 5.3 5.7
+                                                      89.0 2.9 3.3 3.6 3.9 4 3.8 4.5 4.3 4.3 4.3 4.3 4.6 4.5 4.7 4.6 4.8 4.8 5.1 5.3                               89.0 3.1 3.5 3.8 4 4.2 4.2 4.4 4.5 4.6 4.7 4.8 4.7 4.9 5 5.2 5.5 5.5 5.6 5.8
+                                                    100.0 2.8 3.2 3.5 3.8 3.9 3.9 4.2 4.2 4.2 4.2 4.3 4.3 4.3 4.3 4.4 4.5 4.6 4.8 5.4                            100.0 3 3.4 3.6 3.9 3.9 4 4.1 4.2 4.4 4.5 4.5 4.5 4.7 4.8 4.8 4.8 4.9 4.9 5.1
+                                                             100044977993                                                                                                 100044977993
+                                                                           11490149861848321979254762897232469359663946242959464554995253448569456044163938                             11490149861848321979254762897232469359663946242959464554995253448569456044163938
+                                                                                                 Inference Length                                                                                             Inference Length
+                                                                              (c) Finetuning with YaRN                                                                                 (d) Finetuning(FT) with NTK
+                                                                     Pressure Testing LLaMa-2-7B-NTK-4K "Needle In A HayStack"                                                  Pressure Testing LLaMa-2-7B-NTK-32K "Needle In A HayStack"
+                                                        0.0 3.1 3.6 3.7 3.9 4          4 4.2 4.3 4.4 4.5 4.6 4.6 4.7 5 5.1 5 5.2 5                     5           0.0 3.1 3.5 3.7 3.8 3.8 3.9 3.9 4.1 4 4.2 4 4.2 4.2 4.3 4.4 4.3 4.3 4.4 4.5
+                                                      11.0 3.1 3.6 4 4.1 4.3 4.3 4.5 4.7 4.5 5 5.2 4.7 4.8 5                       5 5.2 5.1 5.1 5.3             11.0 3.1 3.5 3.8 3.8 3.9 3.9 3.8 3.8 4.1 4 3.9 4.2 4.2 3.5 4.5 4.8 4.4 4.3 4.5
+                                                      22.0 3.2 3.6 3.9 4.1 4.4 4.7 4.7 4.7 4.7 4.8 4.7 5.1 5 4.9 5 5.3 5.2 5.3 5.4                               22.0 3.1 3.5 3.9 4.2 4.1 4.1 4.3 3.8 4.1 4.1 4.3 4.1 4.4 4.1 4.7 4.3 4.1 4.7 4.5
+                                                    cent33.0 3.1 3.7 3.9 4.3 4.5 4.6 4.6 4.7 4.7 4.7 4.7 5.1 5                5 5.1 5.2 5.1 5.2 5.3            cent33.0 3.1 3.6 3.7 4.1 3.9 4.1 4 4.1 4.4 4.4 4.1 4.2 4.2 4.2 4.2 4.1 4.2 4.4 4.7
+                                                    er44.0 3.1 3.6 4 4.3 4.3 4.7 4.5 4.7 4.8 4.8 4.8 5.1 5                    5 5.1 5.2 5.2 5.2 5.3            er44.0 3.1 3.5 3.8 3.9 4.1 3.7 4.3 4.1 4.2 4.1 4.1 4.4 4.4 4.4 4.4 4.5 4.2 4.3 4.3
+                                                      56.0 3.1 3.6 3.9 4 4.3 4.4 4.4 4.9 4.7 4.9 4.8 4.9 4.9 5 5.2 5.1 5.1 5.3 5.3                               56.0 3.1 3.4 3.9 4.1 3.9 3.9 4.1 4.4 4.2 4.5 4.3 4.2 4.2 4.4 4.2 4.6 4.3 4.3 4.6
+                                                      67.0 3.2 3.6 3.9 4.1 4.2 4.4 4.7 4.6 4.8 4.8 4.8 4.9 5                  5 5.2 5.1 5.1 5.2 5.8              67.0 3.2 3.5 3.7 3.9 3.8 3.9 4.1 4.1 4.3 4.2 4.1 4.3 4.2 4.5 4.5 4.5 4 4.3 4.5
+                                                    Depth P78.0 3.2 3.5 3.9 4.1 4.2 4.3 4.3 4.5 4.6 4.7 4.8 4.7 5.1 5              5 5.1 5.2 5.1 5.7           Depth P78.0 3.2 3.4 3.7 3.8 4.1 3.9 3.9 4 4.3 4.4 4.1 4.3 4.3 4.5 4.3 4.4 4.5 4.3 4.6
+                                                      89.0 3 3.5 3.8 4 4.1 4.1 4.3 4.4 4.6 4.6 4.7 4.6 4.9 4.8 5                        5 5.5 5.1 5.1            89.0 3 3.5 3.7 3.7 3.8 3.9 4.1 4 4.2 4.1 4 4.1 4.3 4.4 4.2 4.2 4.2 4.3 4.5
+                                                    100.0 3 3.3 3.6 3.8 3.9 3.9 4.1 4.2 4.3 4.4 4.4 4.4 4.6 4.7 4.7 4.7 4.8 4.8 4.9                             100.0 3 3.2 3.5 3.6 3.6 3.6 3.7 3.8 3.8 3.9 3.8 3.8 3.9 4 3.9 4                          4    4    4
+                                                             100044977993                                                                                               100044977993
+                                                                           11490149861848321979254762897232469359663946242959464554995253448569456044163938                            11490149861848321979254762897232469359663946242959464554995253448569456044163938
+                                                                                                 Inference Length                                                                                           Inference Length
+                                                                       (e) FT on 4K with NTK from (d)                                                                             (f) FT on 32K with NTK from (d)
+                                      Figure 4: Performance comparison for the Needle-in-a-Haystack Test. The x-axis represents the length of the
+                                      document, while y-axis indicates the depth percentage, showing the needle’s position within the document. For
+                                      instance, a position of 50% signifies that the needle is placed in the middle of the document. A red cell indicates
+                                      that the model fails to recall the information in the needle, whereas a green cell indicates success. A white dashed
+                                      line denotes the model’s continual pretrain length. Each value in the cells signifies the mean attention entropy, with
+                                      higher values reflecting more dispersed attention.
+                                      thereby increasing the number of attention tokens                                                                           5        Conclusions
+                                      during training and reducing attention uncertainty.
+                                      To validate our hypothesis, we finetune models                                                                             This paper provides the first thorough understand-
+                                      on 4K and 32K training lengths with the same                                                                                ing of RoPE extensions for long-context LLMs
+                                      tokens on NTK. As shown in Figures 4(e) and                                                                                 from an attention perspective, evaluated on two
+                                      4(f), compared to models trained in short contexts,                                                                        widely-used benchmarks: Perplexity and Needle-
+                                      modelstrainedinmoreextendedcontextsexhibited                                                                                in-a-Haystack. Extensive experiments demonstrate
+                                      significantly lower attention uncertainty.                                                                 For              some valuable findings: 1) Compared to direct
+                                      example, at length 63938, the attention entropy                                                                             extrapolation, RoPE extensions can maintain the
+                                      is generally below 5. The Needle test pass rates                                                                            original training length attention patterns. 2) Large
+                                      improved significantly, especially in longer testing                                                                        attention uncertainty leads to retrieval errors in
+                                      contexts. Conversely, models trained with the same                                                                          needle testing in RoPE extensions. 3) Using longer
+                                      numberoftokens but shorter context sizes showed                                                                             continual pretraining lengths for RoPE extensions
+                                      little to no change in attention entropy, remaining                                                                         can reduce attention uncertainty and significantly
+                                      similar to the original one (4(d)).                                                                                         enhance extrapolation in target LLMs.
+                                                                                                                                                        8959
+                  Limitations                                               Ehsan Kamalloo, Nouha Dziri, Charles LA Clarke,
+                  This paper primarily analyzes the widely-used               and Davood Rafiei. 2023. Evaluating open-domain
+                                                                              question answering in the era of large language
+                  decoder-only LM, LLaMa (Touvron et al., 2023).              models. ArXiv preprint, abs/2305.06984.
+                  It does not include a validation study of encoder-        Greg Kamradt. 2023. Needle in a haystack - pressure
+                  decoder and encoder-only architectures.                     testing llms.    https://github.com/gkamradt/
+                  Acknowledgements                                            LLMTest_NeedleInAHaystack.
+                  Wewouldliketothanktheanonymousreviewers                   Zelin Li, Kehai Chen, Lemao Liu, Xuefeng Bai,
+                  and meta-reviewer for their insightful suggestions.         Mingming Yang, Yang Xiang, and Min Zhang.
+                  This work was supported by the National                     2024. Tf-attack: Transferable and fast adversarial
+                                                                              attacks on large language models. arXiv preprint
+                  Natural Science Foundation of China under                   arXiv:2408.13985.
+                  Grant U23B2055 and 62276077, and Shenzhen                 Xiaoran Liu, Hang Yan, Shuo Zhang, Chenxin An,
+                  Science and Technology Program under Grant                  Xipeng Qiu, and Dahua Lin. 2023.            Scaling
+                  ZDSYS20230626091203008.                                     laws of rope-based extrapolation. ArXiv preprint,
+                                                                              abs/2310.05209.
+                  References                                                Xin Men, Mingyu Xu, Bingning Wang, Qingyu Zhang,
+                  Zhangir Azerbayev, Edward Ayers, , and Bartosz              HongyuLin,Xianpei Han, and Weipeng Chen. 2024.
+                     Piotrowski. 2022. Proof-pile.                            Base of rope bounds context length. ArXiv preprint,
+                                                                              abs/2405.14591.
+                  Jinze Bai, Shuai Bai, Yunfei Chu, Zeyu Cui, Kai Dang,
+                    Xiaodong Deng, Yang Fan, Wenbin Ge, Yu Han, Fei         Shervin Minaee, Tomas Mikolov, Narjes Nikzad,
+                     Huang, et al. 2023. Qwen technical report. ArXiv         Meysam Chenaghlu, Richard Socher, Xavier Am-
+                     preprint, abs/2309.16609.                                atriain, and Jianfeng Gao. 2024. Large language
+                                                                              models: A survey. ArXiv preprint, abs/2402.06196.
+                  Xiao Bi, Deli Chen, Guanting Chen, Shanhuang Chen,
+                     Damai Dai, Chengqi Deng, Honghui Ding, Kai             BowenPeng,JeffreyQuesnelle,HongluFan,andEnrico
+                     Dong, Qiushi Du, Zhe Fu, et al. 2024. Deepseek           Shippole. 2023. Yarn: Efficient context window
+                     llm: Scaling open-source language models with            extension of large language models. ArXiv preprint,
+                     longtermism. ArXiv preprint, abs/2401.02954.             abs/2309.00071.
+                  ShouyuanChen,ShermanWong,LiangjianChen,and                Alec Radford, Karthik Narasimhan, Tim Salimans,
+                    Yuandong Tian. 2023a. Extending context window            Ilya Sutskever, et al. 2018.   Improving language
+                     of large language models via positional interpolation.   understanding by generative pre-training.
+                    ArXiv preprint, abs/2306.15595.
+                  ShouyuanChen,ShermanWong,LiangjianChen,and                Baptiste Rozière, Jonas Gehring, Fabian Gloeckle,
+                    Yuandong Tian. 2023b. Extending context window            Sten Sootla, Itai Gat, Xiaoqing Ellen Tan, Yossi
+                     of large language models via positional interpolation.   Adi, Jingyu Liu, Tal Remez, Jérémy Rapin, Artyom
+                    ArXiv preprint, abs/2306.15595.                           Kozhevnikov, Ivan Evtimov, Joanna Bitton, Manish
+                                                                              Bhatt, Cristian Canton Ferrer, Aaron Grattafiori,
+                  Yao Fu, Rameswar Panda, Xinyao Niu, Xiang Yue,              Wenhan Xiong, Alexandre Défossez, Jade Copet,
+                     HannanehHajishirzi,YoonKim,andHaoPeng.2024.              Faisal Azhar, Hugo Touvron, Louis Martin, Nicolas
+                     Dataengineeringforscalinglanguagemodelsto128k            Usunier, Thomas Scialom, and Gabriel Synnaeve.
+                     context. ArXiv preprint, abs/2402.10171.                 2023.    Code Llama: Open foundation models
+                  Chi Han, Qifan Wang, Wenhan Xiong, Yu Chen, Heng            for code.    Preprint, arXiv:2308.12950.     ArXiv:
+                     Ji, and Sinong Wang. 2023. Lm-infinite: Simple           2308.12950.
+                     on-the-fly length generalization for large language    Dan Su, Yan Xu, Genta Indra Winata, Peng Xu,
+                     models. ArXiv preprint, abs/2308.16137.                  HyeondeyKim,ZihanLiu,andPascaleFung.2019.
+                  Zhengbao Jiang, Jun Araki, Haibo Ding, and Graham           Generalizing question answering system with pre-
+                     Neubig. 2021. How can we know when language              trained language model fine-tuning. In Proceedings
+                     models know?      on the calibration of language         of the 2nd Workshop on Machine Reading for
+                     models for question answering. Transactions of the       Question Answering, pages 203–211, Hong Kong,
+                    Association for Computational Linguistics, 9:962–         China. Association for Computational Linguistics.
+                     977.                                                   Jianlin Su, Yu Lu, Shengfeng Pan, Ahmed Murtadha,
+                  Kaiokendev. 2023. Things i’m learning while training        Bo Wen, and Yunfeng Liu. 2021. Roformer: En-
+                     superhot. https://kaiokendev.github.io/til#              hanced transformer with rotary position embedding.
+                     extending-context-to-8k.                                 ArXiv preprint, abs/2104.09864.
+                                                                       8960
+                             Hugo Touvron, Louis Martin, Kevin Stone, Peter                                                 Similar to the analysis in § 4, the Needle-in-a-
+                                 Albert, Amjad Almahairi, Yasmine Babaei, Nikolay                                           Haystack Test for MiniMa-2-3B also indicates that
+                                 Bashlykov, Soumya Batra, Prajjwal Bhargava, Shruti                                         the locations of needle retrieval errors frequently
+                                 Bhosale, et al. 2023. Llama 2: Open foundation                                             align with areas of high attention entropy.
+                                 and fine-tuned chat models.                               ArXiv preprint,
+                                 abs/2307.09288.                                                                            B ExperimentalResultsonLLaMa-2-13B
+                             Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob
+                                 Uszkoreit, Llion Jones, Aidan N. Gomez, Lukasz                                             Consistent with the analysis in § 3, we observe
+                                 Kaiser, and Illia Polosukhin. 2017. Attention is all                                       that the attention patterns fluctuate when RoPE is
+                                 you need. In Advances in Neural Information Pro-                                           applied to 8K sequences, which exceed the training
+                                 cessing Systems 30: Annual Conference on Neural                                            length. However, when using RoPE extensions,
+                                 Information Processing Systems 2017, December 4-9,                                         the attention distributions return to their original
+                                 2017, Long Beach, CA, USA, pages 5998–6008.
+                             Chen Zhang, Dawei Song, Zheyu Ye, and Yan Gao.                                                 patterns for 8K sequences, as demonstrated in
+                                 2023. Towards the law of capacity gap in distilling                                        Figures 6.
+                                 language models. ArXiv preprint, abs/2311.07052.                                                              Pressure Testing LLaMa-2-13B-RoPE "Needle In A HayStack"
+                                                                                                                                    0.0 2.3 3.3 6.8 8.4 9.5 9.7 9.8 9.9 10 10 10 11 11 11 11 11 11 11 11
+                             Chen Zhang, Meizhi Zhong, Qimeng Wang, Xuantao                                                        11.0 2.3 3.3 6.9 8.4 9.5 9.7 9.8 9.9 10 10 10 11 11 11 11 11 11 11 11
+                                 Lu, Zheyu Ye, Chengqiang Lu, Yan Gao, Yao Hu,                                                     22.0 2.4 3.2 6.9 8.4 9.5 9.7 9.8 9.9 10 10 10 11 11 11 11 11 11 11 11
+                                                                                                                                 cent33.0 2.4 3.3 6.9 8.4 9.5 9.7 9.8 9.9 10 10 10 11 11 11 11 11 11 11 11
+                                 Kehai Chen, Min Zhang, et al. 2024a. Modification:                                              er44.0 2.5 3.2 6.9 8.4 9.5 9.7 9.8 9.9 10 10 10 11 11 11 11 11 11 11 11
+                                 Mixture of depths made easy.                               arXiv preprint                         56.0 2.5 3.2 6.9 8.4 9.5 9.7 9.8 9.9 10 10 10 11 11 11 11 11 11 11 11
+                                 arXiv:2410.14268.                                                                                 67.0 2.4 3.2 6.9 8.4 9.5 9.7 9.8 9.9 10 10 10 11 11 11 11 11 11 11 11
+                                                                                                                                 Depth P78.0 2.4 3.2 6.9 8.4 9.5 9.7 9.8 9.9 10 10 10 11 11 11 11 11 11 11 11
+                                                                                                                                   89.0 2.4 3.2 6.9 8.4 9.5 9.7 9.8 9.9 10 10 10 11 11 11 11 11 11 11 11
+                             Shaoqing Zhang, Zhuosheng Zhang, Kehai Chen,                                                        100.0 2.4 3.1 6.9 8.4 9.5 9.7 9.8 9.9 10 10 10 11 11 11 11 11 11 11 11
+                                 Xinbei Ma, Muyun Yang, Tiejun Zhao, and Min                                                            100044977993
+                                                                                                                                                   11490149861848321979254762897232469359663946242959464554995253448569456044163938
+                                 Zhang. 2024b. Dynamic planning for llm-based                                                                                      Inference Length
+                                 graphical user interface automation. arXiv preprint                                                                             (a) RoPE
+                                 arXiv:2410.00467.
+                                                                                                                                                Pressure Testing LLaMa-2-13B-PI "Needle In A HayStack"
+                             Yikai Zhang, Junlong Li, and Pengfei Liu. 2024c.                                                      0.0 2.5 2.8 2.9 3 2.9 3.1 3.1 3.2 3.6 3.2 3.7 3.5 3.7 3.8 4 3.7 4.5 4.1 4.3
+                                 Extending llms’ context window with 100 samples.                                                 11.0 2.5 2.8 3.1 3.1 3.2 3.3 3.4 3.7 3.2 3.2 3.2 3.4 3.4 3.8 4 3.6 4.3 4.1 4.4
+                                                                                                                                  22.0 2.6 2.8 3 3.2 3.1 3.7 3.6 3.6 3.3 3.4 3.3 3.5 3.5 3.6 3.8 3.6 4.3 4.2 4.4
+                                 ArXiv preprint, abs/2401.07004.                                                                cent33.0 2.6 2.9 3.1 3.2 3.2 3.3 3.3 3.6 3.7 3.3 3.4 3.5 3.6 3.8 3.7 3.6 4.4 4.2 4.2
+                                                                                                                                er44.0 2.6 2.8 3.1 3.1 3.2 3.2 3.3 3.4 3.3 3.4 3.3 3.6 3.8 3.6 3.7 3.6 4.5 4.1 4.4
+                                                                                                                                  56.0 2.5 2.8 3 3.2 3.2 3.2 3.3 3.4 3.2 3.3 3.4 3.4 3.5 3.7 3.6 3.7 4.1 4.1 4.5
+                             A ExperimentalResultsonMiniMA-2-3B                                                                   67.0 2.6 2.8 3 3.2 3.1 3.2 3.3 3.3 3.2 3.3 3.3 3.6 3.5 4 3.6 3.7 4.1 4.3 4.2
+                                                                                                                                Depth P78.0 2.6 2.7 3 3.1 3.1 3.2 3.2 3.3 3.3 3.4 3.4 3.4 3.7 3.7 3.7 3.7 4.2 4 4.2
+                                                                                                                                  89.0 2.5 2.8 3 3.1 3.1 3.1 3.3 3.4 3.3 3.3 3.4 3.4 3.6 3.6 3.7 3.6 4   4 4.5
+                                                                                                                                 100.0 2.4 2.6 2.8 2.9 2.9 2.9 3.1 3.1 3.1 3.1 3.1 3.2 3.3 3.5 3.4 3.3 3.6 3.7 4.1
+                                                Pressure Testing MiniMA-2-3B-RoPE "Needle In A HayStack"
+                                     0.0 3.1 4.2 7.3 8.4 8.7 8.8 9.1 9.3 9.3 9.5 9.7 9.8 10 9.9 10 10 10 10 10                         100044977993
+                                    11.0 3.1 4.1 7.3 8.4 8.7 8.8 9.2 9.3 9.4 9.5 9.7 9.8 10 9.9 10 10 10 10 10                                    11490149861848321979254762897232469359663946242959464554995253448569456044163938
+                                    22.0 3.1 4.1 7.3 8.4 8.7 8.8 9.2 9.3 9.4 9.5 9.7 9.8 10 9.9 10 10 10 10 10                                                     Inference Length
+                                  cent33.0 3.2 4.1 7.3 8.4 8.7 8.8 9.2 9.3 9.4 9.5 9.7 9.8 10 9.9 10 10 10 10 10                                       (b) Finetuning with PI
+                                  er44.0 3.3 4.1 7.3 8.4 8.7 8.8 9.2 9.3 9.4 9.5 9.7 9.8 10 9.9 10 10 10 10 10
+                                    56.0 3.2 4.1 7.3 8.4 8.7 8.8 9.2 9.3 9.4 9.5 9.7 9.8 10 9.9 10 10 10 10 10              Figure 7: Performance comparison for the Needle-in-a-
+                                    67.0 3.3 4.1 7.3 8.4 8.7 8.8 9.2 9.3 9.4 9.5 9.7 9.8 10 9.9 10 10 10 10 10
+                                  Depth P78.0 3.3 4.1 7.3 8.4 8.7 8.8 9.2 9.3 9.4 9.5 9.7 9.8 10 9.9 10 10 10 10 10         Haystack Test of LLaMa-2-13B.
+                                    89.0 3.2 4.1 7.3 8.4 8.7 8.8 9.2 9.3 9.4 9.5 9.7 9.8 10 9.9 10 10 10 10 10
+                                   100.0 3.4 4.1 7.3 8.4 8.7 8.8 9.2 9.3 9.4 9.5 9.7 9.8 10 9.9 10 10 10 10 10
+                                         100044977993                                                                           Similar to the analysis in § 4, the Needle-in-a-
+                                                    11490149861848321979254762897232469359663946242959464554995253448569456044163938
+                                                                     Inference Length                                       HaystackTestforLLaMa-2-13Balsoindicatesthat
+                                                                  (a) RoPE                                                  the locations of needle retrieval errors frequently
+                                                 Pressure Testing MiniMA-2-3B-PI "Needle In A HayStack"                     align with areas of high attention entropy.
+                                    0.0 3.4 4.3 4.7 5.8 5.5 6.1 6.3 6.3 6.2 6.4 6.4 6.4 6.6 6.6 6.7 6.8 6.9 7 7.2
+                                   11.0 3.4 4.1 5 5.7 5.8 6.2 6.3 6.3 6.3 6.5 6.4 6.5 6.6 6.6 6.7 6.8 6.9 7 7.2             C DetailedCalculation of Attention
+                                   22.0 3.4 3.9 5 5.8 5.7 6.2 6.3 6.3 6.3 6.5 6.4 6.5 6.6 6.6 6.8 6.9 6.9 7 7.3
+                                 cent33.0 3.4 4 4.7 5.8 5.6 6.2 6.4 6.3 6.3 6.4 6.4 6.5 6.6 6.6 6.7 6.9 6.9 7 7.3                   Entropy
+                                 er44.0 3.4 4.1 4.9 5.7 5.8 6.1 6.4 6.4 6.3 6.5 6.4 6.6 6.5 6.6 6.7 6.8 6.9 7 7.3
+                                   56.0 3.4 4 4.9 5.6 5.9 6.3 6.4 6.4 6.3 6.4 6.5 6.5 6.6 6.7 6.7 6.8 6.9 7 7.3
+                                   67.0 3.5 4.2 4.6 5.6 5.9 6.2 6.4 6.3 6.3 6.4 6.4 6.5 6.6 6.6 6.7 6.9 6.9 7 7.3
+                                 Depth P78.0 3.5 4.4 5.2 5.8 5.9 6.1 6.4 6.3 6.3 6.4 6.4 6.5 6.6 6.6 6.8 6.9 6.9 7 7.2
+                                   89.0 3.3 4.3 5.1 5.7 5.5 6.1 6.4 6.4 6.3 6.5 6.5 6.5 6.6 6.6 6.8 6.9 6.9 7 7.3
+                                  100.0 3.2 4 4.4 5.7 5.6 6.1 6.3 6.3 6.3 6.4 6.5 6.5 6.6 6.6 6.7 6.8 6.9 7 7.2
+                                        100044977993
+                                                   11490149861848321979254762897232469359663946242959464554995253448569456044163938
+                                                                    Inference Length
+                                                        (b) Finetuning with PI
+                             Figure 5: Performance comparison for the Needle-in-a-
+                             Haystack Test of MiniMa-2-3B.
+                                                                                                                     8961
+                          (a) RoPE on 2K sequences.            (b) RoPE on 8K sequences.             (c) PI on 8K sequences.
+                                            (d) YaRNon8Ksequences.                (e) NTKon8Ksequences.
+                  Figure 6: Attention distributions of RoPE, PI, YaRN, and NTK methods on 2K and 8K sequences on LLaMa-2-13B.
+                  Algorithm 1 Calculation of Attention Entropy
+                    1: Input: model, prompt
+                    2: Output: average attention entropy score
+                    3: procedure ATTENTIONENTROPY(model,prompt)
+                    4:     Initialize entropy_list ← []
+                    5:     output_tokens ← [ ]
+                    6:     while not end of generation do
+                    7:         token,attention_distribution          ← GenerateTokenAndGetAttention(model,prompt +
+                       output_tokens)
+                    8:         output_tokens.append(token)
+                    9:         entropy ← CalculateEntropy(attention_distribution)
+                   10:         entropy_list.append(entropy)
+                   11:     endwhile
+                   12:     average_entropy ← Average(entropy_list)
+                   13:     return average_entropy
+                   14: end procedure
+                   15: function CALCULATEENTROPY(distribution)
+                   16:     entropy ← 0
+                   17:     for all p in distribution do
+                   18:         if p > 0 then
+                   19:             entropy ← entropy −plog(p)
+                   20:         endif
+                   21:     endfor
+                   22:     return entropy
+                   23: end function
+                                                                         8962
