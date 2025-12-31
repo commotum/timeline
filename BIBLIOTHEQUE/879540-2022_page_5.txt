@@ -1,0 +1,71 @@
+                                                                                 ���㌵!          ���㌵!                                                    R(2Hw−1)×(2Ww−1)×(2T−1)×(2m−1) andthevaluesinB are
+                                                                                                                                                                             ˆ
+                                                 Blank grid                                                                                          taken from B. Specifically, the relative position along the
+                                                 Non-blank grid                                                                                      spatial dimension lies in the range of [−Hw + 1,Hw − 1]
+                                                 Valid window of non-blank area                                                                      and [−Ww +1,Ww −1]. The temporal dimension range
+                                                 Invalid window of blank area      ���㌵
+                                                                                     !                                                               and cross-sensor dimension range are respectively [−T +
+                                                                                                                                                     1,T −1]and[−m+1,m−1]. Thusthelearnableposition
+                                                             ���㌵                                                                                      encoder contributes to locating each token with a position
+                                        ���㌵                     !/#                                                                                   embedding, which takes the 4D relative relationship of in-
+                                          !/$                    ���㌵                                                                                  formation into account.
+                                          ���㌵                       !/#
+                                            !/$                                               ���㌵                                                     3.3. Sensor-Time Data Augmentation
+                                                                                                 !
+                                                                                                                                                           GT-Paste [35] currently serves as a popular augmenta-
+                                                                                                                                                     tion techniqueforsingle-framepointclouddetection,which
+                         Figure 4. An illustration of pyramid context structure based on                                                             pastes virtual 3D objects in the forms of point cloud and
+                         sparse windows with NM = 3. We sparsify the attention win-                                                                  its corresponding ground-truth box from other scenes to the
+                         dowonBEVmapsaccordingtowhetherthe partitioned windows                                                                       current training frame. This operation largely improves the
+                         include only blank areas. Besides, we adapt the map scale in a                                                              performancebyalleviatingtheclassimbalanceproblemand
+                         pyramidstructure, where the down-sampled map provides a larger                                                              accelerating convergence. However, the naive GT-paste is
+                         receptive field.                                                                                                            not applicable in our work due to the destruction of data
+                                                                                                                                                     consistency across sensors and time. To address this issue,
+                         Pyramid Context. Another issue with the window-based                                                                        we propose a sensor-time data augmentation scheme that
+                         attention is that the limited local regions may not be suffi-                                                               extends the vanilla augmentation pipeline to preserve both
+                         cient to cover dynamic objects with large motions in adja-                                                                  cross-sensor and cross-time consistency.
+                         cent frames. An intuitive solution is to enlarge the size of                                                                      AsthenaiveGT-pasteschemerandomlypicksupthevir-
+                         localwindows. However,thiswouldlargelyincreasethepa-                                                                        tual LiDARobjectpatternO ′ fromitsoriginalsourcescene
+                         rameter volume of attention QKT, yielding heavy compu-                                                                                                                            t
+                                                                                                                                                     S′ and then paste into current training scene S , it treats
+                                                                                                                                                        t                                                                                           t
+                         tational load. To enlarge the receptive field with light com-                                                               the selected object as independent individuals.                                                   By con-
+                         putation, we consider to resize BEV maps instead, where                                                                     trast, we extend those candidates as a temporal consistent
+                         smaller resolution corresponds to larger receptive regions                                                                  sequence to maintain cross-time consistency for sequential
+                         with fixed window size as demonstrated in Figure 4. In par-                                                                 input.          Concretely, with the training sequence of scenes
+                         ticular, we downsample the original BEV map {M} with                                                                        {S             }                            , we expand the virtual LiDAR pat-
+                                                                                                                                                           t−∆t ∆t=0,1,...,T−1
+                         the factor j, and then apply the aforementioned window-                                                                     tern candidate as a sequence {O ′                                          } by searching from
+                                                                                                                   j∈{ 1 }NM                                                                                         t −∆t
+                         based attention on the packed input {{M} }                                                       2i−1 i=1                   the past scenes {St′−∆t}. Notably, it is necessary to main-
+                                                                                                               j                                     tain the relative motion relationship within sequence, which
+                         with shared parameters, where N                                      is the number of scales.
+                                                                                        M                                                            serves as part of supervisory signal for training. Since the
+                         Consequently, the attention computation is adapted to:
+                                                                                                                                                     ego-motion between adjacent frames are different in source
+                                                                                                  Q KT                                               scenes and training scenes, we first transfer the virtual pat-
+                                                                                                      j     j
+                                           A (Q ,K ,V ) = softmax( √                                            )V ,
+                                               j       j       j      j                                              j                               terns in history source scene S ′                                     into the original source
+                                                         X                                               d                           (3)                                                                       t −∆t
+                                                                                                                                                     scene S ′ with homogeneous transformation K ′                                                                  ′ ,
+                                           F =                   Up(MLP(A ))+F ,                                                                                     t                                                                           (t −∆t)→t
+                                              out                                       j              in                                            and then transform them into corresponding history train-
+                                                            j                                                                                        ing scene S                         with transformation K                                          .     Thus
+                                                                                                                                                                              t−∆t                                                    t→(t−∆t)
+                         where the upsample operation Up(·) is used to recover the                                                                   the pasted sequential patterns preserve its original motion
+                         original resolution. With linear computing complexity, the                                                                  states. To further maintain the cross-sensor consistency, we
+                         proposed pyramid context is scalable.                                                                                       paste the corresponding image patches {IO ′                                                    } into the
+                                                                                                                                                                                                                                          t −∆t
+                                                                                                                                                     training image frames {I                                    }. Following [32], we cal-
+                         4D Positional Encoding.                               As vanilla self-attention is un-                                                                                        t−∆t
+                         ordered, it is crucial to encode the locations of tokens in                                                                 culate the occlusion perspective to filter out the occluded
+                         the input sequence. A common practice of positional en-                                                                     point. Leveraging the above designs, we propose a general-
+                         coding is to supplement the feature vector with positional                                                                  use augmentation scheme that is feasible to any sequential
+                         priors. In this work, the candidate tokens in the input se-                                                                 cross-sensor training data input.
+                         quences are across both sensors and time, which requires                                                                    4. Experiments
+                         4-Dimensional positional encoding. Thus we introduce a
+                         4D relative position encoder B ∈ R(Hw)2×(Ww)2×T2×m2,                                                                              Weevaluate the proposed method on both the nuScenes
+                                                                                                                                ˆ
+                         where the positional matrix is parameterized as B                                                             ∈             dataset and Waymodatasets,andconductextensiveablation
+                                                                                                                                               17176

@@ -1,0 +1,69 @@
+                           3.2   Encodingnewmemories
+                           WeassumedthatwealreadyhadamatrixofmemoriesM. Ofcourse,memoriesinsteadneedtobe
+                           encoded as new inputs are received. Suppose then that M is some randomly initialised memory. We
+                           can efﬁciently incorporate new information x into M with a simple modiﬁcation to equation 1:
+                                                   f             MWq([M;x]Wk)T                   v
+                                                   M=softmax               √ k            [M;x]W ,                        (2)
+                                                                             d
+                           where we use [M;x] to denote the row-wise concatenation of M and x. Since we use [M;x] when
+                                                                                                     f
+                           computing the keys and values, and only M when computing the queries, M is a matrix with same
+                           dimensionality as M. Thus, equation 2 is a memory-size preserving attention operation that includes
+                           attention over the memories and the new observations. Notably, we use the same attention operation
+                           to efﬁciently compute memory interactions and to incorporate new information.
+                           Wealsonotethepossible utility of this operation when the memory consists of a single vector rather
+                           than a matrix. In this case the model may learn to pick and choose which information from the input
+                           should be written into the vector memory state by learning how to attend to the input, conditioned
+                           on what is contained in the memory already. This is possible in LSTMs via the gates, though at a
+                           different granularity. We return to this idea, and the possible compartmentalization that can occur via
+                           the heads even in the single-memory-slot case, in the discussion.
+                           3.3   Introducing recurrence and embedding into an LSTM
+                                                                                                                           f
+                           Suppose we have a temporal dimension with new observations at each timestep, xt. Since M and M
+                           are the same dimensionality, we can naively introduce recurrence by ﬁrst randomly initialising M,
+                                                     f
+                           and then updating it with M at each timestep. We chose to do this by embedding this update into an
+                           LSTM.SupposememorymatrixM canbeinterpretedasamatrixofcellstates,usuallydenotedasC,
+                           for a 2-dimensional LSTM. We can make the operations of individual memories m nearly identical
+                                                                                                            i
+                           to those in a normal LSTM cell state as follows (subscripts are overloaded to denote the row from a
+                                                                 th
+                           matrix, and timestep; e.g., m  is the i  rowfromM attimet).
+                                                        i,t
+                                                     s   =(h       , m     )                                              (3)
+                                                      i,t     i,t−1   i,t−1
+                                                              f        f          f
+                                                     f   =W x +U h             +b                                         (4)
+                                                      i,t        t       i,t−1
+                                                     i   =Wix +Uih            +bi                                         (5)
+                                                      i,t     o t      o i,t−1    o
+                                                     o   =W x +U h            +b                                          (6)
+                                                      i,t        t       i,t−1
+                                                                     f
+                                                                    ˜
+                                                    m =σ(f +b )◦m                +σ(i )◦g (me )                           (7)
+                                                      i,t      i,t          i,t−1      i,t    ψ   i,t
+                                                     h =σ(o )◦tanh(m )                       |  {z  }                     (8)
+                                                      i,t      i,t          i,t
+                                                   s     =(m ,h )                                                         (9)
+                                                    i,t+1      i,t i,t
+                           Theunderbrace denotes the modiﬁcation to a standard LSTM. In practice we did not ﬁnd output gates
+                           necessary – please see the url in the footnote for our Tensorﬂow implementation of this model in the
+                           Sonnet library 2, and for the exact formulation we used, including our choice for the g  function
+                                                                                                                  ψ
+                           (brieﬂy, we found a row/memory-wise MLP with layer normalisation to work best). There is also an
+                           interesting opportunity to introduce a different kind of gating, which we call ‘memory’ gating, which
+                           resembles previous gating ideas [24, 3]. Instead of producing scalar gates for each individual unit
+                           (‘unit’ gating), we can produce scalar gates for each memory row by converting Wf, Wi, Wo, Uf,
+                           Ui, and Uo from weight matrices into weight vectors, and by replacing the element-wise product in
+                           the gating equations with scalar-vector multiplication.
+                           Since parameters Wf, Wi, Wo, Uf, Ui, Uo, and ψ are shared for each mi, we can modify the
+                           number of memories without affecting the number of parameters. Thus, tuning the number of
+                           memories and the size of each memory can be used to balance the overall storage capacity (equal
+                           to the total number of units, or elements, in M) and the number of parameters (proportional to the
+                           dimensionality of m ). We ﬁnd in our experiments that some tasks require more, but not necessarily
+                                               i
+                           larger, memories, and others such as language modeling require fewer, larger memories.
+                              2https://github.com/deepmind/sonnet/blob/master/sonnet/python/modules/
+                           relational_memory.py
+                                                                           4

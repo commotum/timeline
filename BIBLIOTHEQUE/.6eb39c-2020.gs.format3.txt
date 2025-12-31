@@ -1,0 +1,576 @@
+                                  Agent57: Outperforming the Atari Human Benchmark
+                            Adrià PuigdomènechBadia*1 Bilal Piot*1 Steven Kapturowski*1 Pablo Sprechmann*1
+                                                   Alex Vitvitskyi1 Daniel Guo1 Charles Blundell1
+                                        Abstract
+                    Atari games have been a long-standing bench-
+                    markinthereinforcementlearning(RL)commu-
+                    nity for the past decade. This benchmark was
+                    proposed to test general competency of RL al-
+                    gorithms. Previous work has achieved good av-
+                    erage performance by doing outstandingly well
+                    on many games of the set, but very poorly in
+                    several of the most challenging games. We pro-
+                    pose Agent57, the ﬁrst deep RL agent that out-
+                    performs the standard human benchmark on all
+                    57Atari games. To achieve this result, we train a
+                    neural network which parameterizes a family of
+                    policies ranging from very exploratory to purely             Figure 1. Number of games where algorithms are better than the
+                    exploitative. We propose an adaptive mechanism               human benchmark throughout training for Agent57 and state-of-
+                    to choose which policy to prioritize throughout              the-art baselines on the 57 Atari games.
+                    the training process. Additionally, we utilize a
+                    novelparameterizationofthearchitecturethatal-                Deep Q-Networks (DQN ; Mnih et al., 2015) was the ﬁrst
+                    lows for more consistent and stable learning.                algorithm to achieve human-level control in a large num-
+                                                                                 ber of the Atari 2600 games, measured by human nor-
+                                                                                 malized scores (HNS). Subsequently, using HNS to assess
+               1. Introduction                                                   performance on Atari games has become one of the most
+               TheArcadeLearningEnvironment(ALE; Bellemareetal.,                 widely used benchmarks in deep reinforcement learning
+               2013) was proposed as a platform for empirically assess-          (RL), despite the human baseline scores potentially under-
+               ing agents designed for general competency across a wide          estimating human performance relative to what is possi-
+               range of games. ALE offers an interface to a diverse set          ble (Toromanoff et al., 2019). Nonetheless, human bench-
+               of Atari 2600 game environments designed to be engaging           mark performance remains an oracle for “reasonable per-
+               and challenging for human players. As Bellemare et al.            formance” across the 57 Atari games. Despite all efforts,
+               (2013) put it, the Atari 2600 games are well suited for eval-     nosingleRLalgorithmhasbeenabletoachieveover100%
+               uating general competency in AI agents for three main rea-        HNS on all 57 Atari games with one set of hyperparam-
+               sons: (i) varied enough to claim generality, (ii) each inter-     eters. Indeed, state of the art algorithms in model-based
+               esting enough to be representative of settings that might be      RL,MuZero(Schrittwieser et al., 2019), and in model-free
+               faced in practice, and (iii) each created by an independent       RL, R2D2 (Kapturowski et al., 2018) surpass 100% HNS
+               party to be free of experimenter’s bias.                          on 51 and 52 games, respectively. While these algorithms
+                                                                                 achieve well above average human-level performance on
+               Agents are expected to perform well in as many games as           a large fraction of the games (e.g. achieving more than
+               possible making minimal assumptions about the domain              1000% HNS), in the games they fail to do so, they often
+               at hand and without the use of game-speciﬁc information.          fail to learn completely. These games showcase particu-
+                                                                                 larly importantissuesthatageneralRLalgorithmshouldbe
+                 *Equal contribution 1DeepMind. Correspondence to: Adrià         able to tackle. Firstly, long-term credit assignment: which
+               Puigdomènech Badia <adriap@google.com>.                           decisions are most deserving of credit for the positive (or
+               Proceedings of the 37th International Conference on Machine       negative) outcomes that follow? This problem is particu-
+               Learning, Online, PMLR 119, 2020. Copyright 2020 by the au-       larly hard when rewards are delayed and credit needs to
+               thor(s).                                                          be assigned over long sequences of actions, such as in the
+                                                  Agent57: Outperforming the Atari Human Benchmark
+               gamesofSkiing or Solaris. The game of Skiing is a canon-        R2D2achievestheoptimalscorewhileNGUperformssim-
+               ical example due to its peculiar reward structure. The goal     ilar to a random policy. One shortcoming of NGU is that it
+               of the game is to run downhill through all gates as fast as     collects the same amount of experience following each of
+               possible. A penalty of ﬁve seconds is given for each missed     its policies, regardless of their contribution to the learning
+               gate. The reward, given only at the end, is proportional to     progress. Some games require a signiﬁcantly different de-
+               the time elapsed. Therefore long-term credit assignment         gree of exploration to others. Intuitively, one would want
+               is needed to understand why an action taken early in the        to allocate the shared resources (both network capacity and
+               game (e.g. missing a gate) has a negative impact in the         data collection) such that end performance is maximized.
+               obtained reward. Secondly, exploration: efﬁcient explo-         WeproposeallowingNGUtoadaptitsexplorationstrategy
+               ration can be critical to effective learning in RL. Games       over the course of an agent’s lifetime, enabling specializa-
+               like Private Eye, Montezuma’s Revenge, Pitfall! or Venture      tion to the particular game it is learning. This is the ﬁrst
+               are widely considered hard exploration games (Bellemare         signiﬁcant improvement we make to NGU to allow it to be
+               et al., 2016; Ostrovski et al., 2017) as hundreds of actions    a more general agent.
+               mayberequiredbeforeaﬁrstpositiverewardisseen. Inor-             Recent work on long-term credit assignment can be cate-
+               der to succeed, the agents need to keep exploring the envi-     gorizedintoroughlytwotypes: ensuringthatgradientscor-
+               ronment despite the apparent impossibility of ﬁnding pos-       rectly assign credit (Ke et al., 2017; Weber et al., 2019; For-
+               itive rewards. These problems are particularly challenging      tunatoetal.,2019)andusingvaluesortargetstoensurecor-
+               in large high dimensional state spaces where function ap-       rect credit is assigned (Arjona-Medina et al., 2019; Hung
+               proximation is required.                                        et al., 2019; Liu et al., 2019; Harutyunyan et al., 2019; Fer-
+               Exploration algorithms in deep RL generally fall into three     ret et al., 2020). NGU is also unable to cope with long-term
+               categories:  randomized value functions (Osband et al.,         credit assignment problems such as Skiing or Solaris where
+               2016; Fortunato et al., 2017; Salimans et al., 2017; Plap-      it fails to reach 100% HNS. Advances in credit assignment
+               pert et al., 2017; Osband et al., 2018), unsupervised policy    in RL often involve a mixture of both approaches, as val-
+               learning (Gregor et al., 2016; Achiam et al., 2018; Eysen-      ues and rewards form the loss whilst the ﬂow of gradients
+               bach et al., 2018) and intrinsic motivation (Schmidhuber,       through a model directs learning.
+               1991; Oudeyer et al., 2007; Barto, 2013; Bellemare et al.,      In this work, we propose tackling the long-term credit as-
+               2016; Ostrovski et al., 2017; Fu et al., 2017; Tang et al.,     signment problem by improving the overall training sta-
+               2017; Burda et al., 2018; Choi et al., 2018; Savinov et al.,    bility, dynamically adjusting the discount factor, and in-
+               2018; Puigdomènech Badia et al., 2020). Other work com-         creasing the backprop through time window. These are
+               bines handcrafted features, domain-speciﬁc knowledge or         relatively simple changes compared to the approaches pro-
+               privileged pre-training to side-step the exploration prob-      posed in previous work, but we ﬁnd them to be effective.
+               lem, sometimes only evaluating on a few Atari games (Ay-        Muchrecentworkhasexploredthisproblemofhowtody-
+               tar et al., 2018; Ecoffet et al., 2019). Despite the encourag-  namically adjust hyperparameters of a deep RL agent, e.g.,
+               ing results, no algorithm has been able to signiﬁcantly im-     approaches based upon evolution (Jaderberg et al., 2017),
+               prove performance on challenging games without deterio-         gradients (Xu et al., 2018) or multi-armed bandits (Schaul
+               rating performanceontheremaininggameswithoutrelying             et al., 2019). Inspired by Schaul et al. (2019), we propose
+               on human demonstrations (Pohlen et al., 2018). Notably,         using a simple non-stationary multi-armed bandit (Garivier
+               amongst all this work, intrinsic motivation, and in partic-     &Moulines, 2008) to directly control the exploration rate
+               ular, Never Give Up (NGU; Puigdomènech Badia et al.,            and discount factor to maximize the episode return, and
+               2020) has shown signiﬁcant recent promise in improving          then provide this information to the value network of the
+               performance on hard exploration games. NGU achieves             agent as an input. Unlike Schaul et al. (2019), 1) it controls
+               this by augmenting the reward signal with an internally         the exploration rate and discount factor (helping with long-
+               generated intrinsic reward that is sensitive to novelty at two  termcredit assignment), and 2) the bandit controls a family
+               levels: short-term novelty within an episode and long-term      of state-action value functions that back up the effects of
+               novelty across episodes. It then learns a family of policies    exploration and longer discounts, rather than linearly tilt-
+               for exploring and exploiting (sharing the same parameters),     ing a common value function by a ﬁxed functional form.
+               with the end goal of obtaining the highest score under the
+               exploitative policy. However, NGU is not the most gen-          In summary, our contributions are as follows:
+               eral agent: much like R2D2 and MuZero are able to per-
+               form strongly on all but few games, so too NGU suffers           1. A new parameterization of the state-action value func-
+               in that it performs strongly on a smaller, different set of        tion that decomposes the contributions of the intrinsic
+               games to agents such as MuZero and R2D2 (despite be-               and extrinsic rewards. As a result, we signiﬁcantly in-
+               ing based on R2D2). For example, in the game Surround              creasethetrainingstabilityoveralargerangeofintrinsic
+                                                                                  reward scales.
+                                                  Agent57: Outperforming the Atari Human Benchmark
+               2. A meta-controller: an adaptive mechanism to select            has its own associated discount factor γ (for background
+                                                                                                                          j
+                  whichofthepolicies (parameterized by exploration rate         and notations on Markov Decision Processes (MDP) see
+                  and discount factors) to prioritize throughout the train-     App. A). Since the intrinsic reward is typically much more
+                                                                                                                            N−1
+                  ing process. This allows the agent to control the ex-         dense than the extrinsic reward, {(β ,γ )}       are chosen
+                                                                                                                     j   j  j=0
+                  ploration/exploitation trade-off by dedicating more re-       soastoallowforlongtermhorizons(highvaluesofγ )for
+                                                                                                                                       j
+                  sources to one or the other.                                  exploitative policies (small values of βj) and small term
+                                                                                horizons (low values of γ ) for exploratory policies (high
+               3. Finally, we demonstrate for the ﬁrst time performance                                    j
+                  that is above the human baseline across all Atari 57          values of βj).
+                  games. As part of these experiments, we also ﬁnd that         To learn the state-action value function Q∗ , NGU trains
+                                                                                                                            rj
+                  simply re-tuning the backprop through time window to          a recurrent neural network Q(x,a,j;θ), where j is a one-
+                  be twice the previously published window for R2D2             hot vector indexing one of N implied MDPs (in particular
+                  led to superior long-term credit assignment (e.g., in So-     (β ,γ )), x is the current observation, a is an action, and θ
+                                                                                  j   j
+                  laris) while still maintaining or improving overall per-      are the parameters of the network (including the recurrent
+                  formance on the remaining games.                              state). In practice, NGU can be unstable and fail to learn
+                                                                                                                   ∗
+                                                                                anappropriateapproximationofQ         for all the state-action
+                                                                                                                   rj
+               These improvements to NGU collectively transform it into         value functions in the family, even in simple environments.
+               the most general Atari 57 agent, enabling it to outperform       This is especially the case when the scale and sparseness
+               the human baseline uniformly over all Atari 57 games.            of re and ri are both different, or when one reward is more
+                                                                                    t      t
+               Thus, we call this agent: Agent57.                               noisythantheother. Weconjecturethatlearningacommon
+                                                                                state-action value function for a mix of rewards is difﬁcult
+               2. Background: Never Give Up (NGU)                               whentherewardsareverydifferentinnature. Therefore, in
+                                                                                Sec. 3.1, we propose an architectural modiﬁcation to tackle
+               OurworkbuildsontopoftheNGUagent,whichcombines                    this issue.
+               two ideas: ﬁrst, the curiosity-driven exploration, and sec-      Our agent is a deep distributed RL agent, in the lineage
+               ond, distributed deep RL agents, in particular R2D2.             of R2D2 and NGU. As such, it decouples the data col-
+               NGUcomputes an intrinsic reward in order to encourage            lection and the learning processes by having many actors
+               exploration.   This reward is deﬁned by combining per-           feed data to a central prioritized replay buffer. A learner
+               episode and life-long novelty.    The per-episode novelty,       can then sample training data from this buffer, as shown
+               repisodic, rapidly vanishes over the course of an episode, and   in Fig. 2 (for implementation details and hyperparameters
+                t                                                               refer to App. E). More precisely, the replay buffer con-
+               it is computed by comparing observations to the contents
+               of an episodic memory. The life-long novelty, αt, slowly
+               vanishes throughout training, and it is computed by using a
+               parametric model (in NGU and in this work Random Net-
+               work Distillation (Burda et al., 2018) is used to this end).
+               With this, the intrinsic reward ri is deﬁned as follows:
+                                               t
+                         ri = repisodic · min{max{α ,1},L},
+                           t    t                     t
+               where L = 5 is a chosen maximum reward scaling. This
+               leverages the long-term novelty provided by αt, while
+               repisodic continues to encourage the agent to explore within
+                t
+               an episode. For a detailed description of the computation
+               of repisodic and α , see (Puigdomènech Badia et al., 2020)
+                   t            t
+               or App. I. At time t, NGU adds N different scales of the
+               same intrinsic reward βjri (βj ∈ R+, j ∈ 0,...N − 1)
+                                          t
+               to the extrinsic reward provided by the environment, re, to      Figure 2. A schematic depiction of a distributed deep RL agent.
+                                                                       t
+               form N potential total rewards r      = re + β ri. Conse-
+                                                 j,t     t     j t
+               quently, NGU aims to learn the N different associated op-        tains sequences of transitions that are removed regularly
+                                                    ∗
+               timal state-action value functions Q   associated with each      in a FIFO-manner. These sequences come from actor pro-
+                                                    rj
+               reward function rj,t. The exploration rates βj are param-        cesses that interact with independent copies of the envi-
+               eters that control the degree of exploration. Higher val-        ronment, and they are prioritized based on temporal dif-
+               ues will encourage exploratory policies and smaller values       ferences errors (Kapturowski et al., 2018). The priorities
+               will encourage exploitative policies. Additionally, for pur-     are initialized by the actors and updated by the learner with
+                                                                         ∗
+               poses of learning long-term credit assignment, each Q            the updated state-action value function Q(x,a,j;θ). Ac-
+                                                                         rj
+                                                Agent57: Outperforming the Atari Human Benchmark
+              cording to those priorities, the learner samples sequences     ance associated with their corresponding reward, and we
+              of transitions from the replay buffer to construct an RL       also allow for the associated optimizer state to be separated
+              loss.  Then, it updates the parameters of the neural net-      for intrinsic and extrinsic state-action value functions.
+              work Q(x,a,j;θ) by minimizing the RL loss to approxi-          Moreover, when a transformed Bellman operator (Pohlen
+              mate the optimal state-action value function. Finally, each    et al., 2018) with function h is used (see App. A), we can
+              actor shares the same network architecture as the learner      split the state-action value function in the following way:
+              but with different weights. We refer as θ to the parameters
+                                                      l
+              of the l−th actor. The learner weights θ are sent to the ac-       Q(x,a,j;θ) =
+              tor frequently, which allows it to update its own weights θ .                                                     
+                                                                       l              −1             e         −1             i
+              Each actor uses different values  , which are employed to         h h (Q(x,a,j;θ ))+βjh (Q(x,a,j;θ )) .
+                                                l
+              follow an  -greedy policy based on the current estimate of
+                         l                                                   In App. B, we also show that the optimization of sepa-
+              the state-action value function Q(x,a,j;θl). In particular,    rated transformed state-action value functions is equivalent
+              at the beginning of each episode and in each actor, NGU        to the optimization of the original single transformed state-
+              uniformly selects a pair (β ,γ ). We hypothesize that this
+                                         j  j                                action value function. In practice, choosing a simple or
+              processissub-optimalandproposetoimproveitinSec.3.2             transformed split does not seem to play an important role
+              by introducing a meta-controller for each actor that adapts    in terms of performance (empirical evidence and an intu-
+              the data collection process.                                   ition behind this result can be found in App. H.3). In our
+                                                                             experiments, we choose an architecture with a simple split
+              3. Improvements to NGU                                         which corresponds to h being the identity, but still use the
+                                                                             transformed Retrace loss functions.
+              3.1. State-Action Value Function Parameterization
+              The proposed architectural improvement consists in split-      3.2. Adaptive Exploration over a Family of Policies
+              ting the state-action value function in the following way:     The core idea of NGU is to jointly train a family of poli-
+                   Q(x,a,j;θ) = Q(x,a,j;θe)+β Q(x,a,j;θi),                   cies with different degrees of exploratory behaviour using a
+                                                     j                       single network architecture. In this way, training these ex-
+              whereQ(x,a,j;θe)andQ(x,a,j;θi)aretheextrinsicand               ploratory policies plays the role of a set of auxiliary tasks
+              intrinsic components of Q(x,a,j;θ) respectively. The sets      that can help train the shared architecture even in the ab-
+              of weights θe and θi separately parameterize two neural        sence of extrinsic rewards. A major limitation of this ap-
+              networks with identical architecture and θ = θi ∪ θe. Both     proach is that all policies are trained equally, regardless
+              Q(x,a,j;θe) and Q(x,a,j;θi) are optimized separately           of their contribution to the learning progress. We propose
+              with rewards re and ri respectively, but with the same tar-    to incorporate a meta-controller that can adaptively select
+              get policy π(x) = argmaxa∈AQ(x,a,j;θ). More pre-               which policies to use both at training and evaluation time.
+              cisely, to train the weights θe and θi, we use the same se-    This carries two important consequences. Firstly, by se-
+              quenceoftransitionssampledfromthereplay,butwithtwo             lecting which policies to prioritize during training, we can
+              different transformed Retrace loss functions (Munos et al.,    allocate more of the capacity of the network to better rep-
+              2016). For Q(x,a,j;θe) we compute an extrinsic trans-          resent the state-action value function of the policies that
+              formed Retrace loss on the sequence transitions with re-       are most relevant for the task at hand. Note that this is
+              wards re and target policy π, whereas for Q(x,a,j;θi) we       likely to change throughout the training process, naturally
+              compute an intrinsic transformed Retrace loss on the same      building a curriculum to facilitate training. As mentioned
+              sequence of transitions but with rewards ri and target pol-    in Sec. 2, policies are represented by pairs of exploration
+              icyπ. AreminderofhowtocomputeatransformedRetrace               rate and discount factor, (β ,γ ), which determine the dis-
+                                                                                                        j  j
+              loss on a sequence of transitions with rewards r and target    counted cumulative rewards to maximize. It is natural to
+              policy π is provided in App. C.                                expect policies with higher βj and lower γj to make more
+              In addition, in App. B, we show that this optimization of      progress early in training, while the opposite would be ex-
+              separate state-action values is equivalent to the optimiza-    pected as training progresses. Secondly, this mechanism
+              tion of the original single state-action value function with   also provides a natural way of choosing the best policy in
+              reward re + β ri (under a simple gradient descent opti-        the family to use at evaluation time. Considering a wide
+                             j                                               range of values of γ with β ≈ 0, provides a way of auto-
+              mizer). Even though the theoretical objective being opti-                          j       j
+              mizedisthesame,theparameterizationisdifferent: weuse           matically adjusting the discount factor on a per-task basis.
+              two different neural networks to approximate each one of       This signiﬁcantly increases the generality of the approach.
+              these state-action values (a schematic and detailed ﬁgures     Wepropose to implement the meta-controller using a non-
+              of the architectures used can be found in App. F). By doing    stationary multi-arm bandit algorithm running indepen-
+              this, we allow each network to adapt to the scale and vari-    dently on each actor. The reason for this choice, as op-
+                                                   Agent57: Outperforming the Atari Human Benchmark
+                                                                                 4. Experiments
+                                                                                 Webeginthissectionbydescribingourexperimentalsetup.
+                                                                                 Following NGU, Agent57 uses a family of coefﬁcients
+                                                                                 {(β ,γ )}N−1 of size N = 32. The choice of discounts
+                                                                                     j  j   j=0
+                                                                                      N−1
+                                                                                 {γ }      differs from that of NGU to allow for higher val-
+                                                                                    j j=0
+                                                                                 ues, ranging from 0.99 to 0.9999 (see App. G.1 for de-
+                                                                                 tails). The meta-controller uses a window size of τ = 160
+                                                                                 episodes and  = 0.5 for the actors and a window size of
+               Figure 3. Capped human normalized score where we observe at       τ = 3600 episodes and  = 0.01. All the other hyper-
+               whichpoint the agent surpasses the human benchmark on the last    parameters are identical to those of NGU, including the
+               6 games.                                                          standard preprocessing of Atari frames. For a complete
+                                                                                 description of the hyperparameters and preprocessing we
+                                                                                 use, please see App. G.3. For all agents we run (that is,
+               posedtoaglobalmeta-controller, is that each actor follows         all agents except MuZero where we report numbers pre-
+               a different  -greedy policy which may alter the choice of        sented in Schrittwieser et al. (2019)), we employ a separate
+                            l                                                    evaluator process to continuously record scores. We record
+               the optimal arm. Each arm j from the N-arm bandit is              the undiscountedepisodereturnsaveragedover3seedsand
+               linked to a policy in the family and corresponds to a pair        using a windowed mean over 50 episodes. For our best al-
+               (β ,γ ). At the beginning of each episode, say, the k-
+                 j   j                                                           gorithm, Agent57, we report the results averaged over 6
+               th episode, the meta-controller chooses an arm Jk setting         seeds on all games to strengthen the signiﬁcance of the re-
+               which policy will be executed. Note here that the arm J
+                                                                           k     sults. On that average, we report the maximum over train-
+               is a random variable. Then the l-th actor acts  -greedily
+                                                                  l              ing as their ﬁnal score, as done in Fortunato et al. (2017);
+               with respect to the corresponding state-action value func-        Puigdomènech Badia et al. (2020). Further details on our
+               tion, Q(x,a,J ;θ ), for the whole episode. The undis-
+                               k  l                                              evaluation setup are described in App. E.
+               counted extrinsic episode returns, noted Re(Jk), are used
+                                                            k                    In addition to using human normalized scores HNS =
+               as a reward signal to train the multi-arm bandit algorithm
+                                                                                  Agent  −Randomscore
+               of the meta-controller.                                                score         , we report the capped human normal-
+                                                                                 Human   −Random
+                                                                                       score     score
+               The reward signal Re(J ) is non-stationary, as the agent          ized scores, CHNS = max{min{HNS,1},0}. This mea-
+                                     k   k                                       sure is a better descriptor for evaluating general perfor-
+               changes throughout training. Thus, a classical bandit algo-       mance, as it puts an emphasis in the games that are below
+               rithm such as Upper Conﬁdence Bound (UCB; Garivier &              the average human performance benchmark. Furthermore,
+               Moulines, 2008) will not be able to adapt to the changes          and avoiding any issues that aggregated metrics may have,
+               of the reward through time. Therefore, we employ a sim-           we also provide all the scores that all the ablations obtain
+               pliﬁed sliding-window UCB with UCB-greedy exploration.           in all games we evaluate in App. H.1.
+               Withprobability 1−UCB, this algorithm runs a slight mod-
+               iﬁcation of classic UCB on a sliding window of size τ and         Westructure the rest of this section in the following way:
+               selects a random arm with probability UCB (details of the        ﬁrstly, we show an overview of the results that Agent57
+               algorithms are provided in App. D).                               achieves. Then we proceed to perform ablations on each
+               Note that the beneﬁt of adjusting the discount factor             one of the improvements we propose for our model.
+               through training and at evaluation could be applied even          4.1. Summary of the Results
+               in the absence of intrinsic rewards. To show this, we pro-
+               pose augmenting a variant of R2D2 with a meta-controller.         Tab. 1 shows a summary of the results we obtain on all 57
+               In order to isolate the contribution of this change, we eval-     Atari games when compared to baselines. MuZero obtains
+               uate a variant of R2D2 which uses the same RL loss as             the highest uncapped mean and median human normalized
+               Agent57. Namely, a transformed Retrace loss as opposed            scores, but also the lowest capped scores. This is due to the
+               to a transformed n-step loss as in the original paper. We re-     fact that MuZeroperformsremarkablywellinsomegames,
+               fer to this variant as R2D2 (Retrace) throughout the paper.       such as Beam Rider, where it shows an uncapped score of
+               Thereasonfor choosing this different loss is that it worked       27469%,butatthesametimecatastrophicallyfailstolearn
+               better than the n-step loss for NGU, as described in Puig-        in games such as Venture, achieving a score that is on par
+               domènech Badia et al. (2020). In all other aspects, R2D2          with a random policy. We see that the meta-controller im-
+               (Retrace)isexactlythesamealgorithmasR2D2. Weincor-                provement successfully transfers to R2D2: the proposed
+               porate the joint training of several policies parameterized       variant R2D2 (bandit) shows a mean, median, and CHNS
+                       N−1
+               by {γ }       to R2D2 (Retrace). We refer to this algorithm
+                     j j=0                                                       that are much higher than R2D2 with the same Retrace
+               as R2D2 (bandit).
+                                                                             Agent57: Outperforming the Atari Human Benchmark
+                       Table 1. Number of games above human, mean capped, mean and median human normalized scores for the 57 Atari games.
+                                                                Statistics               Agent57        R2D2(bandit)          NGU          R2D2(Retrace)          R2D2         MuZero
+                                                             Cappedmean                   100.00             96.93            95.07             94.20              94.33        89.92
+                                                     Numberofgames>human                     57               54                51                52                52            51
+                                                                  Mean                    4766.25          5461.66           3421.80           3518.36           4622.09       4998.51
+                                                                 Median                   1933.49          2357.92           1359.78           1457.63           1935.86       2041.12
+                                                            40th Percentile               1091.07          1298.80           610.44             817.77           1176.05       1172.90
+                                                            30th Percentile               614.65            648.17           267.10             420.67            529.23        503.05
+                                                            20th Percentile               324.78            303.61           226.43             267.25            215.31        171.39
+                                                            10th Percentile               184.35            116.82           107.78             116.03            115.33        75.74
+                                                             5th Percentile               116.67             93.25            64.10             48.32              50.27         0.03
+                       loss. Finally, Agent57 achieves a median and mean that is
+                       greater than NGU and R2D2, but also its CHNS is 100%.
+                       This shows the generality of Agent57: not only it obtains
+                       a strong mean and median, but also it is able to obtain
+                       strong performance on the tail of games in which MuZero
+                       and R2D2 catastrophically fail. This is more clearly ob-
+                       served when looking at different percentiles: up to the
+                       20thpercentile, Agent57 showsmuchgreaterperformance,
+                       only slightly surpassed by R2D2 (bandit) when we exam-
+                       ine higher percentiles. In Fig. 3 we report the performance
+                       of Agent57 in isolation on the 57 games. We show the last
+                       6 games (in terms of number of frames collected by the
+                       agents) in which the algorithm surpasses the human perfor-
+                       mance benchmark. As shown, the benchmark over games                                                 Figure 4. Performance progression on the 10-game challenging
+                       is beaten in a long-tailed fashion, where Agent57 uses the                                          set obtained from incorporating each one of the improvements.
+                       ﬁrst 5 billion frames to surpass the human benchmark on
+                       51games. Afterthat, we ﬁnd hard exploration games, such
+                       as Montezuma’s Revenge, Pitfall!, and Private Eye. Lastly,                                          equivalent to Agent57. We observe that each one of the
+                       Agent57 surpasses the human benchmark on Skiing after                                               improvementsresults in an increment in ﬁnal performance.
+                       78 billion frames. To be able to achieve such performance                                           Further, we see that each one of the improvements that is
+                       on Skiing, Agent57 uses a high discount (as we show in                                              part of Agent57 is necessary in order to obtain the consis-
+                       Sec. 4.4). This naturally leads to high variance in the re-                                         tent ﬁnal performance of 100% CHNS.
+                       turns, which leads to needing more data in order to learn
+                       to play the game. One thing to note is that, in the game                                            4.2. State-Action Value Function Parameterization
+                       of Skiing, the human baseline is very competitive, with a
+                       score of −4336.9, where −17098.1 is random and −3272                                                We begin by evaluating the inﬂuence of the state-action
+                       is the optimal score one can achieve.                                                               value function parametrization on a minimalistic gridworld
+                       In general, as performance in Atari keeps improving, it                                             environment, called “random coin”. It consists of an empty
+                       seems natural to concentrate on the tail of the distribution,                                       room of size 15 × 15 where a coin and an agent are
+                       i.e., pay attention to those games for which progress in the                                        randomly placed at the start of each episode. The agent
+                       literature has been historically much slower than average.                                          can take four possible actions (up, down, left right) and
+                       Wenowpresentresultsforasubsetof10gamesthatwecall                                                    episodes are at most 200 steps long. If the agent steps over
+                       the challenging set. It consists of the six hard exploration                                        the coin, it receives a reward of 1 and the episode termi-
+                       games as deﬁned in (Bellemare et al., 2016), plus games                                             nates. In Fig. 5 we see the results of NGU with and with-
+                       that require long-term credit assignment. More concretely,                                          out the new parameterization of its state-action value func-
+                       the games we use are: Beam Rider, Freeway, Montezuma’s                                              tions. We report performance after 150 million frames. We
+                       Revenge, Pitfall!, Pong, Private Eye, Skiing, Solaris, Sur-                                         compare the extrinsic returns for the policies that are the
+                                                                                                                           exploitative (β           = 0) and the most exploratory (with the
+                       round, and Venture.                                                                                                        j
+                                                                                                                           largest β        in the family).             Even for small values of the
+                                                                                                                                         j
+                       In Fig. 4 we can see the performance progression obtained                                           exploration rates (max β ), this setting induces very dif-
+                                                                                                                                                               j    j
+                       fromincorporating each one of the improvements we make                                              ferent exploratory and exploitative policies. Maximizing
+                       on top of NGU. Such performance is reported on the se-                                              the discounted extrinsic returns is achieved by taking the
+                       lection of 10 games mentioned above. In the notation of                                             shortest path towards the coin (obtaining an extrinsic re-
+                       the legend, NGU + bandit + separate nets + long trace is                                            turn of one), whereas maximizing the augmented returns
+                                                    Agent57: Outperforming the Atari Human Benchmark
+                                                                                  Figure 6. Solaris learning curves with small and long backprop
+                                                                                  through time window sizes for both R2D2 and Agent57.
+                                                                                  round the opponent snake, receive a reward, and start from
+               Figure 5. Extrinsic returns for the exploitative (β = 0) and most
+                                                              0                   the initial state, or keep wandering around without captur-
+               exploratory (β31 = β) on “random coin” for different values of     ing the opponent, and thus visiting new states in the world.
+               the intrinsic reward weight, β. (Top) NGU(Bottom) NGU with
+               Separate networks for intrinsic and extrinsic values.              4.3. Backprop Through Time Window Size
+               is achieved by avoiding the coin and visiting all remaining        In this section we analyze the impact of having a backprop
+               states (obtaining an extrinsic return of zero). In principle,      through time window size. More concretely, we analyze its
+               NGUshould be able to learn these policies jointly. How-            impact on the base algorithm R2D2 to see its effect with-
+               ever, we observe that the exploitative policy in NGU strug-        out NGUoranyoftheimprovementswepropose. Further,
+               gles to solve the task as intrinsic motivation reward scale        we also analyze its effect on Agent57, to see if any of the
+               increases. As we increase the scale of the intrinsic reward,       improvements on NGU overlap with this change. In both
+               its value becomes muchgreaterthanthatoftheextrinsicre-             cases, we compare using backprop through time window
+               ward. As a consequence, the conditional state-action value         sizes of 80 (default in R2D2) versus 160, higher values en-
+               networkofNGUisrequiredtorepresentverydifferentval-                 able credit assignment further back.
+               ues depending on the β we condition on. This implies that
+                                        j                                         In aggregated terms over the challenging set, its effect
+               the network is increasingly required to have more ﬂexible
+               representations. Using separate networks dramatically in-          seems to be the same for both R2D2 and Agent57: us-
+               creases its robustness to the intrinsic reward weight that is      ing a longer backprop through time window appears to be
+               used. Note that this effect would not occur if the episode         initially slower, but results in better overall stability and
+               did not terminate after collecting the coin. In such case,         slightly higher ﬁnal score.     A detailed comparison over
+               exploratory and exploitative policies would be allowed to          those 10 games is shown in App. H.2. This effect can be
+               be very similar: both could start by collecting the coin as        seen clearly in the game of Solaris, as observed in Fig. 6.
+               quickly as possible. In Fig. 4 we can see that this improve-       This is also the game showing the largest improvement in
+               mentalsotranslatestothechallengingset. NGUachievesa                terms of ﬁnal score. This is again general improvement, as
+               muchloweraverageCHNSthanitsseparatenetworkcoun-                    it enhances performance on all the challenging set games.
+               terpart. We also observe this phenomenon when we incor-            For further details we report the scores in App. H.1.
+               porate the meta-controller. Agent57 suffers a drop of per-
+               formance that is greater than 20% when the separate net-           4.4. Adaptive Exploration
+               workimprovementisremoved.                                          In this section, we analyze the effect of using the meta-
+               We can also see that it is a general improvement: it does          controller described in Sec. 3.1 in both the actors and the
+               not show worse performance on any of the 10 games of               evaluator. To isolate the contribution of this improvement,
+               the challenging set. More concretely, the largest improve-         we evaluate two settings: R2D2 and NGU with separate
+               ment is seen in the case of Surround, where NGU obtains            networks, with and without meta-controller. Results are
+               a score on par with a random policy, whereas with the new          shown in Fig. 7. Again, we observe that this is a general
+               parametrization it reaches a score that is nearly optimal.         improvement in both comparisons. Firstly, we observe that
+               ThisisbecauseSurroundisacasethatissimilartothe“ran-                there is a great value in this improvement on its own, en-
+               dom coin” environment mentioned above: as the player               hancing the ﬁnal performance of R2D2 by close to 20%
+               makes progress in the game, they have the choice to sur-           CHNS.Secondly,weobservethatthebeneﬁtonNGUwith
+                                                    Agent57: Outperforming the Atari Human Benchmark
+                                                                                  Figure 8. Best arm chosen by the evaluator of Agent57 over train-
+               Figure 7. Performancecomparisonforadaptiveexplorationonthe         ing for different games.
+               10-game challenging set.
+               separate networks is more modest than for R2D2. This in-
+               dicates that there is a slight overlap in the contributions of     ent skills that are required to be performant on such diverse
+               the separate network parameterization and the use of the           set of games: exploration and exploitation and long-term
+               meta-controller. The bandit algorithm can adaptively de-           credit assignment. To do that, we propose simple improve-
+               crease the value of β when the difference in scale between         mentstoanexistingagent, Never Give Up, which has good
+               intrinsic and extrinsic rewards is large. Using the meta-          performance on hard-exploration games, but in itself does
+               controller allows to include very high discount values in          not have strong overall performance across all 57 games.
+               the set {γj}N . Speciﬁcally, running R2D2 with a high              These improvements are i) using a different parameteri-
+                            j=0
+               discount factor, γ = 0.9999 surpasses the human baseline           zation of the state-action value function, ii) using a meta-
+               in the game of Skiing. However, using that hyperparameter          controller to dynamically adapt the novelty preference and
+               across the full set of games, renders the algorithm very un-       discount, and iii) the use of longer backprop-through time
+               stable and damages its end performance. All the scores in          windowtolearn from using the Retrace algorithm.
+               the challenging set for a ﬁxed high discount (γ = 0.9999)          Thismethodleveragesagreatamountofcomputationtoits
+               variant of R2D2 are reported in App. H.1. When using a             advantage: similarly to NGU, it is able to scale well with
+               meta-controller, the algorithm does not need to make this          increasing amounts of computation. This has also been the
+               compromise: it can adapt it in a per-task manner.                  case with the many recent achievements in deep RL (Sil-
+               Finally, the results and discussion above show why it is           ver et al., 2016; Andrychowicz et al., 2018; Vinyals et al.,
+               beneﬁcial to use different values of β and γ on a per-task         2019). While this enables our method to achieve strong
+               basis. At the same time, in Sec. 3 we hypothesize it would         performance, an interesting research direction is to pursue
+               also be useful to vary those coefﬁcients throughout train-         ways in which to improve the data efﬁciency of this agent.
+               ing. In Fig. 8 we can see the choice of (β , γ ) produc-           Additionally, this agent shows an average capped human
+                                                              j   j
+               ing highest returns on the meta-controller of the evaluator        normalized score of 100%. However, in our view this by
+               acrosstrainingforseveralgames. Somegamesclearlyhave                nomeansmarkstheendofAtariresearch,notonlyinterms
+               a preferred mode: on Skiing the high discount combination          of efﬁciency as above, but also in terms of general perfor-
+               is quickly picked up when the agent starts to learn, and on        mance. We offer two views on this: ﬁrstly, analyzing the
+               Heroahighβ andlowγ isgenerally preferred at all times.             performance among percentiles gives us new insights on
+               On the other hand, some games have different preferred             howgeneral algorithms are. While Agent57 achieves great
+               modes throughout training: on Gravitar, Crazy Climber,             results on the ﬁrst percentiles of the 57 games and holds
+               Beam Rider, and Jamesbond, Agent57 initially chooses to            better mean and median performance than NGU or R2D2,
+               focus on exploratory policies with low discount, and, as           as MuZero shows, it could still obtain much better average
+               training progresses, the agent shifts into producing experi-       performance. Secondly,aspointedoutbyToromanoffetal.
+               ence from higher discount and more exploitative policies.          (2019), all current algorithms are far from achieving opti-
+                                                                                  malperformanceinsomegames. Tothatend,keyimprove-
+               5. Conclusions                                                     ments to use might be enhancements in the representations
+                                                                                  that Agent57 and NGU use for exploration, planning (as
+               Wepresenttheﬁrstdeepreinforcementlearningagentwith                 suggested by the results achieved by MuZero) as well as
+               performance above the human benchmark on all 57 Atari              better mechanisms for credit assignment (as highlighted by
+               games. The agent is able to balance the learning of differ-        the results seen in Skiing).
+                                                    Agent57: Outperforming the Atari Human Benchmark
+               Acknowledgments                                                    Burda, Y., Edwards, H., Storkey, A., and Klimov, O. Ex-
+               We thank Daan Wierstra, Koray Kavukcuoglu, Vlad                       ploration by random network distillation. arXiv preprint
+               Mnih, Vali Irimia, Georg Ostrovski, Mohammad Ghesh-                   arXiv:1810.12894, 2018.
+               laghi Azar, Rémi Munos, Bernardo Avila Pires, Florent              Choi, J., Guo, Y., Moczulski, M., Oh, J., Wu, N., Norouzi,
+               Altché, Steph Hughes-Fitt, Rory Fitzpatrick, Andrea Ban-              M., and Lee, H. Contingency-aware exploration in re-
+               ino, Meire Fortunato, Melissa Tan, Benigno Uria, Borja                inforcement learning. arXiv preprint arXiv:1811.01483,
+               Ibarz, Andre Barreto, Diana Borsa, Simon Osindero, Tom                2018.
+               Schaul,andmanyothercolleaguesatDeepMindforhelpful                  Ecoffet, A., Huizinga, J., Lehman, J., Stanley, K. O.,
+               discussions and comments on the manuscript.                           and Clune, J. Go-explore: a new approach for hard-
+               References                                                            exploration problems. arXiv preprint arXiv:1901.10995,
+                                                                                     2019.
+               Achiam, J., Edwards, H., Amodei, D., and Abbeel, P.                Eysenbach, B., Gupta, A., Ibarz, J., and Levine, S. Di-
+                  Variational option discovery algorithms. arXiv preprint            versity is all you need: Learning skills without a reward
+                  arXiv:1807.10299, 2018.                                            function. arXiv preprint arXiv:1802.06070, 2018.
+               Andrychowicz,M.,Baker,B.,Chociej,M.,Jozefowicz,R.,                 Ferret, J., Marinier, R., Geist, M., and Pietquin, O. Self-
+                  McGrew,B.,Pachocki,J.,Petron,A.,Plappert,M.,Pow-                   attentional credit assignment for transfer in reinforce-
+                  ell, G., Ray, A., et al. Learning dexterous in-hand ma-            mentlearning. IJCAI, 2020.
+                  nipulation. arXiv preprint arXiv:1808.00177, 2018.              Fortunato, M., Azar, M.G., Piot, B., Menick, J., Osband, I.,
+               Arjona-Medina, J. A., Gillhofer, M., Widrich, M., Un-                 Graves, A., Mnih, V., Munos, R., Hassabis, D., Pietquin,
+                  terthiner, T., Brandstetter, J., and Hochreiter, S. Rudder:        O., et al. Noisy networks for exploration. arXiv preprint
+                  Return decomposition for delayed rewards. In Advances              arXiv:1706.10295, 2017.
+                  in Neural Information Processing Systems, pp. 13544–            Fortunato, M., Tan, M., Faulkner, R., Hansen, S., Badia,
+                  13555, 2019.                                                       A.P.,Buttimore,G.,Deck,C.,Leibo,J.Z.,andBlundell,
+               Aytar, Y., Pfaff, T., Budden, D., Paine, T., Wang, Z., and            C. Generalization of reinforcement learners with work-
+                  deFreitas, N. Playing hard exploration games by watch-             ing and episodic memory. In Advances in Neural Infor-
+                  ing youtube. In Advances in Neural Information Pro-                mation Processing Systems, pp. 12448–12457, 2019.
+                  cessing Systems, pp. 2930–2941, 2018.                           Fu, J., Co-Reyes, J., and Levine, S. Ex2: Exploration with
+               Barreto, A., Dabney, W., Munos, R., Hunt, J. J., Schaul, T.,          exemplar models for deep reinforcement learning. In
+                  van Hasselt, H. P., and Silver, D. Successor features for          Advances in neural information processing systems, pp.
+                  transfer in reinforcement learning. In Advances in neural          2577–2587, 2017.
+                  information processing systems, pp. 4055–4065, 2017.            Garivier, A. and Moulines, E. On upper-conﬁdence bound
+                                                                                     policies for non-stationary bandit problems, 2008.
+               Barto, A. G. Intrinsic motivation and reinforcement learn-         Gregor, K., Rezende, D. J., and Wierstra, D. Variational in-
+                  ing. In Intrinsically motivated learning in natural and            trinsic control. arXiv preprint arXiv:1611.07507, 2016.
+                  artiﬁcial systems, pp. 17–47. Springer, 2013.
+               Bellemare, M., Srinivasan, S., Ostrovski, G., Schaul, T.,          Harutyunyan, A., Dabney, W., Mesnard, T., Azar, M. G.,
+                  Saxton, D., and Munos, R. Unifying count-based explo-              Piot, B., Heess, N., van Hasselt, H. P., Wayne, G., Singh,
+                  ration and intrinsic motivation. In Advances in Neural             S., Precup, D., et al. Hindsight credit assignment. In
+                  Information Processing Systems, pp. 1471–1479, 2016.               Advances in neural information processing systems, pp.
+                                                                                     12467–12476, 2019.
+               Bellemare, M. G., Naddaf, Y., Veness, J., and Bowling, M.          Horgan, D., Quan, J., Budden, D., Barth-Maron, G.,
+                  The arcade learning environment: An evaluation plat-               Hessel, M., Van Hasselt, H., and Silver, D.           Dis-
+                  formforgeneralagents. JournalofArtiﬁcialIntelligence               tributed prioritized experience replay.    arXiv preprint
+                  Research, 47:253–279, 06 2013.                                     arXiv:1803.00933, 2018.
+               Blundell, C., Uria, B., Pritzel, A., Li, Y., Ruderman,             Hung, C.-C., Lillicrap, T., Abramson, J., Wu, Y., Mirza,
+                  A., Leibo, J. Z., Rae, J., Wierstra, D., and Hass-                 M., Carnevale, F., Ahuja, A., and Wayne, G. Optimiz-
+                  abis, D.   Model-free episodic control. arXiv preprint             ing agent behavior over long time scales by transporting
+                  arXiv:1606.04460, 2016.                                            value. Nature communications, 10(1):1–12, 2019.
+                                                                   Agent57: Outperforming the Atari Human Benchmark
+                    Jaderberg, M., Dalibard, V., Osindero, S., Czarnecki,                                 Pohlen, T., Piot, B., Hester, T., Azar, M. G., Horgan, D.,
+                       W. M., Donahue, J., Razavi, A., Vinyals, O., Green,                                    Budden, D., Barth-Maron, G., Van Hasselt, H., Quan, J.,
+                                                                                                                  ˇ
+                       T., Dunning, I., Simonyan, K., et al.                         Population               Vecerík, M., et al. Observe and look further: Achiev-
+                       based training of neural networks.                      arXiv preprint                 ing consistent performance on atari.                     arXiv preprint
+                       arXiv:1711.09846, 2017.                                                                arXiv:1805.11593, 2018.
+                    Kapturowski, S., Ostrovski, G., Quan, J., Munos, R., and                              Pritzel, A., Uria, B., Srinivasan, S., Puigdomènech, A.,
+                       Dabney, W. Recurrent experience replay in distributed                                  Vinyals, O., Hassabis, D., Wierstra, D., and Blundell,
+                       reinforcement learning. In International Conference on                                 C. Neural episodic control. ICML, 2017.
+                       Learning Representations, 2018.                                                    Puigdomènech Badia, A., Sprechmann, P., Vitvitskyi, A.,
+                    Ke, N. R., Goyal, A., Bilaniuk, O., Binas, J., Charlin,                                   Guo, D., Piot, B., Kapturowski, S., Tieleman, O., Ar-
+                       L., Pal, C., and Bengio, Y.                  Sparse attentive back-                    jovsky, M., Pritzel, A., Bolt, A., and Blundell, C. Never
+                       tracking: Long-range credit assignment in recurrent net-                               give up: Learning directed exploration strategies.                        In
+                       works. arXiv preprint arXiv:1711.02326, 2017.                                          International Conference on Learning Representations,
+                                                                                                              2020.
+                    Liu, Y., Luo, Y., Zhong, Y., Chen, X., Liu, Q., and                                   Puterman, M. L. Markov decision processes. Handbooks
+                       Peng, J. Sequence modeling of temporal credit assign-                                  in operations research and management science, 2:331–
+                       mentforepisodicreinforcementlearning. arXivpreprint                                    434, 1990.
+                       arXiv:1905.13420, 2019.
+                    Mnih, V., Kavukcuoglu, K., Silver, D., Rusu, A. A., Ve-                               Salimans, T., Ho, J., Chen, X., Sidor, S., and Sutskever,
+                       ness, J., Bellemare, M. G., Graves, A., Riedmiller, M.,                                I.  Evolution strategies as a scalable alternative to rein-
+                       Fidjeland, A. K., Ostrovski, G., et al. Human-level con-                               forcement learning. arXiv preprint arXiv:1703.03864,
+                       trol through deep reinforcement learning. Nature, 518                                  2017.
+                       (7540):529, 2015.                                                                  Savinov, N., Raichuk, A., Marinier, R., Vincent, D., Polle-
+                    Munos,R., Stepleton, T., Harutyunyan, A., and Bellemare,                                  feys, M., Lillicrap, T., and Gelly, S. Episodic curiosity
+                       M. Safe and efﬁcient off-policy reinforcement learning.                                through reachability. arXiv preprint arXiv:1810.02274,
+                       In Advances in Neural Information Processing Systems,                                  2018.
+                       pp. 1046–1054, 2016.                                                               Schaul, T., Borsa, D., Ding, D., Szepesvari, D., Ostrovski,
+                    Osband, I., Blundell, C., Pritzel, A., and Van Roy, B. Deep                               G., Dabney, W., and Osindero, S. Adapting behaviour
+                       exploration via bootstrapped dqn. In Advances In Neural                                for learning progress, 2019.
+                       Information Processing Systems, pp. 4026–4034, 2016.                               Schmidhuber, J. A possibility for implementing curiosity
+                    Osband, I., Aslanides, J., and Cassirer, A. Randomized                                    and boredom in model-building neural controllers. In
+                       prior functions for deep reinforcement learning. In Ad-                                Proc. of the international conference on simulation of
+                       vances in Neural Information Processing Systems, pp.                                   adaptive behavior: From animals to animats, pp. 222–
+                       8617–8629, 2018.                                                                       227, 1991.
+                                                                                                          Schrittwieser, J., Antonoglou, I., Hubert, T., Simonyan, K.,
+                    Ostrovski, G., Bellemare, M. G., van den Oord, A., and                                    Sifre, L., Schmitt, S., Guez, A., Lockhart, E., Hassabis,
+                       Munos, R. Count-based exploration with neural density                                  D., Graepel, T., et al.           Mastering atari, go, chess and
+                       models. InProceedingsofthe34thInternationalConfer-                                     shogi by planning with a learned model. arXiv preprint
+                       ence on Machine Learning-Volume 70, pp. 2721–2730.                                     arXiv:1911.08265, 2019.
+                       JMLR.org,2017.
+                                                                                                          Silver, D., Huang, A., Maddison, C. J., Guez, A., Sifre, L.,
+                    Oudeyer, P.-Y., Kaplan, F., and Hafner, V. V. Intrinsic mo-                               VanDenDriessche,G.,Schrittwieser, J., Antonoglou, I.,
+                       tivation systems for autonomous mental development.                                    Panneershelvam, V., Lanctot, M., et al. Mastering the
+                       IEEE transactions on evolutionary computation, 11(2):                                  game of go with deep neural networks and tree search.
+                       265–286, 2007.                                                                         nature, 529(7587):484–489, 2016.
+                    Plappert, M., Houthooft, R., Dhariwal, P., Sidor, S., Chen,                           Strehl, A. L. and Littman, M. L. An analysis of model-
+                       R. Y., Chen, X., Asfour, T., Abbeel, P., and Andrychow-                                based interval estimation for markov decision processes.
+                       icz, M. Parameter space noise for exploration. arXiv                                   Journal of Computer and System Sciences, 74(8):1309–
+                       preprint arXiv:1706.01905, 2017.                                                       1331, 2008.
+                                               Agent57: Outperforming the Atari Human Benchmark
+              Tang, H., Houthooft, R., Foote, D., Stooke, A., Chen,
+                O. X., Duan, Y., Schulman, J., DeTurck, F., and Abbeel,
+                P. # exploration: A study of count-based exploration for
+                deep reinforcement learning. In Advances in neural in-
+                formation processing systems, pp. 2753–2762, 2017.
+              Toromanoff, M., Wirbel, E., and Moutarde, F. Is deep re-
+                inforcement learning really superhuman on atari? arXiv
+                preprint arXiv:1908.04683, 2019.
+              Vinyals, O., Babuschkin, I., Czarnecki, W. M., Mathieu,
+                M., Dudzik, A., Chung, J., Choi, D. H., Powell, R.,
+                Ewalds, T., Georgiev, P., et al. Grandmaster level in star-
+                craft ii using multi-agent reinforcementlearning. Nature,
+                575(7782):350–354, 2019.
+              Wang, Z., Schaul, T., Hessel, M., Van Hasselt, H., Lanc-
+                tot, M., and De Freitas, N. Dueling network architec-
+                tures for deep reinforcement learning.   arXiv preprint
+                arXiv:1511.06581, 2015.
+              Weber, T., Heess, N., Buesing, L., and Silver, D. Credit
+                assignmenttechniquesinstochasticcomputationgraphs.
+                arXiv preprint arXiv:1901.01761, 2019.
+              Xu, Z., van Hasselt, H. P., and Silver, D. Meta-gradient re-
+                inforcementlearning. In Advances in neural information
+                processing systems, pp. 2396–2407, 2018.

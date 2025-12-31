@@ -1,0 +1,55 @@
+                      we increase the effective batch size to 4M and observe
+                      the validation loss and BLEU scores on the high-resource
+                      language pair, German-English (similar trend can also be observed for other language pairs). Opti-
+                      mization parameters used here are identical to those for previous experiments. To our knowledge,
+                      4Mtokensperbatchisthelargest batch size that has ever been used in literature to date for training
+                      NMTmodels [41]. Table 5 shows that both metrics improve signiﬁcantly as we increase the batch
+                      size. We believe further increasing batch size can potentially yield more improvement.
+                      6   Design Features and Trade-Offs
+                      Several approaches have been proposed to enable efﬁcient large-scale model parallelism. However,
+                      each approach chooses its own set of trade-offs, making it suitable for scaling speciﬁc architectures
+                      under particular hardware constraints. Here we highlight the various design choices and trade-offs
+                      involved with several model-parallelism approaches, and how they compare with GPipe in terms of
+                      ﬂexibility, scalability and efﬁciency under various hardware constraints and architecture variants.
+                      Thecore idea of model parallelism involves partitioning a network into different computational units,
+                      which are then placed on different devices [42, 43, 44, 45]. Conceptually this supports scaling a
+                      large spectrum of models to huge capacities. However these approaches typically suffer from low
+                      hardware utilization and device communication bottlenecks. Single Program Multiple Data (SPMD)
+                      and pipeline parallelism have been proposed as solutions to counter these challenges.
+                      Mesh-Tensorﬂow[34] follows the SPMD paradigm, which extends the Single Instruction Multiple
+                      Data (SIMD) approach used for data parallelism to other tensor dimensions. SPMD allows splitting
+                      every computation across multiple devices, allowing the user to scale the size of individual matrix
+                      multiplications (and thus, the model parameters of individual layers) linearly with the number of
+                      accelerators. However, this also introduces high communication overhead between the accelerators
+                      due to an abundance of AllReduce-like operations used to combine the outputs of each parallelized
+                      matrix multiplication. This limits the applicability of the approach to scenarios where accelerators
+                      are connected with high speed interconnects. Further, SPMD limits the type of operations that can be
+                      efﬁciently scaled, restricting its use to a speciﬁc set of network architectures and machine learning
+                      tasks. For example, splitting along the channel dimension of convolution layers under this paradigm
+                      is not efﬁcient given that channels are effectively fully connected, whereas splitting along the spatial
+                      dimension requires sophisticated techniques for the halo regions. While SPMD allows scaling the
+                      model depth by making each operation smaller, it requires splitting each layer over a larger number
+                      of accelerators, which in turn further increases the communication overhead across devices.
+                      Other approaches have attempted to utilize pipeline-parallelism-based approaches to scale neural
+                      networks [46, 47]. The most recent iteration of pipeline parallelism applied to neural network
+                      training is PipeDream [48], which targets reducing the communication overhead for parameter
+                      servers [49]. PipeDream pipelines the execution of forward passes and intersperses them with
+                      backward passes in an attempt to maximize hardware utilization. This design suffers from weight
+                      staleness introduced by asynchronous backward updates. To avoid optimization issues stemming
+                      from the weight staleness, PipeDream requires maintaining multiple versioned copies of the model
+                      parameters on each accelerator in order to compute the gradient updates accurately, preventing users
+                      from scaling to bigger models.
+                      GPipeintroduces a new brand of pipeline parallelism that pipelines the execution of micro-batches
+                      before applying a single synchronous gradient update for the entire mini-batch. Our novel batch-
+                      splitting pipeline parallelism algorithm, when combined with re-materialization, allows scaling
+                      to a large number of micro-batches. This minimizes the bubble overhead without the need for
+                      asynchronous gradient updates. GPipe enables the user to scale model size linearly with the number
+                      of accelerators used. Unlike SPMD, pipeline parallelism introduces little additional communication
+                      overheadwhenscalingthemodel. Inter-devicecommunicationonlytakesplaceatpartitionboundaries
+                      for every micro-batch and the introduced communication overhead is marginal, extending the utility
+                      of GPipe to situations where high-speed device interconnects are not available. However, GPipe
+                      currently assumes that a single layer ﬁts within the memory requirements of a single accelerator3.
+                      Additionally, micro-batch splitting requires complicated strategies to support layers that require
+                         3One possible way around this limitation is splitting a single matrix-multiplication into smaller ones and
+                      spreading them sequentially across multiple layers.
+                                                             8

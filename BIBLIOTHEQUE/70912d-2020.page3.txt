@@ -1,0 +1,58 @@
+                                                            Generative Pretraining from Pixels
+               (Radford et al., 2019) formulation of the transformer de-       always at the ﬁnal layer:
+                                                            l
+               coder block, which acts on an input tensor h as follows:
+                                                                                                        fl = hnli
+                              l                 l                                                               i i
+                            n =layer norm(h )
+                              l    l                          l                where 0 ≤ l ≤ L. We will show in the experiments section
+                            a =h +multihead attention(n )
+                           l+1     l                      l                    that the best features often lie in the middle of the network.
+                          h    =a +mlp(layer norm(a ))                         As in ﬁne-tuning, we project these intermediate features
+               In particular, layer norms precede both the attention and       to produce class logits. Because we view the features as
+               mlp operations, and all operations lie strictly on residual     ﬁxed when linear probing, this projection contains the only
+               paths. We ﬁnd that such a formulation allows us to scale the    trainable weights, so we can only optimize LCLF.
+               transformer with ease.                                          3. Methodology
+               The only mixing across sequence elements occurs in the
+               attention operation, and to ensure proper conditioning when     Although supervised pre-training is the dominant paradigm
+               training the AR objective, we apply the standard upper          for image classiﬁcation, curating large labeled image
+               triangular mask to the n×n matrix of attention logits. When     datasets is both expensive and time consuming. Instead
+               using the BERT objective, no attention logit masking is         of further scaling up labeling efforts, we can instead as-
+               required: after applying content embeddings to the input        pire to learn general purpose representations from the much
+               sequence, we zero out the positions in M.                       larger set of available unlabeled images and ﬁne-tune them
+               Additionally, since we learn independent position embed-        for classiﬁcation. We investigate this setting using Ima-
+               dings for each sequence element, our BERT model has no          geNet as a proxy for a large unlabeled corpus, and small
+               positional inductive biases (i.e. it is permutation invariant). classic labeled datasets (CIFAR-10, CIFAR-100, STL-10)
+               Put another way, any spatial relationships between posi-        as proxies for downstream tasks. For our largest model, we
+               tions must be learned by the model at train time. This is       use an additional 100 million unlabeled web images, ﬁltered
+               not entirely true for the AR model, as choosing the raster      to be similar to ImageNet.
+               order also ﬁxes a prespeciﬁed ordering of the condition-        Even in cases where labels are available, unsupervised or
+               als. Nevertheless, permutation invariance is a property in      self-supervised pre-training can still provide beneﬁts in data
+               strong contrast to convolutional neural networks, which in-     efﬁciency or on ﬁne-tuning speed. We investigate this set-
+               corporate the inductive bias that features should arise from    ting by pre-training without labels and then ﬁne-tuning or
+               spatially proximate elements.                                   linear probing with labels.
+               Following the ﬁnal transformer layer, we apply a layer norm     3.1. Dataset and Data Augmentation
+                L                  L                                  L
+               n =layer norm(h ), and learn a projection from n to             WeusetheImageNetILSVRC2012trainingdataset,split-
+               logits parameterizing the conditional distributions at each     ting off 4% as our experimental validation set and report
+               sequence element. When training BERT, we simply ignore          results on the ILSVRC 2012 validation set as our test set.
+               the logits at unmasked positions.                               For CIFAR-10, CIFAR-100 and STL-10, we split off 10%
+               2.3. Fine-tuning                                                of the provided training set instead. We ignore the provided
+               Whenﬁne-tuning, we average pool nL across the sequence          unlabeled examples in STL-10, which constitute a subset of
+               dimension to extract a d-dimensional vector of features per     ImageNet.
+               example:                                                        No data augmentation is used when pre-training on web
+                                        L       L                              images, and lightweight data augmentation is used when
+                                       f  =hn ii
+                                                i                              pre-training or ﬁne-tuning on ImageNet. Speciﬁcally, when
+               Welearnaprojection from fL to class logits, which we use
+               to minimize a cross entropy loss L      .                       employingdataaugmentation, werandomlyresizeanimage
+                                                  CLF                          such that the shorter sidelength is in the range [256,384]
+               While ﬁne-tuning on LCLF yields reasonable downstream           and then take a random 224 × 224 crop. When evaluating
+               performance, we ﬁnd empirically that the joint objective        on ImageNet, we resize the image such that the shorter
+                                     LGEN +LCLF                                sidelength is 224, and use the single 224 × 224 center crop.
+               L      ∈{L ,L            } works even better. Similar ﬁnd-      Whenfull-network ﬁne-tuning on CIFAR-10 and CIFAR-
+                GEN         AR BERT                                            100, weusetheaugmentationpopularizedbyWideResidual
+               ings were reported by Radford et al. (2018).                    Networks: 4 pixels are reﬂection padded on each side, and
+               2.4. Linear Probing                                             a 32×32cropisrandomlysampledfromthepaddedimage
+               Extracting ﬁxed features for linear probing follows a similar   or its horizontal ﬂip (Zagoruyko & Komodakis, 2016).
+               procedure to ﬁne-tuning, except that average pooling is not     Once optimal hyperparameters are found, we fold our ex-

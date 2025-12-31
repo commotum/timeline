@@ -1,0 +1,67 @@
+                             fusion block avoids this by leveraging a set of concise queries which attend to the scene features
+                             from both modalities in a sequential fashion where the computational footprint of each operation is
+                             manageable since T ≪ N and T ≪ M .
+                                                         i              i
+                             Our transformer-based panoptic decoder is composed of four such fusion blocks, each involv-
+                             ing cross-attention to voxel features at different strides, and their corresponding image features.
+                             We proceed in a coarse-to-fine manner where the inputs to the fusion blocks are ordered as:
+                             (V ,F ),(V ,F ),(V ,F ),(V ,F ).           Note that this query-level fusion compliments the fine-
+                                8   8     4   4     2    2     1   1
+                             grained, point-level fusion in the LiDAR backbone explained in Sec. 3.1. The updated queries
+                                                                    ′     T×D
+                             output by the decoder, denoted by Q ∈ R            , are used to obtain logits for the object tracklet and
+                             semantic masks, where each logit represents the log probability of a Bernoulli distribution capturing
+                             whether the query represents a specific instance or class. Per-point object tracklet masks M are
+                                                                                                                                 p
+                                                                                       ′                                      N×D
+                             calculated as the dot-product of the updated queries Q with the point-level features Z ∈ R            :
+                                                                                   ′T     N×T
+                                                                     M ←−Z·Q ∈R                                                     (2)
+                                                                       p
+                             Semantic (per-class) confidence scores are obtained by passing Q′ through a linear layer. This layer
+                             has a fan-out of 1 + C to predict a classification score for each of the C semantic classes, and an
+                             additional ‘no-object’ score which is used during inference to detect inactive queries that represent
+                             neither an object nor a ‘stuff’ class. We use the semantic prediction to decide whether the query
+                             maskbelongs to an object track, or to one of the ‘stuff’ classes.
+                             Soft-masked Cross-attention:        Inspired by [50, 28], we employ soft-masked cross-attention to
+                             improve convergence. Given a set of queries Q, the output Q           of cross-attention is computed as:
+                                                                                             x-attn   
+                                                                                            T        T
+                                                                                Q(K+E) +αM
+                                                         Qx-attn ←− softmax              √           v   V                          (3)
+                                                                                           D
+                                           {N ,M }×D               {N ,M }×D
+                             Here, K ∈ R      i   i     andV ∈R i i             denote the keys and values (derived as linear projec-
+                                                                         {N ,M }×D
+                             tions from Vi or Fi), respectively, E ∈ R      i  i      denotes positional encodings (explained in the
+                             next paragraph), α is a scalar weighting factor, and MT is the voxel-level query mask computed by
+                                                                                       v
+                             applying Eq. 2 to Q, followed by voxelization and downsampling to the required stride. Intuitively,
+                             the term “αMT” amplifies the correspondence between queries and voxel/image features based on
+                                            v
+                             the mask prediction from the previous layer. This makes the queries focus on their respective ob-
+                             ject/class targets.
+                             Positional Encodings: We impart the cross-attention operation with 3D coordinate information of
+                             the features in Vi by using positional encodings (E in Eq. 3). These contain two components: (1)
+                             Fourier encodings [51] of the (x,y,z) coordinates, and (2) a depth component which is obtained
+                             by applying sine and cosine activations at various frequencies to the Euclidean distance of each
+                             voxel feature from the LiDAR sensor. Although the depth can theoretically be inferred from the
+                             xyz coordinates, we find it beneficial to explicitly encode it. Intuitively, in a multi-modal setup
+                             the depth provides a useful cue for how much the model should rely on features from different
+                             modalities, e.g., for far-away points the image features are more informative as the LiDAR is very
+                             sparse. Both components have D dimensions and are concatenated to obtain the final positional
+                                                                 2
+                                               {N ,M }×D
+                             encoding E ∈ R       i  i      . For the image features Fi, we use the encoding of the corresponding
+                             voxel.
+                             3.3   Tracklet Association Module (TAM)
+                             The 4D panoptic task requires object track IDs to be consistent over time. Since 4D-Former pro-
+                             cesses overlapping clips, one way to achieve temporal consistency is to associate tracklet masks
+                             across clips based on their respective mask IoUs, as done by existing works [9, 11, 33]. However,
+                             this approach cannot resolve even brief occlusions which frequently arise due to inaccurate mask
+                             predictions and/or objects moving out of view. To mitigate this shortcoming, we propose a learnable
+                             Tracklet Association Module (TAM) which can associate tracklets across longer frame gaps and
+                             reasons over the objects’ appearances and spatial locations.
+                             TheTAMisimplementedasanMLPwhichpredictsanassociationscoreforagivenpairoftracklets.
+                             The input to our TAM is constructed by concatenating the following attributes of the input tracklet
+                                                                                 5

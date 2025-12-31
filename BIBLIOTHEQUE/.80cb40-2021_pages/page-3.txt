@@ -1,0 +1,72 @@
+                             formulation. Note, that our MaskFormer module can convert any per-pixel classiﬁcation model to the
+                             maskclassiﬁcation setting, allowing seamless adoption of advances in per-pixel classiﬁcation.
+                             Maskclassiﬁcation is commonly used for instance-level segmentation tasks [18, 22]. These tasks
+                             require a dynamic number of predictions, making application of per-pixel classiﬁcation challenging
+                             as it assumes a static number of outputs. Omnipresent Mask R-CNN [19] uses a global classiﬁer to
+                             classify mask proposals for instance segmentation. DETR [3] further incorporates a Transformer [37]
+                             design to handle thing and stuff segmentation simultaneously for panoptic segmentation [22]. How-
+                             ever, these mask classiﬁcation methods require predictions of bounding boxes, which may limit their
+                             usage in semantic segmentation. The recently proposed Max-DeepLab [38] removes the dependence
+                             onboxpredictions for panoptic segmentation with conditional convolutions [35, 40]. However, in
+                             addition to the main mask classiﬁcation losses it requires multiple auxiliary losses (i.e., instance
+                             discrimination loss, mask-ID cross entropy loss, and the standard per-pixel classiﬁcation loss).
+                             3    FromPer-PixeltoMaskClassiﬁcation
+                             In this section, we ﬁrst describe how semantic segmentation can be formulated as either a per-pixel
+                             classiﬁcation or a mask classiﬁcation problem. Then, we introduce our instantiation of the mask
+                             classiﬁcation model with the help of a Transformer decoder [37]. Finally, we describe simple
+                             inference strategies to transform mask classiﬁcation outputs into task-dependent prediction formats.
+                             3.1   Per-pixel classiﬁcation formulation
+                             For per-pixel classiﬁcation, a segmentation model aims to predict the probability distribution over all
+                                                                                                          K H·W            K
+                             possibleK categoriesforeverypixelofanH×W image: y = {p |p ∈ ∆ }                      . Here∆ istheK-
+                                                                                                 i  i        i=1
+                             dimensional probability simplex. Training a per-pixel classiﬁcation model is straight-forward: given
+                                                              gt      gt  gt                 H·W
+                             ground truth category labels y      ={y |y ∈ {1,...,K}}               for every pixel, a per-pixel cross-
+                                                                      i   i                  i=1                 P
+                             entropy (negative log-likelihood) loss is usually applied, i.e., L       (y,ygt) =     H·W −logp (ygt).
+                                                                                               pixel-cls            i=1          i  i
+                             3.2   Maskclassiﬁcation formulation
+                             Maskclassiﬁcationsplitsthesegmentationtaskinto1)partitioning/groupingtheimageintoN regions
+                             (N does not need to equal K), represented with binary masks {m |m ∈ [0,1]H×W}N ; and 2)
+                                                                                                      i   i                i=1
+                             associating each region as a whole with some distribution over K categories. To jointly group and
+                             classify a segment, i.e., to perform mask classiﬁcation, we deﬁne the desired output z as a set of N
+                                                                           N
+                             probability-mask pairs, i.e., z = {(p ,m )}       . In contrast to per-pixel class probability prediction,
+                                                                    i   i  i=1
+                             for mask classiﬁcation the probability distribution p ∈ ∆K+1 contains an auxiliary “no object” label
+                                                                                   i
+                             (∅) in addition to the K category labels. The ∅ label is predicted for masks that do not correspond to
+                             any of the K categories. Note, mask classiﬁcation allows multiple mask predictions with the same
+                             associated class, making it applicable to both semantic- and instance-level segmentation tasks.
+                             Totrain a mask classiﬁcation model, a matching σ between the set of predictions z and the set of Ngt
+                                                       gt      gt   gt   gt                  gt          H×W Ngt                2
+                             ground truth segments z     ={(c ,m )|c ∈{1,...,K},m ∈{0,1}                       }    is required. Here
+                              gt                               i    i    i                   i                  i=1
+                             c is the ground truth class of the ith ground truth segment. Since the size of prediction set |z| = N
+                              i                      gt      gt                                      gt
+                             andgroundtruth set |z | = N       generally differ, we assume N ≥ N       andpadthesetofgroundtruth
+                             labels with “no object” tokens ∅ to allow one-to-one matching.
+                             Forsemanticsegmentation, atrivial ﬁxed matching is possible if the number of predictions N matches
+                             the number of category labels K. In this case, the ith prediction is matched to a ground truth region
+                             with class label i and to ∅ if a region with class label i is not present in the ground truth. In our
+                             experiments, we found that a bipartite matching-based assignment demonstrates better results than
+                             the ﬁxed matching. Unlike DETR [3] that uses bounding boxes to compute the assignment costs
+                             between prediction z and ground truth zgt for the matching problem, we directly use class and mask
+                                                   i                    j
+                                                     gt                  gt
+                             predictions, i.e., −p (c ) + L      (m ,m ),whereL            is a binary mask loss.
+                                                  i  j       mask    i   j            mask
+                             Totrain model parameters, given a matching, the main mask classiﬁcation loss L               is composed
+                                                                                                                  mask-cls
+                             of a cross-entropy classiﬁcation loss and a binary mask loss L         for each predicted segment:
+                                                                       h                       mask                   i
+                                                               X
+                                                         gt        N                  gt                            gt
+                                           L        (z,z ) =            −logp       (c )+1 gt      L     (m     , m ) .             (1)
+                                             mask-cls                           σ(j)  j      c 6=∅ mask     σ(j)    j
+                                                                   j=1                        j
+                                 2Different mask classiﬁcation methods utilize various matching rules. For instance, Mask R-CNN [19] uses
+                             a heuristic procedure based on anchor boxes and DETR [3] optimizes a bipartite matching between z and zgt.
+                                                                                 3

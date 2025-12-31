@@ -1,0 +1,75 @@
+                                                                                             I      O
+                          For program decoding, the decoder ﬁrst takes two attention vectors s and s   computed from IO
+                                                                                             t      t
+                          pairs and latent vector h  via double attention [17], and utilizes a max pooling layer to compute an
+                                                 t−1
+                          aggregated embedding mt for all IO pairs (Fig. 2(b)):
+                                                                                      I(j)  O(j)
+                                                 mt =MaxPool               (tanh(W[s      ; s   ]))                   (2)
+                                                                j∈{1,2,...,K}         t     t
+                          Here the superscript (j) indicates that the representation is for the j-th IO pair, [a;b] is vector
+                          concatenation of a and b, and W is a trainable matrix. To facilitate the prediction of long programs,
+                          we compute an attention vector d over previously generated program tokens using the standard
+                                                           t
+                          attention mechanism [5, 30]:
+                                                        d =Attention(m ,{p ,...,p        })                           (3)
+                                                          t                t   0     t−1
+                          Finally, the next token p is sampled from P[p ] = Softmax(V d )  where V is a trainable matrix.
+                                                 t                    t                t pt
+                          3.2   Latent Executor Design
+                          Asshowninourexperiments(Sec.5), the standard program decoder architecture may not be able
+                          to achieve strong performance in program synthesis when the program complexity increases. One
+                          main reason is that the standard program decoder only takes the initial IO pairs as the input without
+                          considering the program execution, thus the learned representation for the partial program does
+                          not effectively guide the synthesis process. Motivated by prior works that utilize execution traces
+                          for Karel program synthesis [12, 44, 47], in this paper, we introduce latent executor (Fig. 2(c))
+                                                                  ˆ                                       ˆ
+                          which maintains a second representation I during program decoding. Intuitively, I   models the
+                                                                   t                                      t−1
+                          hypothetical input of the partial program pt...T so that its output becomes O. Given the estimated
+                                ˆ                                                     ˆ
+                          input I    and the latent vector h , the latent executor returns I at the next time step t:
+                                 t−1                      t                           t
+                                                          ˆ                      ˆ
+                                                          I =LatentExecutor(I        , h )                            (4)
+                                                           t                     t−1   t
+                                             ˆ T
+                          Thecollection of {It}t=0 is the latent execution trace (LaET). With the help of latent executor, we
+                                                          ˆ
+                          nowusetheIOpairsIOt−1 := (It−1,O)instead of (I,O) for the program decoder (Eqn. 1).
+                          3.3   End-to-end Training
+                          Wetrain our model with supervised learning, by minimizing the sum of token prediction loss LProg,
+                          and the latent executor loss LExec:
+                                                 P              L=LProg+LExec                                         (5)
+                                                    T            ?
+                          Speciﬁcally, LProg :=        Loss(pt,p ) is the step-by-step cross-entropy loss between the pre-
+                                                    t=1          t             ?
+                          dicted programs p1...T and the ground truth programs p1...T.
+                          For latent executor, since the semantics of partial programs (e.g., partial C programs) are not always
+                          well-deﬁned, there is no step-by-step training supervision. However, the output of the executor should
+                          be consistent with the program speciﬁcation after taking the annotated ground truth program as the
+                                                   ˆ                                                      ˆ
+                          input. Therefore, we set I  = I (true input) and minimize the distance between I   and O (true
+                                                    0                                                      T
+                          output) after the program ﬁnishes:
+                                                                              ˆ
+                                                               LExec = Loss(IT,O)                                     (6)
+                          Note that LExec does not rely on any assumptions of the partial program semantics, and thus is
+                          applicable to both domain-speciﬁc languages and general-purpose programming languages such as C.
+                          In our evaluation, equipping with the latent executor signiﬁcantly improves the program prediction
+                          performance, where each program could include up to 256 tokens.
+                          3.4   DataRegenerationandIterative Retraining
+                          Interestingly, once our model is trained on the initial random generated programs D , the predicted
+                                                                                                          0
+                          program becomes more concise and resembles human-written code. While the exact token match
+                          accuracy is low even on the training set, the model still satisﬁes the IO pairs for many problems. We
+                          leverage such a phenomenon to construct a new dataset D with higher-quality programs from D .
+                                                                                  1                                     0
+                          Speciﬁcally, we run beam search on the trained model to predict program p0...T given input-output
+                          pairs in the training set. If model prediction p0...T satisﬁes all the input-output examples and held-out
+                          cases, we replace the original program p?  with p0...T in D1, and keep p?  otherwise. Afterward,
+                                                                0...T                           0...T
+                          we re-train the model on D . In Sec. 5, we will demonstrate that the retraining process further
+                                                     1
+                          improves the model performance, especially with smaller training datasets.
+                                                                         4

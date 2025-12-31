@@ -1,0 +1,688 @@
+                                                  ViViT: A Video Vision Transformer
+                                 ∗                           ∗                                                      ˇ ´†                        †
+               Anurag Arnab          Mostafa Dehghani           Georg Heigold          ChenSun         Mario Lucic         Cordelia Schmid
+                                                                     Google Research
+                                  {aarnab, dehghani, heigold, chensun, lucic, cordelias}@google.com
+                                       Abstract                                   that a pure-transformer based architecture has outperformed
+                                                                                  its convolutionalcounterpartsinimageclassiﬁcation. Doso-
+                 We present pure-transformer based models for video               vitskiy et al. [17] closely followed the original transformer
+              classiﬁcation, drawingupontherecentsuccessofsuchmod-                architecture of [67], and noticed that its main beneﬁts
+              els in image classiﬁcation.     Our model extracts spatio-          were observed at large scale – as transformers lack some
+              temporal tokens from the input video, which are then en-            of the inductive biases of convolutions (such as transla-
+              coded by a series of transformer layers. In order to han-           tional equivariance), they seem to require more data [17]
+              dle the long sequences of tokens encountered in video, we           or stronger regularisation [63].
+              propose several, efﬁcient variants of our model which fac-             Inspired by ViT, and the fact that attention-based ar-
+              torise the spatial- and temporal-dimensionsoftheinput. Al-          chitectures are an intuitive choice for modelling long-
+              though transformer-based models are known to only be ef-            range contextual relationships in video, we develop sev-
+              fective when large training datasets are available, we show         eral transformer-based models for video classiﬁcation. Cur-
+              howwecaneffectivelyregularise the model during training             rently, the most performant models are based on deep 3D
+              andleveragepretrainedimagemodelstobeabletotrainon                   convolutional architectures [8, 19, 20] which were a natu-
+              comparatively small datasets. We conduct thorough abla-             ral extension of image classiﬁcation CNNs [26, 59]. Re-
+              tion studies, and achieve state-of-the-art results on multiple      cently, these models were augmented by incorporating self-
+              video classiﬁcation benchmarks including Kinetics 400 and           attention into their later layers to better capture long-range
+              600, Epic Kitchens, Something-Something v2 and Moments              dependencies [74, 22, 78, 1].
+              in Time, outperforming prior methods based on deep 3D
+              convolutional networks.                                                As shown in Fig. 1, we propose pure-transformer mod-
+                                                                                  els for video classiﬁcation. The main operation performed
+              1. Introduction                                                     in this architecture is self-attention, and it is computed on
+                                                                                  a sequence of spatio-temporal tokens that we extract from
+                 Approaches based on deep convolutional neural net-               the input video. To effectively process the large number of
+              works have advanced the state-of-the-art across many stan-          spatio-temporal tokens that may be encountered in video,
+              dard datasets for vision problems since AlexNet [37]. At            wepresent several methods of factorising our model along
+              the same time, the most prominent architecture of choice in         spatial and temporal dimensions to increase efﬁciency and
+              sequence-to-sequence modelling (e.g. in natural language            scalability. Furthermore, to train our model effectively on
+              processing) is the transformer [67], which does not use con-        smaller datasets, we show how to reguliarise our model dur-
+              volutions, but is based on multi-headed self-attention. This        ing training and leverage pretrained image models.
+              operation is particularly effective at modelling long-range            We also note that convolutional models have been de-
+              dependencies and allows the model to attend over all ele-           veloped by the community for several years, and there are
+              ments in the input sequence. This is in stark contrast to           thus many “best practices” associated with such models.
+              convolutions where the corresponding “receptive ﬁeld” is            As pure-transformer models present different characteris-
+              limited, and grows linearly with the depth of the network.          tics, we need to determine the best design choices for such
+                 The success of attention-based models in NLP has re-             architectures. We conduct a thorough ablation analysis of
+              cently inspired approaches in computer vision to integrate          tokenisation strategies, model architecture and regularisa-
+              transformers into CNNs [74, 7], as well as some attempts to         tion methods. Informed by this analysis, we achieve state-
+              replace convolutions completely [48, 3, 52]. However, it is         of-the-art results on multiple standard video classiﬁcation
+              only very recently with the Vision Transformer (ViT) [17],          benchmarks, including Kinetics 400 and 600 [34], Epic
+                ∗Equal contribution                                               Kitchens 100 [13], Something-Something v2 [25] and Mo-
+                †Equal advising                                                   ments in Time [44].
+                                                                               6836
+                                                                                                                                                                    MLP                   Class
+                                                                                                                                                                    Head
+                                                                                                                                                                                                                          Factorised                                           Factorised                                               Factorised
+                                                                                                                                              Transformer  Encoder                                                          Encoder                                        Self-Attention                                             Dot-Product
+                                                                                                                   Position + Token 
+                                                                                                                       Embedding
+                                                                                                                               0                                     MLP
+                                                                                                                             CLS                                                                                             Temporal                                             Temporal
+                                                                                                                               1                                 Layer Norm                                                                                                                                                                   Fuse
+                                                                                                                                                                                                                                   ●●●                                                                                               Spatial        Temporal
+                                                                                                                               2             L× Self-Attention                                                               Temporal                                               Spatial
+                                                                                                                              3                                                                                                                                                        ●●●                                                      ●●●
+                                                                                                  Embed to                                                        Multi-Head
+                                                                                                    tokens                                                       Dot-Product                                                   Spatial                                            Temporal                                                    Fuse
+                                                                                                                               …                                   Attention
+                                                                                                                                                                                                                                   ●●●                                                                                               Spatial        Temporal
+                                                                                                                                                                K          V         Q 
+                                                                                                                                                                                                                               Spatial                                               Spatial
+                                                                                                                              N                                  Layer Norm
+                                                                                                                                                                                                                      1        2      ●●●      N                            1        2     ●●●      N                               1        2     ●●●      N
+                                  Figure1: Weproposeapure-transformerarchitectureforvideoclassiﬁcation,inspiredbytherecentsuccessofsuchmodelsforimages[17].
+                                  To effectively process a large number of spatio-temporal tokens, we develop several model variants which factorise different components
+                                  of the transformer encoder over the spatial- and temporal-dimensions. As shown on the right, these factorisations correspond to different
+                                  attention patterns over space and time.
+                                  2. Related Work                                                                                                                                                                       Although previous works attempted to replace convolu-
+                                          Architectures for video understanding have mirrored ad-                                                                                                               tions in vision architectures [48, 52, 54], it is only very re-
+                                  vances in image recognition. Early video research used                                                                                                                        cently that Dosovitisky et al. [17] showed with their ViT ar-
+                                  hand-crafted features to encode appearance and motion                                                                                                                         chitecture that pure-transformer networks, similar to those
+                                  information [40, 68].                                            The success of AlexNet on Ima-                                                                               employed in NLP, can achieve state-of-the-art results for
+                                  geNet [37, 15] initially led to the repurposing of 2D im-                                                                                                                     image classiﬁcation too.                                                  The authors showed that such
+                                  age convolutional networks (CNNs) for video as “two-                                                                                                                          modelsareonlyeffectiveatlargescale,astransformerslack
+                                  stream” networks [33, 55, 46]. These models processed                                                                                                                         some of inductive biases of convolutional networks (such
+                                  RGBframesandoptical ﬂow images independently before                                                                                                                           as translational equivariance), and thus require datasets
+                                  fusing them at the end. Availability of larger video classi-                                                                                                                  larger than the common ImageNet ILSRVC dataset [15] to
+                                  ﬁcation datasets such as Kinetics [34] subsequently facili-                                                                                                                   train. ViT has inspired a large amount of follow-up work
+                                  tated the training of spatio-temporal 3D CNNs [8, 21, 64]                                                                                                                     in the community, and we note that there are a number
+                                  which have signiﬁcantly more parameters and thus require                                                                                                                      of concurrent approaches on extending it to other tasks in
+                                  larger training datasets. As 3D convolutional networks re-                                                                                                                    computer vision [70, 73, 83, 84] and improving its data-
+                                  quiresigniﬁcantlymorecomputationthantheirimagecoun-                                                                                                                           efﬁciency [63, 47]. In particular, [4, 45] have also proposed
+                                  terparts, many architectures factorise convolutions across                                                                                                                    transformer-based models for video.
+                                  spatial and temporal dimensions and/or use grouped convo-                                                                                                                             In this paper, we develop pure-transformer architectures
+                                  lutions [58, 65, 66, 80, 19]. We also leverage factorisation                                                                                                                  for video classiﬁcation. We propose several variants of our
+                                  of the spatial and temporal dimensions of videos to increase                                                                                                                  model, including those that are more efﬁcient by factoris-
+                                  efﬁciency, but in the context of transformer-based models.                                                                                                                    ing the spatial and temporal dimensions of the input video.
+                                                                                                                                                                                                                Wealso show how additional regularisation and pretrained
+                                          Concurrently, in natural language processing (NLP),                                                                                                                   models can be used to combat the fact that video datasets
+                                  Vaswani et al. [67] achieved state-of-the-art results by re-                                                                                                                  are not as large as their image counterparts that ViT was
+                                  placing convolutions and recurrent networks with the trans-                                                                                                                   originally trained on. Furthermore, weoutperformthestate-
+                                  former network that consisted only of self-attention, layer                                                                                                                   of-the-art across ﬁve popular datasets.
+                                  normalisation and multilayer perceptron (MLP) operations.
+                                  Current state-of-the-art architectures in NLP [16, 51] re-                                                                                                                    3. Video Vision Transformers
+                                  maintransformer-based, and have been scaled to web-scale
+                                  datasets [5]. Many variants of the transformer have also                                                                                                                              We start by summarising the recently proposed Vision
+                                  been proposed to reduce the computational cost of self-                                                                                                                       Transformer [17] in Sec. 3.1, and then discuss two ap-
+                                  attention when processing longer sequences [10, 11, 36,                                                                                                                       proaches for extracting tokens from video in Sec. 3.2. Fi-
+                                  61, 62, 72] and to improve parameter efﬁciency [39, 14].                                                                                                                      nally, we develop several transformer-based architectures
+                                  Although self-attention has been employed extensively in                                                                                                                      for video classiﬁcation in Sec. 3.3 and 3.4.
+                                  computer vision, it has, in contrast, been typically incor-                                                                                                                   3.1. Overview of Vision Transformers (ViT)
+                                  porated as a layer at the end or in the later stages of
+                                  the network [74, 7, 31, 76, 82] or to augment residual                                                                                                                                Vision Transformer (ViT) [17] adapts the transformer
+                                  blocks [29, 6, 9, 56] within a ResNet architecture [26].                                                                                                                      architecture of [67] to process 2D images with minimal
+                                                                                                                                                                                                        6837
+              !           "
+                                                                                                                                   !
+                                                                          #
+              Figure 2: Uniform frame sampling: We simply sample nt frames,                                                  "
+              and embed each 2D frame independently following ViT [17].                             #
+              changes. In particular, ViT extracts N non-overlapping im-           Figure 3: Tubelet embedding. We extract and linearly embed non-
+              age patches, xi ∈ Rh×w, performs a linear projection and             overlapping tubelets that span the spatio-temporal input volume.
+                                                            d
+              then rasterises them into 1D tokens z ∈ R . The sequence
+                                                      i                            as ViT [17], and concatenate all these tokens together. Con-
+              of tokens input to the following transformer encoder is
+                                                                                   cretely, if nh · nw non-overlapping image patches are ex-
+                          z = [z    , Ex ,Ex ,...,Ex ]+p,                 (1)      tracted from eachframe, asin[17], thenatotalofnt·nh·nw
+                                 cls    1     2          N                         tokens will be forwarded through the transformer encoder.
+              wheretheprojectionbyEisequivalenttoa2Dconvolution.                   Intuitively, this process may be seen as simply constructing
+              AsshowninFig.1,anoptional learned classiﬁcation token                a large 2D image to be tokenised following ViT. We note
+              z    is prepended to this sequence, and its representation at        that this is the input embedding method employed by the
+               cls
+              the ﬁnal layer of the encoder serves as the ﬁnal represen-           concurrent work of [4].
+              tation used by the classiﬁcation layer [16]. In addition, a          Tubelet embedding        An alternate method, as shown in
+              learned positional embedding, p ∈ RN×d, is added to the              Fig. 3, is to extract non-overlapping, spatio-temporal
+              tokens to retain positional information, as the subsequent           “tubes”fromtheinputvolume,andtolinearlyprojectthisto
+              self-attention operations in the transformer are permutation         Rd. This method is an extension of ViT’s embedding to 3D,
+              invariant. The tokens are then passed through an encoder             and corresponds to a 3D convolution. For a tubelet of di-
+              consistingofasequenceofLtransformerlayers. Eachlayer                 mension t×h×w,n =bTc,n =bHcandn =bWc,
+              ` comprises of Multi-Headed Self-Attention [67], layer nor-                                  t     t     h     h         w      w
+              malisation (LN) [2], and MLP blocks as follows:                      tokens are extracted from the temporal, height, and width
+                                                                                   dimensions respectively. Smaller tubelet dimensions thus
+                                  `                `       `                       result in more tokens which increases the computation.
+                                y =MSA(LN(z ))+z                          (2)      Intuitively, this method fuses spatio-temporal information
+                               `+1                 `       `
+                              z     =MLP(LN(y ))+y .                      (3)      during tokenisation, in contrast to “Uniform frame sam-
+              The MLP consists of two linear projections separated by a            pling” where temporal information from different frames is
+              GELU non-linearity [27] and the token-dimensionality, d,             fused by the transformer.
+              remains ﬁxed throughout all layers. Finally, a linear classi-        3.3. Transformer Models for Video
+              ﬁerisusedtoclassifytheencodedinputbasedonzL ∈ Rd,
+                                                                   cls                AsillustratedinFig.1,weproposemultipletransformer-
+              if it was prepended to the input, or a global average pooling        based architectures. We begin with a straightforward ex-
+                                  L
+              of all the tokens, z , otherwise.                                    tension of ViT [17] that models pairwise interactions be-
+                 As the transformer [67], which forms the basis of                 tween all spatio-temporal tokens, and then develop more
+              ViT [17], is a ﬂexible architecture that can operate on any          efﬁcient variants which factorise the spatial and temporal
+              sequence of input tokens z ∈ RN×d, we describe strategies            dimensions of the input video at various levels of the trans-
+              for tokenising videos next.                                          former architecture.
+              3.2. Embedding video clips                                           Model 1: Spatio-temporal attention           This model sim-
+                 We consider two simple methods for mapping a video                ply forwards all spatio-temporal tokens extracted from the
+                          T×H×W×C                                                           0
+              V ∈ R                     to a sequence of tokens ˜z         ∈       video, z , through the transformer encoder. We note that [4]
+                n ×n ×n ×d
+              R t    h   w    . We then add the positional embedding and           also explored this concurrently in their “Joint Space-Time”
+              reshape into RN×d to obtain z, the input to the transformer.         model. In contrast to CNN architectures, where the recep-
+                                                                                   tive ﬁeld grows linearly with the number of layers, each
+              Uniform frame sampling As illustrated in Fig. 2, a                   transformer layer models all pairwise interactions between
+              straightforward method of tokenising the input video is to           all spatio-temporal tokens, and it thus models long-range in-
+              uniformly sample nt frames from the input video clip, em-            teractions across the video from the ﬁrst layer. However, as
+              bed each 2D frame independently using the same method                it models all pairwise interactions, Multi-Headed Self At-
+                                                                                6838
+                                                                                          Temporal Transformer Encoder                                                                        MLP             Class                                                                                                                   Transformer Block x L
+                                          en                                                                                                                                                  Head
+                                          k   g
+                                              n
+                                          To  i
+                                              d      C
+                                          +                                                                                                 …
+                                              d
+                                          l   e  0 L     1                                                    2                                                                T
+                                          a
+                                          r   b      S
+                                          o                                                                                                                                                                                                                                                                                                                     K 
+                                          p   Em                                                                                                                                                                                                                                                                         K                                       
+                                                                                                                                                                                                                                                Positional embedding                                                                                             
+                                                                                                                                                                                                                                                                                                                                                                         Mu               La
+                                                                                                                                                                                                                                                                                                                                 Mu                     La       
+                                                                                                                                                                                                                                                                                                                La                                               
+                                                                                                                                                                                                                                                                                                                             At                                      At
+                                                                                                                                                                                                                                                                                                                                                                 
+                                                                                                                                                                                                                                                                                                                                                                 
+                                          Tem                                                                                                                                                                                                                                                                   y                                       y       V    t                    y
+                                                                                                                                                                                                                                                                                                                e        V   t   l                      e                l                e        ML
+                                                             Spatial Transformer                                 Spatial Transformer                                                                                                                                                                                         e   t                      r            e   t                r
+                                                                                                                                                                                  Spatial Transformer                                                                                                           r                i                                       i                 
+                                                                                                                                                                                                                                                                                                                             n                                       n   -                N
+                                                                                                                                                                                                                                                                                                                                 -                      N        
+                                                                                                                                                                                                                                                                                                                N                He                                      He                        P
+                                                                                                                                                                                                                                                   Token embedding                                                                                                   t
+                                                                                                                                                                                                                                                                                                                             t                                  Q                         or
+                                                   n                                                                                                                                                                                                                                                            or       Q   i                          or           i
+                                                   e                   Encoder                                             Encoder                                                          Encoder                                                                                                                          o   a                      m            o   a                m
+                                                   k   g                                                                                                                                                                                                                                                        m            n   d                                   n   d
+                                                   o   n
+                                                   T   i
+                                                       d                                                          C
+                                                   +          C                                                                                                 …                  C
+                                                       d
+                                                   l   e  0 L       1           … N                           0 L       1           … N                                        0 L                   …
+                                                   a   b                                                          S                                                                      1                       N
+                                                   n          S                                                                                                                    S
+                                                   o
+                                                   i                                                                                                                                                                                                                                                       Spatial Self-Attention Block          Temporal Self-Attention Block
+                                                   t
+                                                   i   Em
+                                                   s
+                                                   Po                                                                     Embed to tokens
+                                                                                                                                                                                                                                          Figure 5: Factorised self-attention (Model 3). Within each trans-
+                                                                                                                                                                                                                                          former block, the multi-headed self-attention operation is fac-
+                                                                                                                                                                                                                                          torised into two operations (indicated by striped boxes) that ﬁrst
+                                                                                                                                                                                                                                          only compute self-attention spatially, and then temporally.
+                                      Figure 4: Factorised encoder (Model 2). This model consists of                                                                                                                                      poral index), and then temporally (among all tokens ex-
+                                      two transformer encoders in series: the ﬁrst models interactions
+                                      betweentokensextractedfromthesametemporalindextoproduce                                                                                                                                             tracted from the same spatial index) as shown in Fig. 5.
+                                      a latent representation per time-index. The second transformer                                                                                                                                      Each self-attention block in the transformer thus models
+                                      models interactions between time steps. It thus corresponds to a                                                                                                                                    spatio-temporal interactions, but does so more efﬁciently
+                                      “late fusion” of spatial- and temporal information.                                                                                                                                                 than Model 1 by factorising the operation over two smaller
+                                      tention (MSA) [67] has quadratic complexity with respect                                                                                                                                            sets of elements, thus achieving the same computational
+                                      to the number of tokens. This complexity is pertinent for                                                                                                                                           complexity as Model 2. We note that factorising attention
+                                      video, as the number of tokens increases linearly with the                                                                                                                                          over input dimensions has also been explored in [28, 77],
+                                      number of input frames, and motivates the development of                                                                                                                                            and concurrently in the context of video by [4] in their “Di-
+                                      moreefﬁcient architectures next.                                                                                                                                                                    vided Space-Time” model.
+                                                                                                                                                                                                                                                   Thisoperationcanbeperformedefﬁcientlybyreshaping
+                                                                                                                                                                                                                                                                                                         1×n ·n ·n ·d                                          n ×n ·n ·d
+                                      Model 2: Factorised encoder                                                                            As shown in Fig. 4, this                                                                     the tokens z from R                                                       t       h w to R t                                        h w (denoted
+                                      model consists of two separate transformer encoders. The                                                                                                                                            byzs)tocomputespatialself-attention. Similarly, the input
+                                                                                                                                                                                                                                                                                                                                                                                          n ·n ×n ·d
+                                      ﬁrst, spatial encoder, only models interactions between to-                                                                                                                                         to temporal self-attention, z is reshaped to R h w                                                                                                                       t       .
+                                                                                                                                                                                                                                                                                                                                 t
+                                      kensextracted from the same temporal index. A representa-                                                                                                                                           Hereweassumetheleadingdimensionisthe“batchdimen-
+                                      tion for each temporal index, hi ∈ Rd, is obtained after Ls                                                                                                                                         sion”. Our factorised self-attention is deﬁned as
+                                                                                                                                                                                         L
+                                      layers: This is the encoded classiﬁcation token, z s if it was
+                                                                                                                                                                                        cls
+                                      prepended to the input (Eq. 1), or a global average pooling                                                                                                                                                                                                 `                                                 `                     `
+                                                                                                                                                                                                                                                                                             y =MSA(LN(z ))+z                                                                                                       (4)
+                                                                                                                                                                                           L                                                                                                      s                                                 s                     s
+                                      from the tokens output by the spatial encoder, z s, other-                                                                                                                                                                                             y` = MSA(LN(y`))+y`                                                                                                    (5)
+                                      wise. The frame-level representations, h , are concatenated                                                                                                                                                                                                 t                                                  s                      s
+                                                                                                                                                                i                                                                                                                          `+1                                                       `                     `
+                                      into H ∈ Rnt×d, and then forwarded through a temporal                                                                                                                                                                                            z               =MLP(LN(yt))+yt.                                                                                             (6)
+                                      encoder consisting of Lt transformer layers to model in-
+                                      teractions between tokens from different temporal indices.                                                                                                                                          We observed that the order of spatial-then-temporal self-
+                                      Theoutput token of this encoder is then ﬁnally classiﬁed.                                                                                                                                           attention or temporal-then-spatial self-attention does not
+                                               This architecture corresponds to a “late fusion” [33,                                                                                                                                      make a difference, provided that the model parameters are
+                                      55, 71, 45] of temporal information, and the initial spa-                                                                                                                                           initialised as described in Sec. 3.4. Note that the number
+                                      tial encoder is identical to the one used for image classi-                                                                                                                                         of parameters, however, increases compared to Model 1, as
+                                      ﬁcation. It is thus analogous to CNN architectures such                                                                                                                                             there is an additional self-attention layer (cf. Eq. 7). We do
+                                      as             [23, 33, 71, 85] which ﬁrst extract per-frame fea-                                                                                                                                   not use a classiﬁcation token in this model, to avoid ambi-
+                                      tures, and then aggregate them into a ﬁnal representation                                                                                                                                           guities when reshaping the input tokens between spatial and
+                                      before classifying them.                                                          Although this model has more                                                                                      temporal dimensions.
+                                      transformer layers than Model 1 (and thus more parame-
+                                      ters), it requires fewer ﬂoating point operations (FLOPs), as                                                                                                                                       Model 4: Factorised dot-product attention                                                                                                        Finally, we
+                                      the two separate transformer blocks have a complexity of                                                                                                                                            develop a model which has the same computational com-
+                                      O((nh ·nw)2 +n2)comparedtoO((nt ·nh ·nw)2).
+                                                                                              t                                                                                                                                           plexity as Models 2 and 3, while retaining the same number
+                                      Model 3: Factorised self-attention                                                                                     This model, in con-                                                          of parameters as the unfactorised Model 1. The factorisa-
+                                      trast, contains the same number of transformer layers as                                                                                                                                            tion of spatial- and temporal dimensions is similar in spirit
+                                      Model 1. However, instead of computing multi-headed                                                                                                                                                 to Model 3, but we factorise the multi-head dot-product at-
+                                                                                                                                                                       `
+                                      self-attention across all pairs of tokens, z , at layer l, we                                                                                                                                       tention operation instead (Fig. 1). Concretely, we compute
+                                      factorise the operation to ﬁrst only compute self-attention                                                                                                                                         attention weights for each token separately over the spatial-
+                                      spatially (among all tokens extracted from the same tem-                                                                                                                                            and temporal-dimensions using different heads. First, we
+                                                                                                                                                                                                                                 6839
+             note that the attention operation for each head is deﬁned as       3Dconvolutional ﬁlters from 2D ﬁlters for video classiﬁca-
+                                                                              tion is to “inﬂate” them by replicating the ﬁlters along the
+                                                           >
+                                                       QK                       temporal dimension and averaging them [8, 21] as
+                  Attention(Q,K,V) = Softmax            √d      V.     (7)
+                                                           k                                    1
+                                                                                          E= [E         , . . . , E  , . . . , E ].      (8)
+             In self-attention, the queries Q = XW , keys K = XW ,                                  image       image       image
+                                                     q                  k                       t
+             andvaluesV = XWv arelinearprojectionsoftheinputX
+             with X,Q,K,V ∈ RN×d. Note that in the unfactorised                 We consider an additional strategy, which we denote as
+             case (Model 1), the spatial and temporal dimensions are            “central frame initialisation”, where E is initialised with ze-
+             merged as N = n ·n ·n .                                            roes along all temporal positions, except at the centre btc,
+                                t   h    w                                                                                              2
+                The main idea here is to modify the keys and values for                         E=[0,...,E          , . . . , 0].        (9)
+             eachquerytoonlyattendovertokensfromthesamespatial-                                                image
+             and temporal index by constructing K ,V         ∈ Rnh·nw×d
+                                                      s   s                     Therefore, the 3D convolutional ﬁlter effectively behaves
+             and K ,V ∈ Rnt×d, namely the keys and values corre-
+                    t    t                                                      like “Uniform frame sampling” (Sec. 3.2) at initialisation,
+             sponding to these dimensions. Then, for half of the atten-         whilealsoenablingthemodeltolearntoaggregatetemporal
+             tion heads, we attend over tokens from the spatial dimen-          information from multiple frames as training progresses.
+             sion by computing Ys = Attention(Q,Ks,Vs), and for
+             the rest we attend over the temporal dimension by comput-          Transformer weights for Model 3 The transformer
+             ing Yt = Attention(Q,Kt,Vt). Given that we are only                block in Model 3 (Fig. 5) differs from the pretrained ViT
+             changing the attention neighbourhood for each query, the           model [17], in that it contains two multi-headed self atten-
+             attention operation has the same dimension as in the unfac-        tion (MSA) modules. In this case, we initialise the spatial
+             torised case, namely Y ,Y ∈ RN×d. We then combine
+                                      s   t                                     MSAmodulefromthepretrained module, and initialise all
+             the outputs of multiple heads by concatenating them and            weights of the temporal MSA with zeroes, such that Eq. 5
+             using a linear projection [67], Y = Concat(Y ,Y )W .
+                                                             s    t    O        behaves as a residual connection [26] at initialisation.
+             3.4. Initialisation by leveraging pretrained models
+                ViT [17] has been shown to only be effective when               4. Empirical evaluation
+             trained on large-scale datasets, as transformers lack some of         Weﬁrstpresentourexperimentalsetupandimplementa-
+             the inductive biases of convolutional networks [17]. How-          tion details in Sec. 4.1, before ablating various components
+             ever, even the largest video datasets such as Kinetics [34],       ofourmodelinSec.4.2. Wethenpresentstate-of-the-artre-
+             have several orders of magnitude less labelled examples            sults on ﬁve datasets in Sec. 4.3. Our code will be released
+             whencomparedtotheirimagecounterparts[15,38,57]. As                         1
+                                                                                publicly .
+             aresult, training large models from scratch to high accuracy
+             is extremely challenging. To sidestep this issue, and enable       4.1. Experimental Setup
+             more efﬁcient training we initialise our video models from         Networkarchitectureandtraining          Ourbackbonearchi-
+             pretrained image models. However, this raises several prac-        tecture follows that of ViT [17] and BERT [16]. We con-
+             tical questions, speciﬁcally on how to initialise parameters       sider ViT-Base (ViT-B, L=12, NH=12, d=768), ViT-Large
+             not present or incompatible with image models. We now              (ViT-L, L=24, N =16, d=1024), and ViT-Huge (ViT-H,
+             discuss several effective strategies to initialise these large-                      H
+                                                                                L=32, N =16, d=1280), where L is the number of trans-
+             scale video classiﬁcation models.                                           H
+                                                                                former layers, each with a self-attention block of N   heads
+                                                                                                                                    H
+             Positional embeddings       A positional embedding p is            and hidden dimension d. We also apply the same naming
+             added to each input token (Eq. 1). However, our video              scheme to our models (e.g., ViViT-B/16x2 denotes a ViT-
+             models have nt times more tokens than the pretrained im-           Basebackbonewithatubeletsizeofh×w×t = 16×16×2).
+             age model. As a result, we initialise the positional embed-        In all experiments, the tubelet height and width are equal.
+                                                              n ·n ×d           Notethatsmaller tubelet sizes correspond to more tokens at
+             dings by “repeating” them temporally from R w h            to      the input, and thus more computation.
+               n ·n ·n ×d
+             R t h w      .  Therefore, at initialisation, all tokens with         We train our models using synchronous SGD and mo-
+             the same spatial index have the same embedding which is            mentum, a cosine learning rate schedule and TPU-v3 ac-
+             then ﬁne-tuned.                                                    celerators.  We initialise our models from a ViT image
+             Embeddingweights, E Whenusingthe “tubelet embed-                   model trained either on ImageNet-21K [15] (unless other-
+             ding” tokenisation method (Sec. 3.2), the embedding ﬁlter          wise speciﬁed) or the larger JFT [57] dataset. Exact experi-
+             E is a 3D tensor, compared to the 2D tensor in the pre-            mental hyperparameters are detailed in the supplementary.
+             trained model, E      . A common approach for initialising            1https://github.com/google-research/scenic
+                               image
+                                                                             6840
+                  Table 1: Comparison of input encoding methods using ViViT-B                            Table 2: Comparison of model architectures using ViViT-B as the
+                  and spatio-temporal attention on Kinetics. Further details in text.                    backbone,andtubeletsizeof16×2. WereportTop-1accuracyon
+                                                                   Top-1 accuracy                        Kinetics 400 (K400) and action accuracy on Epic Kitchens (EK).
+                                                                                                         Runtime is during inference on a TPU-v3.
+                           Uniform frame sampling                         78.5                                                             K400     EK     FLOPs      Params    Runtime
+                                                                                                                                                                9          6
+                           Tubelet embedding                                                                                                               (×10 )     (×10 )     (ms)
+                           Randominitialisation [24]                      73.2                              Model1: Spatio-temporal        80.0    43.1     455.2      88.9       58.9
+                                                                                                            Model2: Fact. encoder          78.8    43.7     284.4     115.1       17.4
+                           Filter inﬂation [8]                            77.6                              Model3: Fact. self-attention   77.4    39.1     372.3     117.3       31.7
+                           Central frame                                  79.2                              Model4: Fact. dot product      76.3    39.5     277.1      88.9       22.9
+                                                                                                            Model2: Ave. pool baseline     75.8    38.8     283.9      86.7       17.3
+                  Datasets       We evaluate the performance of our proposed                             encoding method for all subsequent experiments.
+                  models on a diverse set of video classiﬁcation datasets:
+                      Kinetics [34] consists of 10-second videos sampled at                              Model variants            We compare our proposed model vari-
+                  25fps from YouTube. We evaluate on both Kinetics 400                                   ants (Sec. 3.3) across the Kinetics 400 and Epic Kitchens
+                  and 600, containing 400 and 600 classes respectively. As                               datasets, both in terms of accuracy and efﬁciency, in Tab. 2.
+                  these are dynamic datasets (videos may be removed from                                 In all cases, we use the “Base” backbone and tubelet size of
+                  YouTube), we note our dataset sizes are approximately 267                              16 × 2. Model 2 (“Factorised Encoder”) has an additional
+                  000and446000respectively.                                                              hyperparameter, the number of temporal transformers, Lt.
+                      Epic Kitchens-100 consists of egocentric videos captur-                            Weset Lt = 4 for all experiments and show in the supple-
+                  ing daily kitchen activities spanning 100 hours and 90 000                             mentary that the model is not sensitive to this choice and
+                  clips [13]. We report results following the standard “action                           thus does not affect our conclusions.
+                  recognition” protocol. Here, each video is labelled with a                                  The unfactorised model (Model 1) performs the best
+                  “verb” and a “noun” and we therefore predict both cate-                                on Kinetics 400. However, it can also overﬁt on smaller
+                  gories using a single network with two “heads”. The top-                               datasets such as Epic Kitchens, where we ﬁnd our “Fac-
+                  scoring verb and action pair predicted by the network form                             torised Encoder” (Model 2) to perform the best. We also
+                  an “action”, and action accuracy is the primary metric.                                consider an additional baseline (last row), based on Model
+                      Moments in Time [44] consists of 800 000, 3-second                                 2, where we do not use any temporal transformer, and sim-
+                  YouTube clips that capture the gist of a dynamic scene in-                             ply average pool the frame-level representations from the
+                  volving animals, objects, people, or natural phenomena.                                spatial encoder before classifying.                This average pooling
+                      Something-Something v2 (SSv2) [25] contains 220 000                                baseline performs the worst, and has a larger accuracy drop
+                  videos, with durations ranging from 2 to 6 seconds. In con-                            onEpicKitchens,suggestingthatthisdatasetrequires more
+                  trast to the other datasets, the objects and backgrounds in                            detailed modelling of temporal relations.
+                  the videos are consistent across different action classes, and                              As described in Sec. 3.3, all factorised variants of our
+                  this dataset thus places more emphasis on a model’s ability                            model use signiﬁcantly fewer FLOPs than the unfactorised
+                  to recognise ﬁne-grained motion cues.                                                  Model 1, as the attention is computed separately over
+                  Inference        The input to our network is a video clip of 32                        spatial- and temporal-dimensions. Model 4 adds no addi-
+                  framesusingastrideof2,unlessotherwisementioned,sim-                                    tional parameters to the unfactorised Model 1, and uses the
+                  ilar to [20, 19]. Following common practice, at inference                              least compute. The temporal transformer encoder in Model
+                  time, we process multiple views of a longer video and aver-                            2operates on only nt tokens, which is why there is a barely
+                  age per-view logits to obtain the ﬁnal result. Unless other-                           a change in compute and runtime over the average pool-
+                  wise speciﬁed, we use a total of 4 views per video (as this                            ing baseline, even though it improves the accuracy substan-
+                  is sufﬁcient to “see” the entire video clip across the various                         tially (3% on Kinetics and 4.9% on Epic Kitchens). Fi-
+                  datasets), and ablate these and other design choices next.                             nally, Model 3 requires more compute and parameters than
+                                                                                                         the other factorised models, as its additional self-attention
+                  4.2. Ablation study                                                                    block means that it performs another query-, key-, value-
+                  Input encoding           We ﬁrst consider the effect of different                      and output-projection in each transformer layer [67].
+                  input encoding methods (Sec. 3.2) using our unfactorised                               Model regularisation                 Pure-transformer          architectures
+                  model(Model1)andViViT-BonKinetics400. Aswepass                                         such as ViT [17] are known to require large training
+                  32-frame inputs to the network, sampling 8 frames and ex-                              datasets, and we observed overﬁtting on smaller datasets
+                  tracting tubelets of length t = 4 correspond to the same                               like Epic Kitchens and SSv2, even when using an ImageNet
+                  number of tokens in both cases. Table 1 shows that tubelet                             pretrained model. In order to effectively train our models
+                  embedding initialised using the “central frame” method                                 onsuchdatasets, we employed several regularisation strate-
+                  (Eq. 9) performs well, outperforming the commonly-used                                 gies that we ablate using our “Factorised encoder” model
+                  “ﬁlter inﬂation” initialisation method [8, 21] by 1.6%, and                            in Tab. 3. We note that these regularisers were originally
+                  “uniform frame sampling” by 0.7%. We therefore use this                                proposed for training CNNs, and that [63] have recently
+                                                                                                     6841
+                      Table 3: The effect of progressively adding regularisation (each                                                 Table 4: The effect of spatial resolution on the performance of
+                      row includes all methods above it) on Top-1 action accuracy on                                                   ViViT-L/16x2 and spatio-temporal attention on Kinetics 400.
+                      Epic Kitchens. We use ViViT-B/16x2 Factorised Encoder.                                                                                  Crop size            224          288           320
+                                                                                        Top-1 accuracy                                                        Accuracy            80.3          80.7          81.0
+                                  Randomcrop,ﬂip, colour jitter                                 38.4                                                          GFLOPs              1446         2919          3992
+                                  +Kinetics 400 initialisation                                  39.6                                                          Runtime             58.9         147.6         238.8
+                                  +Stochastic depth [30]                                        40.2
+                                  +Randomaugment[12]                                            41.1                                                                 32 stride 2          64 stride 2           128 stride 2
+                                  +Labelsmoothing[60]                                           43.1
+                                  +Mixup[81]                                                    43.7                                              80
+                           Spatio-temporal       Factorised encoder       Factorised self-attention    Factorised dot-product
+                           80.0                                              0.4                                                                  78
+                           77.5                                                                                                                 Top-1 Accuracy
+                           75.0                                             TFLOPs0.2                                                             76
+                          Top-1 Accuracy72.5
+                                16x8               16x4              16x2        16x8               16x4               16x2                               1            2           3           4           5           6           7
+                                            Input tubelet size                               Input tubelet size                                                                     Number of views
+                                       (a) Accuracy                                        (b) Compute                                 Figure 7: The effect of varying the number of frames input to
+                      Figure 6: The effect of varying the number of temporal tokens on                                                 the network and increasing the number of tokens proportionally.
+                      (a) accuracy and (b) computation on Kinetics 400, for different                                                  AKinetics video contains 250 frames (10 seconds sampled at 25
+                      variants of our model with a ViViT-B backbone.                                                                   fps) and the accuracy for each model saturates once the number of
+                      explored them for training ViT for image classiﬁcation.                                                          equidistant temporal views is sufﬁcient to “see” the whole video
+                            Each row of Tab. 3 includes all the methods from the                                                       clip. Observe how models processing more frames (and thus more
+                      rows above it, and we observe progressive improvements                                                           tokens) achieve higher single- and multi-view accuracy.
+                      from adding each regulariser. Overall, we obtain a substan-                                                           Figure 7 shows that as we increase the number of frames
+                      tial overall improvement of 5.3% on Epic Kitchens. We                                                            input to the network, the accuracy from processing a single
+                      also achieve a similar improvement of 5%, from 60.4% to                                                          viewincreases, as the network incorporates longer temporal
+                      65.4%, on SSv2 by using all the regularisation in Tab. 3.                                                        context. However, commonpractice on datasets such as Ki-
+                      Note that the Kinetics-pretrained models that we initialise                                                      netics [20, 74, 41] is to average results over multiple, shorter
+                      from are from Tab. 2, and that all Epic Kitchens models in                                                       “views”ofthesamevideoclip. Figure7alsoshowsthatthe
+                      Tab. 2 were trained with all the regularisers in Tab. 3. For                                                     accuracy saturates once the number of views is sufﬁcient to
+                      larger datasets like Kinetics and Moments in Time, we do                                                         cover the whole video. As a Kinetics video consists of 250
+                      not use these additional regularisers (we use only the ﬁrst                                                      frames, and we sample frames with a stride of 2, our model
+                      row of Tab. 3), as we obtain state-of-the-art results without                                                    which processes 128 frames requires just a single view to
+                      them. The supplementary contains hyperparameter values                                                           “see” the whole video and achieve its maximum accuarcy.
+                      and additional details for all regularisers.                                                                          Note that we used ViViT-L/16x2 Factorised Encoder
+                      Varying the number of tokens                                 Weﬁrst analyse the per-                             (Model 2) here. As this model is more efﬁcient it can pro-
+                      formance as a function of the number of tokens along the                                                         cess more tokens, compared to the unfactorised Model 1
+                      temporaldimensioninFig.6. Weobservethatusingsmaller                                                              which runs out of memory after 48 frames using tubelet
+                      input tubelet sizes (and therefore more tokens) leads to con-                                                    length t = 2 and a “Large” backbone. Models processing
+                      sistent accuracy improvements across all of our model ar-                                                        more frames (and thus more tokens) consistently achieve
+                      chitectures.            At the same time, computation in terms of                                                higher single- and multi-view accuracy, in line with our ob-
+                      FLOPs increases accordingly, and the unfactorised model                                                          servations in previous experiments (Tab. 4, Fig. 6). Mo-
+                      (Model 1) is impacted the most.                                                                                  roever, observe that by processing more frames (and thus
+                            We then vary the number of tokens fed into the model                                                       more tokens) with Model 2, we are able to achieve higher
+                      by increasing the spatial crop-size from the default of 224                                                      accuracy than Model 1 (with fewer total FLOPs as well).
+                      to 320 in Tab. 4. As expected, there is a consistent increase                                                         Finally, we observed that for Model 2, the number of
+                      in both accuracy and computation. We note that when com-                                                         FLOPs effectively increases linearly with the number of
+                      paring to prior work we consistently obtain state-of-the-art                                                     input frames as the overall computation is dominated by
+                      results (Sec. 4.3) using a spatial resolution of 224, but we                                                     the initial spatial encoder.                      As a result, the total number
+                      also highlight that further improvements can be obtained at                                                      of FLOPs for the number of temporal views required to
+                      higher spatial resolutions.                                                                                      achieve maximum accuracy is constant across the models.
+                      Varyingthenumberofinputframes Inourexperiments                                                                   In other words, ViViT-L/16x2 FE with 32 frames requires
+                      so far, we have kept the number of input frames ﬁxed at 32.                                                      995.3GFLOPsperview,and4viewstosaturatemulti-view
+                      Wenowincrease the number of frames input to the model,                                                           accuracy. The 128-frame model requires 3980.4 GFLOPs
+                      thereby increasing the number of tokens proportionally.                                                          but only a single view. As shown by Fig. 7, the latter model
+                                                                                                                                  6842
+                Table 5: Comparisons to state-of-the-art across multiple datasets. For “views”, x × y denotes x temporal crops and y spatial crops. We
+                report the TFLOPs to process all spatio-temporal views. “FE” denotes our Factorised Encoder model.
+                                       (a) Kinetics 400                                       (b) Kinetics 600                   (d) Epic Kitchens 100 Top 1 accuracy
+                  Method                   Top1    Top5    Views   TFLOPs          Method                  Top1   Top5          Method            Action  Verb   Noun
+                  blVNet [18]               73.5   91.2      –         –           AttentionNAS [75]       79.8    94.4         TSN[71]            33.2   60.2   46.0
+                  STM[32]                   73.7   91.6      –         –           LGD-3DR101[50]          81.5    95.6         TRN[85]            35.3   65.9   45.4
+                  TEA[41]                   76.1   92.5   10×3       2.10          SlowFast R101-NL [20]   81.8    95.1         TBN[35]            36.7   66.0   47.2
+                  TSM-ResNeXt-101[42]       76.3     –       –         –           X3D-XL[19]              81.9    95.5         TSM[42]            38.3   67.9   49.0
+                  I3DNL[74]                 77.7   93.3   10×3       10.77         TimeSformer-L [4]       82.2    95.6         SlowFast [20]      38.5   65.6   50.0
+                  CorrNet-101 [69]          79.2     –    10×3       6.72          ViViT-L/16x2 FE         82.9    94.6         ViViT-L/16x2 FE    44.0   66.4   56.8
+                  ip-CSN-152 [65]           79.2   93.8   10×3       3.27          ViViT-L/16x2 FE (JFT)   84.3    94.9
+                  LGD-3DR101[50]            79.4   94.4      –         –           ViViT-H/16x2 (JFT)      85.8    96.5              (e) Something-Something v2
+                  SlowFast R101-NL [20]     79.8   93.9   10×3       7.02                  (c) Moments in Time                   Method                Top1     Top5
+                  X3D-XXL[19]               80.4   94.6   10×3       5.82
+                  TimeSformer-L [4]         80.7   94.7    1×3       7.14                                 Top1     Top5          TRN[85]                48.8     77.6
+                  ViViT-L/16x2 FE           80.6   92.7    1×1       3.98          TSN[71]                 25.3     50.1         SlowFast [19, 79]      61.7      –
+                  ViViT-L/16x2 FE           81.7   93.8    1×3       11.94         TRN[85]                 28.3     53.4         TimeSformer-HR[4]      62.5      –
+                  Methods with large-scale pretraining                             I3D[8]                  29.5     56.1         TSM[42]                63.4     88.5
+                                                                                   blVNet [18]             31.4     59.3         STM[32]                64.2     89.8
+                  ip-CSN-152 [65] (IG [43]) 82.5   95.3   10×3       3.27          AssembleNet-101 [53]    34.3     62.7         TEA[41]                65.1      –
+                  ViViT-L/16x2 FE (JFT)     83.5   94.3    1×3       11.94                                                       blVNet [18]            65.2     90.3
+                  ViViT-H/16x2 (JFT)        84.9   95.8    4×3       47.77         ViViT-L/16x2 FE         38.5     64.1         ViVIT-L/16x2 FE        65.9     89.9
+                achieves the highest accuracy.                                                  optical ﬂow as an additional input modality [42, 49]. Fur-
+                4.3. Comparison to state-of-the-art                                             thermore, all variants of our model presented in Tab. 2 out-
+                                                                                                performed the existing state-of-the-art on action accuracy.
+                    Based on our ablation studies in the previous section,                      We note that we use the same model to predict verbs and
+                wecompare to the current state-of-the-art using two of our                      nounsusingtwoseparate“heads”,andforsimplicity,wedo
+                model variants. We primarily use our Factorised Encoder                         not use separate loss weights for each head.
+                model(Model2),asitcanprocessmoretokensthanModel                                 Something-Something v2 (SSv2)                 Finally, Tab. 5e shows
+                1 to achieve higher accuracy.                                                   that we achieve state-of-the-art Top-1 accuracy with our
+                Kinetics      Tables 5a and 5b show that our spatio-temporal                    Factorised encoder model (Model 2), albeit with a smaller
+                attention models outperform the state-of-the-art on Kinetics                    margin compared to previous methods. Notably, our Fac-
+                400 and 600 respectively. Following standard practice, we                       torised encoder modelsigniﬁcantlyoutperformstheconcur-
+                take 3 spatial crops (left, centre and right) [20, 19, 65, 74]                  rent TimeSformer[4]methodby2.9%,whichalsoproposes
+                for each temporal view, and notably, we require signiﬁ-                         a pure-transformer model, but does not consider our Fac-
+                cantly fewer views than previous CNN-based methods.                             torised encoder variant or our additional regularisation.
+                    Wesurpass the previous CNN-based state-of-the-art us-                           SSv2differs from other datasets in that the backgrounds
+                ing ViViT-L/16x2 Factorised Encoder (FE) pretrained on                          and objects are quite similar across different classes, mean-
+                ImageNet, and also outperform [4] who concurrently pro-                         ing that recognising ﬁne-grained motion patterns is neces-
+                posedapure-transformerarchitecture. Moreover, by initial-                       sary to distinguish classes from each other. Our results sug-
+                ising our backbones from models pretrained on the larger                        gest that capturing these ﬁne-grained motions is an area of
+                JFT dataset [57], we obtain further improvements.                    Al-        improvement and future work for our model. We also note
+                though these models are not directly comparable to previ-                       an inverse correlation between the relative performance of
+                ous work, we do also outperform [65] who pretrained on                          previous methods on SSv2 (Tab. 5e) and Kinetics (Tab. 5a)
+                the large-scale, Instagram dataset [43]. Our best model uses                    suggesting that these two datasets evaluate complementary
+                aViViT-HbackbonepretrainedonJFTandsigniﬁcantlyad-                               characteristics of a model.
+                vances the best reported results on Kinetics 400 and 600 to
+                84.9%and85.8%,respectively.                                                     5. Conclusion and Future Work
+                Moments in Time We surpass the state-of-the-art by a
+                signiﬁcant margin as shown in Tab. 5c. We note that the                             We have presented four pure-transformer models for
+                videos in this dataset are diverse and contain signiﬁcant la-                   video classiﬁcation, with different accuracy and efﬁciency
+                bel noise, making this task challenging and leading to lower                    proﬁles, achieving state-of-the-art results across ﬁve pop-
+                accuracies than on other datasets.                                              ular datasets.      Furthermore, we have shown how to ef-
+                Epic Kitchens 100           Table 5d shows that our Factorised                  fectively regularise such high-capacity models for training
+                Encoder model outperforms previous methods by a signiﬁ-                         on smaller datasets and thoroughly ablated our main de-
+                cant margin. In addition, our model obtains substantial im-                     sign choices. Future work is to remove our dependence on
+                provements for Top-1 accuracy of “noun” classes, and the                        image-pretrained models, and to extend our model to more
+                only method which achieves higher “verb” accuracy used                          complex video understanding tasks.
+                                                                                             6843
+               References                                                               [17] Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov,
+                [1] Anurag Arnab, Chen Sun, and Cordelia Schmid. Uniﬁed                      Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner,
+                    graph structured models for video understanding. In ICCV,                Mostafa Dehghani, Matthias Minderer, Georg Heigold, Syl-
+                    2021. 1                                                                  vain Gelly, et al. An image is worth 16x16 words: Trans-
+                [2] Jimmy Lei Ba, Jamie Ryan Kiros, and Geoffrey E Hinton.                   formers for image recognition at scale. In ICLR, 2021. 1, 2,
+                    Layer normalization. In arXiv preprint arXiv:1607.06450,                 3, 5, 6
+                    2016. 3                                                             [18] Quanfu Fan, Chun-Fu Chen, Hilde Kuehne, Marco Pistoia,
+                [3] Irwan Bello, Barret Zoph, Ashish Vaswani, Jonathon Shlens,               andDavidCox. Moreisless: Learningefﬁcient video repre-
+                    and Quoc V Le. Attention augmented convolutional net-                    sentations by big-little network and depthwise temporal ag-
+                    works. In ICCV, 2019. 1                                                  gregation. In NeurIPS, 2019. 8
+                [4] Gedas Bertasius, Heng Wang, and Lorenzo Torresani. Is               [19] Christoph Feichtenhofer. X3d: Expanding architectures for
+                    space-time attention all you need for video understanding?               efﬁcient video recognition. In CVPR, 2020. 1, 2, 6, 8
+                    In arXiv preprint arXiv:2102.05095, 2021. 2, 3, 4, 8                [20] Christoph Feichtenhofer, Haoqi Fan, Jitendra Malik, and
+                [5] Tom B. Brown, Benjamin Mann, Nick Ryder, Melanie Sub-                    Kaiming He. Slowfast networks for video recognition. In
+                    biah, Jared Kaplan, Prafulla Dhariwal, Arvind Neelakan-                  ICCV,2019. 1, 6, 7, 8
+                    tan, Pranav Shyam, Girish Sastry, Amanda Askell, Sandhini           [21] Christoph Feichtenhofer, Axel Pinz, and Richard Wildes.
+                    Agarwal, et al. Language models are few-shot learners. In                Spatiotemporal residual networks for video action recogni-
+                    NeurIPS, 2020. 2                                                         tion. In NeurIPS, 2016. 2, 5, 6
+                [6] Yue Cao, Jiarui Xu, Stephen Lin, Fangyun Wei, and Han               [22] RohitGirdhar,JoaoCarreira,CarlDoersch,andAndrewZis-
+                    Hu. Gcnet: Non-localnetworksmeetsqueeze-excitationnet-                   serman. Video action transformer network. In CVPR, 2019.
+                    works and beyond. In CVPR Workshops, 2019. 2                             1
+                [7] NicolasCarion,FranciscoMassa,GabrielSynnaeve,Nicolas                [23] Rohit Girdhar and Deva Ramanan. Attentional pooling for
+                    Usunier, Alexander Kirillov, and Sergey Zagoruyko. End-to-               action recognition. In NeurIPS, 2017. 4
+                    end object detection with transformers. In ECCV, 2020. 1,           [24] Xavier Glorot and Yoshua Bengio. Understanding the difﬁ-
+                    2                                                                        culty of training deep feedforward neural networks. In AIS-
+                [8] Joao Carreira and Andrew Zisserman.        Quo vadis, action             TATS, 2010. 6
+                    recognition? a new model and the kinetics dataset. In CVPR,         [25] Raghav Goyal, Samira Ebrahimi Kahou, Vincent Michal-
+                    2017. 1, 2, 5, 6, 8                                                      ski, Joanna Materzynska, Susanne Westphal, Heuna Kim,
+                [9] Yunpeng Chen, Yannis Kalantidis, Jianshu Li, Shuicheng                   Valentin Haenel, Ingo Fruend, Peter Yianilos, Moritz
+                    Yan, and Jiashi Feng. A2-nets: Double attention networks.                Mueller-Freitag, et al.   The” something something” video
+                    In NeurIPS, 2018. 2                                                      database for learning and evaluating visual common sense.
+               [10] Rewon Child, Scott Gray, Alec Radford, and Ilya Sutskever.               In ICCV, 2017. 1, 6
+                    Generating long sequences with sparse transformers.        In       [26] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun.
+                    arXiv preprint arXiv:1904.10509, 2019. 2                                 Deep residual learning for image recognition.      In CVPR,
+               [11] Krzysztof Choromanski, Valerii Likhosherstov, David Do-                  2016. 1, 2, 5
+                    han, Xingyou Song, Andreea Gane, Tamas Sarlos, Peter                [27] Dan Hendrycks and Kevin Gimpel. Gaussian error linear
+                    Hawkins, Jared Davis, Afroz Mohiuddin, Lukasz Kaiser,                    units (gelus). In arXiv preprint arXiv:1606.08415, 2016. 3
+                    et al. Rethinking attention with performers. In ICLR, 2021.         [28] Jonathan Ho, Nal Kalchbrenner, Dirk Weissenborn, and Tim
+                    2                                                                        Salimans. Axial attention in multidimensional transformers.
+               [12] Ekin D. Cubuk, Barret Zoph, Jonathon Shlens, and Quoc V.                 In arXiv preprint arXiv:1912.12180, 2019. 4
+                    Le. Randaugment: Practical automated data augmentation              [29] Jie Hu, Li Shen, and Gang Sun. Squeeze-and-excitation net-
+                    with a reduced search space. In NeurIPS, 2020. 7                         works. In CVPR, 2018. 2
+               [13] Dima Damen, Hazel Doughty, Giovanni Maria Farinella,                [30] Gao Huang, Yu Sun, Zhuang Liu, Daniel Sedra, and Kilian
+                    Antonino Furnari, Jian Ma, Evangelos Kazakos, Davide                     Weinberger. Deepnetworkswithstochasticdepth. InECCV,
+                    Moltisanti, Jonathan Munro, Toby Perrett, Will Price, and                2016. 7
+                    Michael Wray.      Rescaling egocentric vision.     In arXiv        [31] Zilong Huang, Xinggang Wang, Lichao Huang, Chang
+                    preprint arXiv:2006.13256, 2020. 1, 6                                    Huang, Yunchao Wei, and Wenyu Liu. Ccnet: Criss-cross
+               [14] Mostafa Dehghani, Stephan Gouws, Oriol Vinyals, Jakob                    attention for semantic segmentation. In ICCV, 2019. 2
+                    Uszkoreit, and Łukasz Kaiser. Universal transformers. In            [32] BoyuanJiang, MengmengWang,WeihaoGan,WeiWu,and
+                    ICLR, 2019. 2                                                            Junjie Yan. Stm: Spatiotemporal and motion encoding for
+               [15] Jia Deng, Wei Dong, Richard Socher, Li-Jia Li, Kai Li,                   action recognition. In ICCV, 2019. 8
+                    and Li Fei-Fei. Imagenet: A large-scale hierarchical image          [33] Andrej Karpathy, George Toderici, Sanketh Shetty, Thomas
+                    database. In CVPR, 2009. 2, 5                                            Leung, Rahul Sukthankar, and Li Fei-Fei. Large-scale video
+               [16] Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina                   classiﬁcation with convolutional neural networks. In CVPR,
+                    Toutanova. Bert: Pre-training of deep bidirectional trans-               2014. 2, 4
+                    formers for language understanding. In NAACL, 2019. 2, 3,           [34] Will Kay, Joao Carreira, Karen Simonyan, Brian Zhang,
+                    5                                                                        Chloe Hillier, Sudheendra Vijayanarasimhan, Fabio Viola,
+                                                                                    6844
+                   Tim Green, Trevor Back, Paul Natsev, et al.        The ki-       [51] Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee,
+                   netics human action video dataset.       In arXiv preprint            Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and
+                   arXiv:1705.06950, 2017. 1, 2, 5, 6                                    Peter J Liu. Exploring the limits of transfer learning with a
+              [35] Evangelos Kazakos, Arsha Nagrani, Andrew Zisserman, and               uniﬁed text-to-text transformer. JMLR, 2020. 2
+                   Dima Damen. Epic-fusion: Audio-visual temporal binding           [52] Prajit Ramachandran, Niki Parmar, Ashish Vaswani, Irwan
+                   for egocentric action recognition. In ICCV, 2019. 8                   Bello, Anselm Levskaya, and Jonathon Shlens. Stand-alone
+              [36] Nikita Kitaev, Łukasz Kaiser, and Anselm Levskaya. Re-                self-attention in vision models. In NeurIPS, 2019. 1, 2
+                   former: The efﬁcient transformer. In ICLR, 2020. 2               [53] MichaelSRyoo,AJPiergiovanni,MingxingTan,andAnelia
+              [37] Alex Krizhevsky, Ilya Sutskever, and Geoffrey E Hinton.               Angelova. Assemblenet: Searching for multi-stream neural
+                   Imagenet classiﬁcation with deep convolutional neural net-            connectivity in video architectures. In ICLR, 2020. 8
+                   works. In NeurIPS, volume 25, 2012. 1, 2                         [54] ZhuoranShen,IrwanBello,RavitejaVemulapalli,XuhuiJia,
+              [38] Alina Kuznetsova, Hassan Rom, Neil Alldrin, Jasper Ui-                and Ching-Hui Chen. Global self-attention networks for im-
+                   jlings, Ivan Krasin, Jordi Pont-Tuset, Shahab Kamali, Stefan          age recognition. In arXiv preprint arXiv:2010.03019, 2021.
+                   Popov, Matteo Malloci, Tom Duerig, et al. The open im-                2
+                   ages dataset v4: Uniﬁed image classiﬁcation, object detec-       [55] Karen Simonyan and Andrew Zisserman. Two-stream con-
+                   tion, and visual relationship detection at scale. IJCV, 2020.         volutional networks for action recognition in videos.   In
+                   5                                                                     NeurIPS, 2014. 2, 4
+              [39] Zhenzhong Lan, Mingda Chen, Sebastian Goodman, Kevin             [56] Aravind Srinivas, Tsung-Yi Lin, Niki Parmar, Jonathon
+                   Gimpel, Piyush Sharma, and Radu Soricut. Albert: A lite               Shlens, Pieter Abbeel, and Ashish Vaswani.      Bottleneck
+                   bert for self-supervised learning of language representations.        transformers for visual recognition. In CVPR, 2021. 2
+                   In ICLR, 2020. 2                                                 [57] Chen Sun, Abhinav Shrivastava, Saurabh Singh, and Abhi-
+                                                                                         nav Gupta. Revisiting unreasonable effectiveness of data in
+              [40] Ivan Laptev. On space-time interest points. IJCV, 64(2-3),            deep learning era. In ICCV, 2017. 5, 8
+                   2005. 2                                                          [58] LinSun,KuiJia,Dit-YanYeung,andBertramEShi. Human
+              [41] Yan Li, Bin Ji, Xintian Shi, Jianguo Zhang, Bin Kang, and             action recognition using factorized spatio-temporal convolu-
+                   Limin Wang. Tea: Temporal excitation and aggregation for              tional networks. In ICCV, 2015. 2
+                   action recognition. In CVPR, 2020. 7, 8                          [59] Christian Szegedy, Wei Liu, Yangqing Jia, Pierre Sermanet,
+              [42] Ji Lin, Chuang Gan, and Song Han. Tsm: Temporal shift                 Scott Reed, Dragomir Anguelov, Dumitru Erhan, Vincent
+                   modulefor efﬁcient video understanding. In ICCV, 2019. 8              Vanhoucke, and Andrew Rabinovich. Going deeper with
+              [43] Dhruv Mahajan, Ross Girshick, Vignesh Ramanathan,                     convolutions. In CVPR, 2015. 1
+                   KaimingHe,ManoharPaluri,YixuanLi,AshwinBharambe,                 [60] Christian Szegedy, Vincent Vanhoucke, Sergey Ioffe, Jon
+                   andLaurensVanDerMaaten. Exploringthelimitsofweakly                    Shlens, and Zbigniew Wojna. Rethinking the inception ar-
+                   supervised pretraining. In ECCV, 2018. 8                              chitecture for computer vision. In CVPR, 2016. 7
+              [44] Mathew Monfort, Alex Andonian, Bolei Zhou, Kandan Ra-            [61] Yi Tay, Mostafa Dehghani, Samira Abnar, Yikang Shen,
+                   makrishnan, Sarah Adel Bargal, Tom Yan, Lisa Brown,                   Dara Bahri, Philip Pham, Jinfeng Rao, Liu Yang, Sebas-
+                   Quanfu Fan, Dan Gutfreund, Carl Vondrick, et al. Moments              tian Ruder, and Donald Metzler.     Long range arena: A
+                   in time dataset: one million videos for event understanding.          benchmark for efﬁcient transformers.     In arXiv preprint
+                   PAMI,42(2):502–508, 2019. 1, 6                                        arXiv:2011.04006, 2020. 2
+              [45] Daniel Neimark, Omri Bar, Maya Zohar, and Dotan As-              [62] Yi Tay, Mostafa Dehghani, Dara Bahri, and Donald Met-
+                   selmann.   Video transformer network.    In arXiv preprint            zler. Efﬁcient transformers: A survey. In arXiv preprint
+                   arXiv:2102.00719, 2021. 2, 4                                          arXiv:2009.06732, 2020. 2
+              [46] Joe Yue-Hei Ng, Matthew Hausknecht, Sudheendra Vi-               [63] Hugo Touvron, Matthieu Cord, Matthijs Douze, Francisco
+                                                                                                                                  ´  ´
+                   jayanarasimhan, Oriol Vinyals, Rajat Monga, and George                Massa, Alexandre Sablayrolles, and Herve Jegou. Training
+                   Toderici. Beyond short snippets: Deep networks for video              data-efﬁcient image transformers & distillation through at-
+                   classiﬁcation. In CVPR, 2015. 2                                       tention. In arXiv preprint arXiv:2012.12877, 2020. 1, 2, 6
+              [47] Zizheng Pan, Bohan Zhuang, Jing Liu, Haoyu He, and Jian-         [64] Du Tran, Lubomir Bourdev, Rob Fergus, Lorenzo Torresani,
+                   fei Cai. Scalable visual transformers with hierarchical pool-         and Manohar Paluri. Learning spatiotemporal features with
+                   ing. In arXiv preprint arXiv:2103.10619, 2021. 2                      3dconvolutional networks. In ICCV, 2015. 2
+                                                                                    [65] Du Tran, Heng Wang, Lorenzo Torresani, and Matt Feis-
+              [48] Niki Parmar, Ashish Vaswani, Jakob Uszkoreit, Lukasz                  zli.  Video classiﬁcation with channel-separated convolu-
+                   Kaiser, Noam Shazeer, Alexander Ku, and Dustin Tran. Im-              tional networks. In ICCV, 2019. 2, 8
+                   age transformer. In ICML, 2018. 1, 2                             [66] Du Tran, Heng Wang, Lorenzo Torresani, Jamie Ray, Yann
+              [49] Will Price and Dima Damen.        An evaluation of action             LeCun,andManoharPaluri. Acloserlookatspatiotemporal
+                   recognition models on epic-kitchens.     In arXiv preprint            convolutions for action recognition. In CVPR, 2018. 2
+                   arXiv:1908.00867, 2019. 8                                        [67] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszko-
+              [50] Zhaofan Qiu, Ting Yao, Chong-Wah Ngo, Xinmei Tian, and                reit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia
+                   TaoMei. Learning spatio-temporal representation with local            Polosukhin. Attention is all you need. In NeurIPS, 2017. 1,
+                   and global diffusion. In CVPR, 2019. 8                                2, 3, 4, 5, 6
+                                                                                 6845
+                                                ¨                                       Xiang, Philip HS Torr, et al. Rethinking semantic segmen-
+              [68] Heng Wang, Alexander Klaser, Cordelia Schmid, and
+                   Cheng-Lin Liu. Dense trajectories and motion boundary de-            tation from a sequence-to-sequence perspective with trans-
+                   scriptors for action recognition. IJCV, 103(1), 2013. 2              formers. In arXiv preprint arXiv:2012.15840, 2020. 2
+              [69] Heng Wang, Du Tran, Lorenzo Torresani, and Matt Feiszli.       [85] Bolei Zhou, Alex Andonian, Aude Oliva, and Antonio Tor-
+                   Video modeling with correlation networks. In CVPR, 2020.             ralba. Temporal relational reasoning in videos. In ECCV,
+                   8                                                                    2018. 4, 8
+              [70] Huiyu Wang, Yukun Zhu, Hartwig Adam, Alan Yuille, and
+                   Liang-Chieh Chen.     Max-deeplab: End-to-end panoptic
+                   segmentation with mask transformers.    In arXiv preprint
+                   arXiv:2012.00759, 2020. 2
+              [71] Limin Wang, Yuanjun Xiong, Zhe Wang, Yu Qiao, Dahua
+                   Lin, Xiaoou Tang, and Luc Van Gool. Temporal segment
+                   networks: Towards good practices for deep action recogni-
+                   tion. In ECCV, 2016. 4, 8
+              [72] Sinong Wang, Belinda Li, Madian Khabsa, Han Fang, and
+                   Hao Ma. Linformer: Self-attention with linear complexity.
+                   In arXiv preprint arXiv:2006.04768, 2020. 2
+              [73] Wenhai Wang, Enze Xie, Xiang Li, Deng-Ping Fan, Kaitao
+                   Song, Ding Liang, Tong Lu, Ping Luo, and Ling Shao.
+                   Pyramid vision transformer:    A versatile backbone for
+                   dense prediction without convolutions.  In arXiv preprint
+                   arXiv:2102.12122, 2021. 2
+              [74] Xiaolong Wang, Ross Girshick, Abhinav Gupta, and Kaim-
+                   ing He. Non-local neural networks. In CVPR, 2018. 1, 2, 7,
+                   8
+              [75] Xiaofang Wang, Xuehan Xiong, Maxim Neumann, AJ Pier-
+                   giovanni, Michael S Ryoo, Anelia Angelova, Kris M Kitani,
+                   and Wei Hua. Attentionnas: Spatiotemporal attention cell
+                   search for video classiﬁcation. In ECCV, 2020. 8
+              [76] YuqingWang,ZhaoliangXu,XinlongWang,ChunhuaShen,
+                   Baoshan Cheng, Hao Shen, and Huaxia Xia. End-to-end
+                   video instance segmentation with transformers.   In arXiv
+                   preprint arXiv:2011.14503, 2020. 2
+                                              ¨     ¨
+              [77] Dirk Weissenborn, Oscar Tackstrom, and Jakob Uszkoreit.
+                   Scaling autoregressive video models. In ICLR, 2020. 4
+              [78] Chao-Yuan Wu, Christoph Feichtenhofer, Haoqi Fan, Kaim-
+                   ing He, Philipp Krahenbuhl, and Ross Girshick. Long-term
+                   feature banks for detailed video understanding. In CVPR,
+                   2019. 1
+              [79] Chao-Yuan Wu, Ross Girshick, Kaiming He, Christoph Fe-
+                   ichtenhofer, and Philipp Krahenbuhl. A multigrid method
+                   for efﬁciently training video models. In CVPR, 2020. 8
+              [80] Saining Xie, Chen Sun, Jonathan Huang, Zhuowen Tu, and
+                   Kevin Murphy. Rethinking spatiotemporal feature learning:
+                   Speed-accuracy trade-offs in video classiﬁcation. In ECCV,
+                   2018. 2
+              [81] Hongyi Zhang, Moustapha Cisse, Yann N. Dauphin, and
+                   David Lopez-Paz. Mixup: Beyond empirical risk minimiza-
+                   tion. In ICLR, 2018. 7
+              [82] Li Zhang, Dan Xu, Anurag Arnab, and Philip HS Torr. Dy-
+                   namic graph message passing networks. In CVPR, 2020. 2
+              [83] Hengshuang Zhao, Li Jiang, Jiaya Jia, Philip Torr, and
+                   Vladlen Koltun.    Point transformer.   In arXiv preprint
+                   arXiv:2012.09164, 2020. 2
+              [84] Sixiao Zheng, Jiachen Lu, Hengshuang Zhao, Xiatian Zhu,
+                   Zekun Luo, Yabiao Wang, Yanwei Fu, Jianfeng Feng, Tao
+                                                                               6846

@@ -1,0 +1,55 @@
+                                                             Generative Pretraining from Pixels
+               perimental validation set back into the training set, retrain     a cosine schedule. No dropout is used.
+               the model, and report numbers on the respective test set.         Whenﬁne-tuning, we use the same batch size and Adam
+               3.2. Context Reduction                                            hyperparameters. Here, we do not employ a cosine sched-
+               Because the memory requirements of the transformer de-            ule, and early stop once we reach the maximum validation
+               coder scale quadratically with context length when using          accuracy. Again, no dropout is used.
+               dense attention, we must employ further techniques to re-         WhenrunningalinearprobeonImageNet,wefollowrecent
+               duce context length. If we naively trained a transformer on       literature and use SGD with momentum 0.9 and a high
+                                        2                                        learning rate (we try the values 30, 10, 3, ... in the manner
+               a sequence of length 224 ×3, our attention logits would be        described above) (He et al., 2019). We train for 1000000
+               tens of thousands of times larger than those used in language
+               models and even a single layer would not ﬁt on a GPU. To          iterations with a cosine learning rate schedule. Finally, when
+               deal with this, we ﬁrst resize our image to a lower resolution,   running a linear probe on CIFAR-10, CIFAR-100, or STL-
+               which we call the input resolution (IR). Our models have          10, we use the L-BFGS algorithm for consistency with prior
+                               2         2           2                           results (Pedregosa et al., 2011).
+               IRs of either 32 × 3, 48 × 3, or 64 × 3.
+               An IR of 322 × 3 is still quite computationally intensive.        4. Experiments and Results
+               While working at even lower resolutions is tempting, prior
+               workhasdemonstratedhumanperformanceonimageclassi-                 We begin with experiments and results from the autore-
+               ﬁcationbeginstodroprapidlybelowthissize(Torralbaetal.,            gressive formulation of iGPT. Comparisons with the BERT
+               2008). Instead, motivated by early color display palettes,        formulation appear in Section 4.6.
+               wecreate our own 9-bit color palette by clustering (R, G,         4.1. What Representation Works Best in a Generative
+               B) pixel values using k-means with k = 512. Using this                ModelWithoutLatentVariables?
+               palette yields an input sequence length 3 times shorter than
+               the standard (R, G, B) palette, while still encoding color
+               faithfully. A similar approach was applied to spatial patches
+               byRanzatoetal.(2014). Wecalltheresultingcontextlength
+                  2       2      2
+               (32 or 48 or 64 ) the model resolution (MR). Note that
+               this reduction breaks permutation invariance of the color
+               channels, but keeps the model spatially invariant.
+               3.3. Model
+               Our largest model, iGPT-XL, contains L = 60 layers and
+               uses an embedding size of d = 3072 for a total of 6.8B pa-
+               rameters. Our next largest model, iGPT-L, is essentially          Figure 2. Representation quality depends on the layer from which
+               identical to GPT-2 with L = 48 layers, but contains a             weextract features. In contrast with supervised models, the best
+               slightly smaller embedding size of d = 1536 (vs 1600)             representations for these generative models lie in the middle of the
+               for a total of 1.4M parameters. We use the same model             network. We plot this unimodal dependence on depth by showing
+               codeasGPT-2,exceptthatweinitialize weights in the layer-          linear probes for iGPT-L on CIFAR-10, CIFAR-100, and STL-10.
+               dependent fashion as in Sparse Transformer (Child et al.,
+               2019) and zero-initialize all projections producing logits.       In supervised pre-training, representation quality tends to
+               Wealsotrain iGPT-M, a 455M parameter model with L =               increase monotonically with depth, such that the best rep-
+               36andd=1024andiGPT-S,a76Mparametermodelwith                       resentations lie at the penultimate layer (Zeiler & Fergus,
+               L=24andd=512tostudytheeffectofmodelcapacity                       2014). Indeed, since a linear layer produces class logits
+               onrepresentation quality in a generative model.                   from pre-logits, a good classiﬁer necessarily achieves high
+                                                                                 accuracy on a linear probe of its pre-logits. If a downstream
+               3.4. Training                                                     task also involves classiﬁcation, it is empirically validated
+               Whenpre-training iGPT-XL, we use a batch size of 64 and           that penultimate features perform well.
+               train for 2M iterations, and for all other models we use          Withgenerative pre-training, it is not obvious whether a task
+               a batch size of 128 and train for 1M iterations. We use           like pixel prediction is relevant to image classiﬁcation. This
+               Adamwithβ1 = 0.9andβ2 = 0.95andsequentiallytrythe                 suggests that the penultimate layer of a model trained for
+               learning rates 0.01, 0.003, 0.001, 0.0003, ..., stopping once     pixel prediction might not produce the most useful repre-
+               the ﬁnal validation loss starts increasing. The learning rate     sentations for classiﬁcation. Latent variable models such as
+               is warmed up for one epoch, and then decays to 0 following        VAEscanavoidthisissue by explicitly learning a represen-
+                                                                                 tation of the input data, but deep autoregressive generative

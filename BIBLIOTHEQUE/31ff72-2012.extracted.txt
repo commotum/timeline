@@ -1,0 +1,1001 @@
+                    Learning Semantic String Transformations from Examples
+                                                                              ∗
+                                                   Rishabh Singh                                                                 Sumit Gulwani
+                                             MITCSAIL,Cambridge,MA                                                  Microsoft Research, Redmond, WA
+                                              rishabh@csail.mit.edu                                                       sumitg@microsoft.com
+                   ABSTRACT                                                                                 professional programmers, but they need to create small,
+                   We address the problem of performing semantic transfor-                                  often one-oﬀ, applications to support business functions [6].
+                   mations on strings, which may represent a variety of data                                   Unfortunately, the programming experience since incep-
+                   types (or their combination) such as a column in a relational                            tion has mostly focused on serving the needs of a select class
+                   table, time, date, currency, etc. Unlike syntactic transfor-                             of few million skilled users. In particular, spreadsheet sys-
+                   mations, which are based on regular expressions and which                                tems like Microsoft Excel allow sophisticated users to write
+                   interpret a string as a sequence of characters, semantic trans-                          macros using a rich inbuilt library of string and numerical
+                   formations additionally require exploiting the semantics of                              functions, or to write arbitrary scripts using a variety of
+                   the data type represented by the string, which may be en-                                programming languages like Visual Basic, or .NET. Since
+                   coded as a database of relational tables. Manually perform-                              end-users are not proﬁcient in programming, they ﬁnd it too
+                   ing such transformations on a large collection of strings is                             diﬃcult to write desired macros or scripts.
+                   error prone and cumbersome, while programmatic solutions                                    The combination of the above-mentioned technical trends
+                   are beyond the skill-set of end-users.                 We present a pro-                 and lack of a satisfactory solution has led to a marketplace
+                                                                                                                                                                               1
+                   gramming by example technology that allows end-users to                                  of hundreds of advertisement-driven help-forums , some of
+                   automate such repetitive tasks.                                                          whichcontainmillions of posts from end-users soliciting help
+                      We describe an expressive transformation language for                                 for scripts to manipulate data in their spreadsheets. The ex-
+                   semantic manipulation that combines table lookup opera-                                  perts respond to these requests after some time. From an
+                   tions and syntactic manipulations. We then present a syn-                                extensive case study of such spreadsheet help-forums, we ob-
+                   thesis algorithm that can learn all transformations in the                               served the following two things.
+                   language that are consistent with the user-provided set of                               Semantic String Transformations: Several of the re-
+                   input-output examples. We have implemented this technol-                                 quested scripts/macros were for manipulating strings that
+                   ogy as an add-in for the Microsoft Excel Spreadsheet system                              need to be interpreted as more than a sequence of charac-
+                   and have evaluated it successfully over several benchmarks                               ters, e.g., as a column entry from some relational table, or
+                   picked from various Excel help-forums.                                                   as some standard data type such as date, time, or currency.
+                                                                                                            (See §2 for a motivating example.) In this paper, we de-
+                   1.     INTRODUCTION                                                                      scribe the systematic design of a semantic transformation
+                                                                                                            language for manipulating such strings.
+                      The IT revolution over the past few decades has resulted                              Input-Output Examples based Interaction Model:
+                   in two signiﬁcant advances: digitization of massive amounts                              End-users used input-output examples as the most com-
+                   of data and accessibility of computational devices to massive                            mon and natural way of expressing intent to experts on the
+                   proportions of the population. It is thus not surprising that                            other side of the help-forums. An expert provides a pro-
+                   morethan500millionpeopleworldwideusespreadsheetsfor                                      gram/transformationthatisconsistent with those examples.
+                   storing and manipulating data. These business end-users                                  If the end-user is not happy with the result of the program
+                   have myriad diverse backgrounds and include commodity                                    on any other new input in the spreadsheet, the interaction
+                   traders, graphic designers, chemists, human resource man-                                is repeated with an extended set of input-output examples.
+                   agers, ﬁnance pros, marketing managers, underwriters, com-                               This is the natural interface that our tool provides to the
+                   pliance oﬃcers, and even mail room clerks—they are not                                   end-user. We describe the systematic design of an (induc-
+                   ∗                                                                                        tive) synthesis algorithm that can learn desired scripts in
+                    Work done during two internships at Microsoft Research.                                 our transformation language from very few examples.
+                                                                                                               Weobservethatmostsemantictransformationscanbeex-
+                   Permission to make digital or hard copies of all or part of this work for                pressed as a combination of lookup transformations and syn-
+                   personal or classroom use is granted without fee provided that copies are                tactic transformations. We use this observation to present
+                   not made or distributed for proﬁt or commercial advantage and that copies                a systematic design of the transformation language for per-
+                   bear this notice and the full citation on the ﬁrst page. To copy otherwise, to           forming semantic string transformations. We ﬁrst present
+                   republish, to post on servers or to redistribute to lists, requires prior speciﬁc        an expressive language for lookup transformations and then
+                   permission and/or a fee. Articles from this volume were invited to present               extend it by adding syntactic transformations [8].
+                   their results at The 38th International ConferenceonVeryLargeDataBases,
+                   August 27th - 31st 2012, Istanbul, Turkey.                                               1http://www.excelforum.com/, http://www.ozgrid.com/forum/,
+                   Proceedings of the VLDB Endowment, Vol. 5, No. 8                                         http://www.mrexcel.com/, http://www.exceltip.com/
+                   Copyright 2012 VLDB Endowment 2150-8097/12/04... $ 10.00.
+                                                                                                      740
+                      Input v     Input v       Output
+                             1           2                                        repetitive task (i.e., ﬁlls in the bold entries). We highlight
+                      Stroller    10/12/2010    $145.67+0.30*145.67               below the key technical challenges involved.
+                      Bib         23/12/2010    $3.56+0.45*3.56
+                      Diapers     21/1/2011     $21.45+0.35*21.45                 Expressive transformation language. The transforma-
+                      Wipes       2/4/2009      $5.12+0.40*5.12                   tion/program inferred by our system for automating the
+                      Aspirator   23/2/2010     $2.56+0.30*2.56                   repetitive task involves both lookup and syntactic opera-
+                         MarkupRec                        CostRec                 tions. In particular, note that we need lookup operations
+                 Id     Name        Markup       Id      Date      Price          for (i) obtaining the markup percentage from an item name
+                 S30    Stroller    30%          S30     12/2010   $145.67        in MarkupRec table (Stroller → 30%) and (ii) for obtaining
+                 B56    Bib         45%          S30     11/2010   $142.38        the purchase price of item in CostRec table after perform-
+                 D32    Diapers     35%          B56     12/2010   $3.56          ing a join operation between the two tables on the item
+                 W98 Wipes          40%          D32     1/2011    $21.45         Id column (Stroller,12/2010 → $145.67). Observe that the
+                 A46    Aspirator   30%          W98 4/2009        $5.12          string 12/2010 used for performing the second lookup is ob-
+                 · · ·  · · ·       · · ·        A46     2/2010    $2.56          tained by performing a syntactic transformation (namely, a
+                                                 · · ·   · · ·     · · ·          substring operation) on the input string 10/12/2010. After
+              Figure 1: A transformation that requires perfoming                  performing the lookups, we need a syntactic transforma-
+              syntactic manipulations on multiple lookup results.                 tion (namely, a concatenate operation) to concatenate the
+                 We also describe a systematic design of the synthesis al-        lookup outputs with constant strings like +,0.,* in a par-
+              gorithm for the semantic string transformation language,            ticular order to generate the ﬁnal output string. We present
+              which can synthesize a set of semantic transformations that         anexpressive transformation language that combines lookup
+              are consistent with the given set of input-output examples.         and syntactic transformations in a nested manner.
+              Weﬁrst describe a synthesis algorithm for the lookup trans-         Succinctrepresentation&efﬁcientcomputationoflarge
+              formation language L , and then extend it to a synthesis
+                                     t                                            number of consistent transformations. The number of
+              algorithm for the extension of L with syntactic transfor-
+                                                 t                                expressions in our expressive transformation language that
+              mations. Experimental results on our benchmark examples             are consistent with a given input-output example can poten-
+              show that our algorithm is scalable and can learn desired           tially be very large. For example, for the ﬁrst input-output
+              transformations from very few examples.                             example(Stroller, 10/12/2012→$145.67+0.30*145.67),
+                 This paper makes the following key contributions:                there are a large number of transformations that can gen-
+               • Wedescribe a lookup transformation language L and an
+                                                                   t              erate the output string. In general, every substring in the
+                 inductive synthesis algorithm for it (§4).                       output string can potentially be either a constant string, or
+               • We observe that most semantic transformations can be             a substring of an input string, or the result of a lookup op-
+                 expressed as combination of lookup and syntactic trans-          eration. For example, the substring 30 in the output string
+                 formations. We extend language L with syntactic trans-           can either be a constant string or a string obtained by per-
+                                                     t
+                 formations to obtain a very expressive language L      and       forming a lookup operation in the MarkupRec or CostRec
+                                                                      u
+                 describe an inductive synthesis algorithm for it (§5).           table. Some of the possible lookup transformations to ob-
+               • We describe an experimental prototype of our system              tain the string 30 include selecting the Markup column entry
+                 that has an attractive user-interface and is ready to be         in the MarkupRec table where the item Name in the corre-
+                 deployed. We present the evaluation of our prototype             sponding row is either one of the constant strings Stroller
+                 on a large collection of benchmarks obtained from help-          or Aspirator, or it matches the input string v . Another
+                                                                                                                                   1
+                 forums, books, mailing lists and Excel product team (§7).        valid lookup transformation is to select the last two charac-
+                 This paper is organized as follows. §3 establishes a com-        ters from the item Id column (S30) in MarkupRec or CostRec
+              monframeworkfordescribing transformation languages and              table with various ways to select the ﬁrst row by constrain-
+              their inductive synthesis algorithms.    §4 and §5 describe         ing the item Name or Date columns respectively. We thus
+              novel instantiations of this framework for a lookup trans-          have a large number of possible transformations for each
+              formation language and for its extension with a syntactic           substring of the output string and explicit enumeration of
+              transformation language. §6 shows applications of the se-           all such choices becomes infeasible. A key technical contri-
+              mantic transformation language (described in §5) for per-           bution of this paper is a data structure that can succinctly
+              forming transformations on standard data types.                     represent an exponential number of such transformations in
+                                                                                  polynomial space, and an algorithm that can compute such
+              2.    MOTIVATINGEXAMPLE                                             transformations in polynomial time. The key idea is to share
+                                                                                  common sub-expressions and compute/maintain choices for
+                 Consider the following example from an Excel help-forum.         independent sub-expressions independently.
+                 Example 1. Ashopkeeperwantedtocomputetheselling                  Ranking. Our synthesis algorithm learns the set of all con-
+              price of an item (Output) from its name (Input v1) and              sistent transformations for each example and then intersects
+              selling date (Input v2) using the MarkupRec and CostRec             these sets to obtain the common transformations. The num-
+              tables as shown in Figure 1. The selling price of an item is        ber of examples required to converge to the desired trans-
+              computed by adding its purchase price (for the corresponding        formation may be large. To enable learning of the desired
+              month) to its markup charges, which in turn is calculated by        transformation from very few examples, we perform a rank-
+              multiplying the markup percentage by the purchase price.            ing of these learned transformations that gives preference to
+                 The user expresses her intent by giving a couple of exam-        transformations that are smaller (Occam’s razor principle)
+              ples (i.e., the ﬁrst two rows). Our tool then automates the         and that use fewer constants (to enforce generalization).
+                                                                             741
+               3.   OVERVIEW                                                           Thesynthesis algorithm Synthesize involves invoking the
+                 We describe our expressive transformation language and             GenerateStr procedure on each input-output example, and
+               associated data structures and algorithms for inductive syn-         intersecting the results using the Intersect procedure:
+                                                                                         Synthesize((σ ,s ),...,(σ ,s ))
+               thesis in two steps (§4 and §5). In this section, we introduce                           1   1         n n
+                                                                                        1 P :=GenerateStr(σ ,s );
+               the common formalism and our user interaction model (as                                           1  1
+               derived from recent work on inductive synthesis [8, 9]).                 2 for i = 2 to n:
+                                                                                        3    P0 := GenerateStr(σ ,s );P := Intersect(P,P0);
+               3.1    Formalism                                                                                     i  i
+                                                                                        4 return P;
+               Transformation language L. The ﬁrst step in inductive                Ranking. An expressive domain-speciﬁc language L for in-
+               synthesis is to deﬁne a domain speciﬁc language that is ex-          ductive synthesis can often require a large number of ex-
+               pressive enough to capture several real-world tasks, but at          amples to learn the intended transformation. We address
+               the same time is restrictive enough to enable eﬃcient learn-         this problem by developing a ranking scheme that can be
+               ing from input-output examples. In this paper, we introduce          used to rank the possibly large number of transformation ex-
+               a string transformation expression language L, which con-            pressions that are consistent with a small number of input-
+               tains expressions e that map an input state σ, which holds           output examples. This ranking scheme is inspired by the
+               values for m string variables v ,..,v  (denoting the multiple
+                                              1     m                               Occam’s razor principle, which states that a smaller and
+               input columns in a spreadsheet), to an output string s.              simpler explanation is usually the correct one. We deﬁne a
+                         e : (String × ... × String) → String                       comparison scheme between diﬀerent expressions by deﬁn-
+               This formalism can also be used for string processing tasks          ing a partial order between them. Any partial order can be
+               that require generating a tuple of n strings as output by            used that is consistent with the sharing used in data struc-
+               solving n independent problems. We characterize an ex-               ture D for succinct representation of sets of such expressions.
+               pression language L with the following components: (a) a             In other words, the comparison of any two sub-expressions
+               set of grammar rules R, (b) a top-level symbol e, which is a         should be based only on attributes that are not shared at
+               uniquely distinguished non-terminal symbol occurring in R.           the level of the sub-expressions. This allows us to eﬃciently
+               §4.1 and §5.1 describe two examples of such a language.              identify the top ranked expressions from among a set of ex-
+               Data structure D for set of expressions in L. The num-               pressions represented using D. We give examples of such a
+               ber of transformation expressions that are consistent with a         ranking scheme in §4.4 and §5.4. Some of these choices are
+               given set of input-output examples can be huge. We deﬁne             subjective, but our experiments illustrate that our ranking
+               a data structure D to succinctly represent such a large set          scheme works very eﬀectively in practice: all of our bench-
+               of expressions. We describe D itself using a set of gram-            mark tasks required at most 3 input-output examples.
+                           ˜
+               mar rules R with top-level symbol e˜.       §4.2 and §5.2 de-
+               scribe examples of such a data structure that uses a top-level       3.2    User Interaction Model
+               graph/DAG representation respectively.                                  The user expresses her intent of the task using few input-
+               Synthesis algorithm: GenerateStr and Intersect. The                  output examples. The synthesizer based on the above for-
+               inductive synthesis algorithm Synthesize for an expression           malism then generates a ranked set of transformations that
+               language L learns the set of expressions in L (represented           are consistent with those examples. We describe below some
+               using data structure D) that are consistent with a given set         interaction techniques for automating the desired task or for
+               of input-output examples. Our synthesis algorithm consists           generating a reusable transformation.
+               of the following two procedures:                                        The user can run the top-ranked synthesized transforma-
+               • The GenerateStr procedure for computing the set of all             tion on other inputs in the spreadsheet and check the gener-
+                  expressions (represented using data structure D) that are         ated outputs. If any output is incorrect, the user can ﬁx it
+                  consistent with a given input-output example.                     and the synthesizer can repeat the learning process with the
+               • The Intersect procedure for intersecting two sets of ex-           additional example that the user provided as a ﬁx. Requir-
+                  pressions (represented using data structure D). We de-            ing the user to check the results of the synthesizer, especially
+                  scribe Intersect procedure also using a set of rules.             onalargespreadsheet, can be cumbersome. Toenableeasier
+                                                                                    interaction, the synthesizer can run all transformations on
+                 Definition 1. (Soundness/k-completeness of Generate-               each new input to generate a set of corresponding outputs
+               Str) Let e˜ = GenerateStr(σ,s). We say that GenerateStr              for that input. The synthesizer can then highlight those in-
+               procedure is sound if all expressions in e˜ are consistent with      puts (for user inspection) whose corresponding output set
+               the input-output example (σ,s). We say that GenerateStr              contains at least two outputs. The user can then focus their
+               procedure is k-complete if e˜ includes all expressions with at       inspection on the highlighted inputs. Our prototype, imple-
+               most k recursive sub-expressions that are consistent with the        mented as an Excel add-in, supports this interaction model
+               input-output example (σ,s).                                          (which is also used in [8]).
+                                                                                       On the other hand, if the user wishes to learn a reusable
+                 Definition 2. (Soundness/Completeness of Intersect)                script, then the synthesizer may present the set of synthe-
+                    00                  0                                           sized transformations to the user. Either the top-k trans-
+               Let e˜ = Intersect(e,˜ e˜ ). We say that Intersect is sound
+                                   00                                               formations can be shown, or the synthesizer can walk the
+               and complete iﬀ e˜ includes all expressions that belong to
+                            0                                                       user through the data structure that succinctly represents
+               both e˜ and e˜ .
+                                                                                    all consistent transformations and let the user select the de-
+                 §4.3 and §5.3 give examples of GenerateStr/Intersect               sired one. The transformations can be shown using the sur-
+               procedures that are sound and k-complete/complete and                face syntax, or can be paraphrased in a natural language.
+               that have polynomial time complexity.                                The diﬀerences between diﬀerent transformations can also
+                                                                                742
+                                                                                                      Input v       Output
+              be explained by synthesizing a distinguishing input on which                                   1
+              the transformations behave diﬀerently [11]. After receiving                             Peter Shaw    110
+              the correct output from the user on the distinguishing in-                              Gary Lamb     225
+              put, the synthesizer can repeat the learning process with                               Mike Henry    2015
+              this additional example.                                                                Sean Riley    495
+              4.    LOOKUPTRANSFORMATIONS                                                   CustData                          Sale
+                                                                                   Name          Addr    St        Addr   St     Date    Price
+                 In this section, we present a lookup transformation lan-          Sean Riley    432     15th      24     18th   5/21    110
+              guage Lt that can model transformations that involve map-            Peter Shaw    24      18th      104    12th   5/23    225
+              ping a tuple of strings to another string using (possibly            Mike Henry    432     18th      432    18th   5/20    2015
+              nested) lookup operations over a given database of relational        Gary Lamb     104     12th      432    15th   5/24    495
+              tables. We ﬁrst present the syntax and semantics of Lt and           · · ·         · · ·   · · ·     · · ·  · · ·  · · ·   · · ·
+              then present a data structure D to succinctly represent a
+                                                t                                 Figure 2: A lookup transformation that requires
+              large set of expressions in the language. We then present           joining two tables.
+              an eﬃcient synthesis algorithm to learn a set of transforma-
+              tions in Lt from a set of input-output examples, such that          Consider the case of m = 4. Let e ≡ Select(C ,T ,C =
+              each of the learned transformations when run on the given                                                             2   1  1
+                                                                                  v ) that produces string s . Two possible expressions in L
+              inputs produces the corresponding outputs.                           1                         2                                t
+                                                                                  toobtainoutputs frominputs are: (i)e ≡ Select(C ,T ,
+              4.1    LookupTransformationLanguageL                                                  4             1          1             3  2
+                                                                     t            C = e) (corresponding to path s → s → s ) and (ii)
+                                                                                   1                                  1      2      4
+                 ThesyntaxofourexpressionlanguageL forlookuptrans-                e2 ≡ Select(C2,T3,C1 = Select(C2,T2,C1 = e)) (corre-
+                                                         t                        sponding to path s → s → s → s ). The expressions
+              formations is deﬁned in Figure 3(a). An expression et is                                1      2     3      4
+                                                                                  e and e share the common sub-expression e which corre-
+              either an input string variable vi, or a select expression           1       2
+                                                                                  sponds to obtaining the intermediate string s .
+              denoted by Select(C,T,b), where T is a relational table                                                            2
+              identiﬁer and C is a column identiﬁer of the table. The
+              Boolean condition b is an ordered conjunction of predicates         4.2    DataStructureforSetofExpressionsinL
+              p ∧... ∧ p where predicate p is an equality comparison                                                                          t
+               1          n                                                         The set of expressions in language L that are consistent
+              between the content of some column of the table with a                                                      t
+              constant or an expression. We place a restriction on the            with a given input-output example can be exponential in
+              columns present in these conditional predicates namely that         the number of reachable table entries. We represent this set
+                                                                                  succinctly using the data structure D , which is described
+              these columns together constitute a candidate key of the ta-                                               t
+              ble. The main idea behind this restriction is that we want          in Figure 3(b). The data structure consists of a generalized
+                                                                                                                                 ˜
+                                                                                  expression e˜ , generalized Boolean condition b, and gener-
+              to express queries that produce a single output as opposed                      t
+                                                                                  alized predicate p˜ (which respectively denote a set of L
+              to a set of outputs. The ordering of predicates results in an                                                                   t
+              eﬃcient intersection algorithm as described in §4.3.                expressions, a set of Boolean conditions b, and a set of pred-
+                 The language L has expected semantics. The expression            icates p). The formal semantics [[.]] of the data structure is
+                                 t                                                described in Figure 3(c). The generalized expression e˜ is
+              Select(C,T,b) returns the table entry T[C,r], where r is                                                                      t
+              the only row that satisﬁes condition b (as condition b is over      represented using a tuple (η˜,ηt,Progs) where η˜ is a set of
+              candidate keys of the table). If there exists no row r whose        nodes containing a distinct target node ηt (representing the
+                                                                                                                      ˜
+              columns satisfy b, the expression returns the empty string                                              f
+              . The predicate C = e is evaluated for row r by ﬁrst eval-         output string), and Progs : η˜ → 2    maps each node η ∈ η˜
+                                      t                                           to a set consisting of input variables vi or generalized select
+              uating the expression e and then comparing the returned             expressions Select(C,T,B). A generalized select expression
+                                       t
+              string [[et]]σ with the string T[C,r].                                                                             ˜
+                                                                                  takes a set of generalized Boolean conditions bi as the last
+                 We now present an example taken from an Excel help-                                     ˜
+                                                                                  argument, where each bi corresponds to some candidate key
+              forum that can be represented in L .                                                                        ˜
+                                                   t                              of table T. A generalized conditional b is a conjunction of
+                                                                                  generalized predicates p˜ , where each p˜ is an equality com-
+                 Example 2. An Excel user was working on two tables:                                      i               i
+              CustData and Sale. The user wanted to map names of cus-             parison of the jth column of the corresponding candidate key
+              tomers to the selling price using address and street num-           with a constant string s or some node η˜ or both. There are
+              ber columns as common columns between the two tables and            two key aspects of this data structure which are explained
+              posted the example shown in Figure 2 on a help-forum.               below using some worst-case examples.
+                 The transformation can be expressed in L as                      Use of intermediate nodes in η˜ for sharing: Con-
+                                                            t                     sider the problem in Example 3. The set of all transfor-
+               Select(Price,Sale,Addr = Select(Addr,CustData,                     mations in L that are consistent with the example s → s
+                  Name = v )∧St = Select(St,CustData,Name = v )).                              t                                       1     m
+                           1                                         1            can be represented succinctly using our data structure as:
+                 Thesurface syntax of L allows sharing of sub-expressions
+                                         t                                        {{η ,...,η },η ,Progs}, where Progs[η ] = {Select(C ,
+              (which is the key principle used in data structure D de-               1       m    m                         i               2
+                                                                       t          T   , {C = {s     , η  }}),Select(C ,T      , {C = {s     ,
+              scribed in §4.2). To appreciate this, consider the following         i−1    1      i−1  i−1               3  i−2    1      i−2
+                                                                                  η   }})}, Progs[η ] = {v }, and Progs[η ] = {Select(C ,T ,
+              example, which is also our running example in this section.          i−2              1      1               2               2  1
+                                                                                  {C = {s ,η }})}. The node η essentially corresponds to
+                                                                                     1      1  1                   i
+                 Example 3. Consider m tables T to T , each contain-              the string s .  Figure 4 illustrates how the various nodes
+                                                    1     m                                   i
+              ing three columns C , C , and C with C being the primary            can be reached or computed from one another. Let N(i)
+                                  1    2       3        1
+              key. Suppose table T contains a row (s ,s        ,s   ). Now        denote the number of expressions represented succinctly by
+                                    i                    i  i+1 i+2
+              given an input-output example s → s , we want to com-               Progs[η ]. We have N(i) = 2 + N(i-1) + N(i-2), imply-
+                                                1      m                                  i
+              pute all expressions in L that are consistent with it.                                    i
+                                        t                                         ing that N(i) = Θ(2 ). Observe how our data structure
+                                                                             743
+                                                                                             e˜      :=        (η˜, ηt, Progs)                                             t                                               ˜ ˜                       t
+                                                                                               t                                                                  [[(η˜, η , Progs)]]           = {e |e ∈[[f]],f ∈ Progs[η ]}
+                                                                                                                                                                                                           t      t
+                                                                                                                                                    ˜
+                          Expression et                :=       vi                                             where Progs : η˜ → 2f                                                 [[v ]]     = {v }
+                                                                                                                                                                                         i                 i
+                                                         |      Select(C,T,b) ˜                                                                                                   ˜                                                             ˜
+                                                                                              f      :=        v | Select(C,T,B)                       [[Select(C,T,{b } )]]                    = {Select(C,T,b) | b ∈ [[b ]]}
+                                                                                                                 i                                                                  i i                                                           i
+                                                                                                                 ˜                                                 [[p˜  ∧...∧p˜ ]]             = {p ∧...∧p |p ∈[[p˜ ]]}
+                                                                                             B := {b}                                                                 1                 n                  1                 n       j         j
+                          Boolean Cond b                   :=        p ∧...∧p                                      i i
+                                                                       1                 n
+                                                                                              ˜                                                                               [[C = s]]         = {C=s}
+                                                                                               b     :=        p˜   ∧...∧p˜
+                                  Predicate p              :=        C=s                                         1                 n
+                                                                                                                                                                              [[C = η]]         = {C=e |e ∈[[Progs[η]]]}
+                                                             |       C=e                      p˜     :=        C=s|C=η                                                                                              t      t
+                                                                               t
+                                                                                                       |       C={s,η}                                                [[C = {s,η}]]             = [[C =s]]∪[[C = η]]
+                                                        (a)                                                           (b)                                                                            (c)
+                        Figure 3: (a) The syntax of lookup transformation language L , (b) and (c) describe the syntax and semantics
+                                                                                                                                                       t
+                        of data structure D for succinctly representing a set of expressions from language L .
+                                                                t                                                                                                                                      t
+                                                                                                                                              (of depth at most steps), each of which evaluates to string
+                                ������                 ������                 ������                 ������            ….              ������                     val(η) on the input state σ. The key idea of the loop at
+                                                      2                  3
+                                                                                            4
+                                   1                                                                                      ������                  Line 7 is to perform an iterative forward reachability anal-
+                                                                                                                                              ysis of the string values that can be generated in a single
+                                                                                                                                              step (i.e., using a single Select expression) from the string
+                         Figure 4: The reachability graph of nodes in Ex. 3.                                                                  values computed in previous step, with the base case being
+                                                                                                                                              the values of the input string variables.
+                                                                                                                                                  Each iteration of the loop at Line 7 results in considera-
+                        makes use of the set of nodes {η1,...,ηm} to succinctly rep-                                                          tion of expressions whose depth is one larger than the set of
+                                           m
+                        resent Θ(2 ) transformations in O(m) space.                                                                           expressions considered in the previous step. The depth of
+                            Exploiting CNF form of boolean conditions: The                                                                    the expressions in language L can be as much as the total
+                                                                                                                                                                                                   t
+                        second key aspect of our representation is exploiting the                                                             number of entries in all of the relational tables combined.
+                        CNF form of boolean conditions to succinctly represent a                                                              Since we have not observed any intended transformation
+                                         ˜
+                        huge set b of conditionals. Consider a table T with n + 1                                                             that requires self-joins, we limit the depth consideration to
+                        columns C1,...,Cn+1, where the ﬁrst n columns consti-                                                                 a parameter k whose value we set to be equal to the number
+                        tute a primary key of the table and the table contains an                                                             of relational tables present in the spreadsheet. One might
+                        entry (s ,s ,...,s ,t).                       Consider the input-output exam-                                         be tempted to use the predicate (s ∈ η˜ ∨ η˜                                            = η˜) as a
+                                       1     2            n                                                                                                                                                                     Old
+                        ple (s ,s ,...,s ) → t with s                                 = s = ··· = s                               .           termination condition for the loop. However, this has two
+                                   1     2            m                           1          2                       max(m,n)
+                        The number of transformations that are consistent with the                                                            issues. The ﬁrst issue is that it may happen co-incidentally
+                        given input-output example are (m + 1)n because for in-                                                               that the output string s is computable by a transformation
+                        dexing into each column Ci of the table, we have m + 1                                                                of depth smaller than the depth of the intended transforma-
+                        choices namely constant s and the input string variables                                                              tion on a given example, and in that case we would fail to
+                                                                        1
+                        v1,...,vm. This huge set of transformations can be repre-                                                             discover the correct transformation. The other major issue
+                        sented succinctly in O(n+m) space using our data structure                                                            is that it might also happen that the intended transforma-
+                        as ({η1,η2},η2,Progs), where Progs[η1] = {v1,...,vm}, and                                                             tion does not belong to the language L , in which case the
+                                                                                                                                                                                                                     t
+                                                                                               n
+                                                                              ˜       ˜        V                                              search would fail, but only after consideration of all expres-
+                        Progs[η ] = {Select(C                           , T,b)}, b =               (C ={s ,η }).
+                                      2                           n+1                                   i          1    1                     sions whose depth is as large as the total number of entries
+                                                                                              i=1
+                                                                                                                                              in all relational tables combined together.
+                             Theorem 1                  (Properties of data structure Dt).                                                        The generalized boolean condition B is computed to be
+                        (a) The number of transformations in L that are consistent                                                            the set of all boolean conditions that uniquely identify row r
+                                                                                                t
+                        with a given example may be exponential in the number of                                                              in table T (Line 10). It considers the set of candidate keys of
+                        reachable entries and number of columns in a candidate key.                                                           table T and for each column C0 in a candidate key it learns
+                        (b) However, the data structure D can represent these po-                                                                                                                0               0             −1           0
+                                                                                       t                                                      the generalized predicate: C = {T[C ,r],val                                           [T[C ,r]]}.
+                        tentially exponential number of transformations in polyno-                                                                During the reachability computation, a node η can be
+                        mial size in number of reachable entries, number of candi-                                                            reached through multiple paths and therefore the set of ex-
+                        date keys and number of columns in a candidate key.                                                                   pressions associated with the node (Progs[η]) needs to be
+                                                                                                                                              updated accordingly. When a node is revisited, the algo-
+                        Proof of (a) follows from the two examples discussed above,                                                           rithm computes the Select expression with updated set of
+                        while proof of (b) follows from Theorem 2(a).                                                                         boolean conditions B and adds it to the set (Line 15).
+                                                                                                                                                  Wenowbrieﬂy describe how the GenerateStr procedure
+                        4.3         Synthesis Algorithm for L                                                                                                                                                                       t
+                                                                                               t                                              computes the set of expressions for each node in Exam-
+                        Procedure GenerateStr                                                                                                 ple 3. It ﬁrst creates a node η1 such that Progs[η1] = {v1},
+                                                                     t                                                                        val(η ) = s and the frontier of reachable nodes is set as
+                        The GenerateStr procedure, shown in Figure 5(a), oper-                                                                          1           1
+                                                        t                                                                                     η˜        = {η }. We use node η to denote the node cor-
+                        ates by iteratively computing a set of nodes η˜ and updating                                                            diff              1                                     i
+                                                                                                                                              responding to string s such that val(η ) = s . The al-
+                        two maps Progs and val in the loop at Line 7. Each node                                                                                                        i                                i            i
+                                                                                                                                              gorithm then ﬁnds that the table entry T [C ,1] is reach-
+                        η ∈ η˜ represents a string val(η) that is present in some                                                                                                                                          1     1
+                        table entry.             The inverse map val−1(a) returns the node                                                    able from node η1 with the generalized boolean condition
+                                                                                                                                              B={C ={s ,v }}. The algorithm then makes the other
+                        corresponding to string a or ∅ if no such node exist. The                                                                           1           1    1
+                                                                                                                                              column entries in the row, namely T [C ,1] and T [C ,1]
+                        map Progs associates every node η to a set of expressions                                                                                                                                 1     2                   1     3
+                                                                                                                                      744
+                GenerateStr (σ:      Input state, s:     Output string)
+                              t                                               Intersect ((η˜ ,ηt,Progs ),     = (η˜ ×η˜ ,(ηt,ηt),Progs )
+                1 η˜ := ∅; η˜   := ∅; steps := 0;                                        t   1  1        1          1    2   1   2        12
+                            Old
+                2 foreach input variable vi:                                               (η˜ , ηt,Progs ))
+                                    −1                                                       2  2       2
+                3     if ((η := val    (σ(vi))) = ⊥)                             where Progs [(η ,η )] = Intersect (Progs [η ],Progs [η ])
+                4     then { η := NewNode();η˜ := η˜∪{η};                                     12   1  2                t       1 1        2  2
+                                                                                         Intersect (v ,v )    = v
+                5              val(η) := σ(vi);Progs[η] := ∅; }                                     t  i  i        i
+                6     Progs[η] := Progs[η]∪{vi};                             Intersect (Select(C,T,B), = Select(C,T,B00)
+                                                                                        t
+                7 while (steps++ ≤ k ∧ η˜       6=η˜)                                                    0
+                                             Old                                         Select(C,T,B ))
+                8     η˜   := η˜−η˜    ; η˜  := η˜;
+                       diff         Old   Old                                    where B00 = Intersect (B,B0)
+                9     foreach table T, col C, row r s.t.                                                 t
+                                                                                                        0                           0
+                                                                                                ˜     ˜                         ˜ ˜
+                              T[C,r] = val(η) for some η ∈ η˜                      Intersect ({b } ,{b } )    = {Intersect (b ,b )}
+                                   V                            diff                         t   i i    i i                   t  i  i  i
+                                          0         0       −1      0                                   0                           0
+               10         B:={          (C ={T[C ,r],val      (T[C ,r])}) |       Intersect ({p˜ } ,{p˜ } )   = {Intersect (p˜ ,p˜ )}
+                                 C0∈cKey                                                     t   i i    i i                   t  i  i  i
+                                                                                Intersect (C = s,C = s) = C = s
+                                     cKey ∈ CandidateKeys(T)};                             t
+               11         foreach column C0 of table T s.t. C0 6= C: Intersectt(C = η1,C = η2) = C = (η1,η2)
+                                            −1     0
+               12             if ((η := val   (T[C ,r])) = ⊥)                     Intersect (C = {s,η },      = C={s,(η ,η )}
+               13             then { η := NewNode();η˜ := η˜∪{η};                            t          1                   1   2
+               14                     val(η) := T[C0,r];Progs[η] := ∅; }                       C={s,η2})
+               15             Progs[η] := Progs[η]∪{Select(C0,T,B)};             Intersect (C = {s ,η },      = C={(η ,η )}, if s 6= s
+                                                                                            t        1  1                 1  2        1    2
+                                  −1
+               16 return (η˜,val     (s),Progs);                                             C={s ,η })
+                                                                                                     2  2
+                                                (a)                                                            (b)
+              Figure 5: (a) The GenerateStr procedure for generating the set of all expressions (of depth at most k)
+                                                    t
+              in language L that are consistent with a given input-output example. (b) The Intersect procedure for
+                               t                                                                                             t
+              intersecting sets of expressions from language L . The Intersect procedure returns ∅ in all other cases.
+                                                                        t                  t
+              also reachable and creates nodes η2 and η3 corresponding            any table and m is the maximum number of columns in any
+              to them, and then sets Progs[η ] = {Select(C ,T ,B)}                candidate key. (b) The procedure Intersect is sound and
+                                                 2                2   1                                                          t
+              and Progs[η ] = {Select(C ,T ,B)}.          In the next iter-       complete. The computational complexity of Intersect pro-
+                           3                 3   1                                                                                        t
+              ation of loop, the frontier of reachable set is updated to          cedure (and hence the size of the data structure returned by
+                                                                                            2
+              η˜    ={η ,η } and the nodes that are reachable from this           it) is O(d ), where d is the size of the input data structures.
+                diff     2  3
+              set are next computed. The algorithm ﬁnds that table entry          The proof of Theorem 2 is given in [16].
+              T2[C1,1] is reachable from node η2 and thereby makes nodes
+              η3 and η4 reachable as well with corresponding Select ex-           4.4    Ranking
+              pressions. Similarly, the nodes η4 and η5 become reachable             In this section, we deﬁne a partial order between expres-
+              from η3. In this manner, the algorithm keeps computing the          sions in L that we use for ranking of these expressions. We
+              set of reachable table entries iteratively until k iterations,                t
+              where k is set to the number of relational tables n.                prefer expressions of smaller depth (fewer nested chains of
+                                                                                  Select expressions). We prefer lookup expressions that use
+              Procedure Intersect                                                 distinct tables for join queries (the most common scenario
+                                      t                                           for end-users) as opposed to expressions involving self-joins.
+              The Intersect procedure takes two sets of expressions in            We prefer conditionals that consist of fewer predicates and
+                              t
+              Lt as input and computes the set of expressions that are            prefer predicates that involve comparing columns with other
+              common to both the sets. (Both input and output sets are            table entries or input variables (as opposed to comparing
+              represented using the data structure D .) Figure 5(b) de-           columns with constant strings).
+                                                        t
+              scribes the Intersect procedure for intersecting the sets of
+                                     t
+              Lt expressions using a set of rules that are pattern matched        5.    SEMANTICTRANSFORMATIONS
+              for execution. For intersecting two expressions (η˜ ,ηt,Progs )
+                                                                1   1       1        Wenowpresentanextensionofthelookuptransformation
+              and (η˜ ,ηt,Progs ), we take the cross product of the set of
+                     2  2        2                                                language L (described in §4) with a syntactic transforma-
+              nodes to get the new set of nodes η˜     =(η˜ ×η˜ ) with the                    t
+                                                    12     1    2                 tion language L (from [8]). This extended language L ,
+              target node (ηt,ηt), and compute the new Progs        map for                        s                                          u
+                             1   2                               12               also referred to as semantic transformation language, adds
+              each node (η ,η ) ∈ η˜    by intersecting their corresponding
+                            1  2     12                                           two key capabilities to Lt: (i) It allows for lookup trans-
+              maps Progs [η1] and Progs [η2] respectively. The intersect
+                           1               2                                      formations that involve performing syntactic manipulations
+              rule for two select expressions requires the column name            (such as substring, concatenation, etc.) on strings before
+              and table id to be the same and intersects the conditionals         using them to perform lookups, and (ii) It allows for per-
+                                                 ˜
+              recursively. The candidate keys bi as well as each column           forming syntactic manipulations on lookup outputs (which
+              conditional p˜ in a candidate key are intersected individually      can then be used for performing further lookups or for gen-
+              maintaining their corresponding orderings.                          erating the output string). This extension, as we show in
+                 Theorem 2       (Synthesis Algorithm Properties).                §6, also enables us to model transformations on strings rep-
+              (a) The procedure GenerateStr is sound and k-complete.              resenting standard data types such as date, time, etc. We
+                                                t                                 ﬁrst describe a syntactic transformation language.
+              The computational complexity of GenerateStr procedure
+                                                              t
+              (and hence the size of the data structure constructed by it)        Syntactic Transformation Language Ls (Background).
+              is O(t2 p m) where t is the number of reachable strings in          Gulwani [8] introduced an expression language for perform-
+              k iterations, p is the maximum number of candidate keys in          ing syntactic string transformations. We reproduce here a
+                                                                              745
+                      small subset of (the rules of) that language and call it L                                            For example, f denotes the atomic expression f of the syn-
+                                                                                                                 s                                 s
+                      (with e being the top-level symbol).                                                                  tactic transformation language L . The expression grammar
+                                 s                                                                                                                                             s
+                                                                                                                            of the extended language L consistsofrulesR ∪R inwhich
+                                           es     := Concatenate(f1,...,fn) | f                                                                                       u                             t     s
+                         Atomic expr f            := ConstStr(s) | v | SubStr(v ,p ,p )                                     the following rules are modiﬁed (with modiﬁcations shown
+                                                                                 i                  i    1    2             in bold), and with e as the top-level symbol.
+                               Position p         := k|pos(r ,r ,c)                                                                                         s
+                                                                      1    2                                                Atomic expr f               :=      ConstStr(s) | e | SubStr(e ,p ,p )
+                                                                                                                                                  s                                     t                  t    s      s
+                         Integer expr c           := k|k w+k                                                                                                                                                      1     2
+                                                                1          2                                                    Predicate p             :=      C=s|C=e
+                                                                                                                                                  t                                   s
+                        Regular expr r            := |τ | TokenSeq(τ ,...,τ )
+                                                                                     1          n                                               e       :=      Concatenate(f ,...,f ) | f
+                                                                                                                                                  s                                    s           s        s
+                                                                                                                                                                                        1            n
+                      The formal semantics of Ls can be found in [8]. For com-                                              The top-level expression e of the extended language is ei-
+                      pleteness, we brieﬂy describe some key aspects of this lan-                                                                                     s
+                                                                                                                            ther an atomic expression f or a Concatenate operation
+                      guage. The top-level expression e is either an atomic ex-                                                                                          s
+                                                                            s                                               on a sequence of atomic expressions fs , as before. How-
+                      pression f or is obtained by concatenating atomic expressions                                                                                                        i
+                      f ,. . .,f   using the Concatenate constructor. Each atomic                                           ever, the atomic expression fs is updated to consist of a
+                       1        n                                                                                           lookup expression et or its substring SubStr(et,p ,p ) (as
+                                                                                                                                                                                                         s     s
+                      expression f can either be a constant string ConstStr(s), an                                                                                                                        1      2
+                      input string variable v , or a substring of some input string                                         opposed to only an input variable vi or its substring). This
+                                                         i                                                                  lets the language model transformations that perform syn-
+                      vi.    The substring expression SubStr(vi,p ,p ) is deﬁned
+                                                                                          1    2                            tactic manipulations over table lookup outputs. The other
+                      partly by two position expressions p1 and p2, each of which                                           modiﬁcation is in the predicate expression p of language
+                      implicitly refers to the (subject) string v and must evaluate                                                                                                                 t
+                                                                                    i                                       L , where we modify the conditional expression C = e to
+                      to a position within the string v . (A string with ` char-                                               t                                                                                    t
+                                                                          i                                                 C = es. This enables the language to model lookup trans-
+                      acters has ` + 1 positions, numbered from 0 to ` starting                                             formations that perform syntactic manipulations on strings
+                      from left.) SubStr(v ,p ,p ) is the substring of string v in
+                                                     i    1    2                                             i              before performing the lookup. The updated rules have ex-
+                      between positions p and p . A position expression repre-
+                                                     1           2                                     th                   pected semantics and can be deﬁned in a similar fashion as
+                      sented by a non-negative constant k denotes the k                                    posi-            the semantics of rules in L and L . We now illustrate the
+                      tion in the string. For a negative constant k, it denotes the                                                                                    t           s
+                                      th                                                                                    expressiveness of the extended language using few examples.
+                      (` +1+k)            position in the string, where ` = Length(s). A                                        ThetransformationinExample1canberepresentedinL
+                      position expression pos(r ,r ,c) evaluates to a position t in                                                                                                                                     u
+                                                             1   2                                                          as: Concatenate(f ,ConstStr(“+0.”),f ,ConstStr(“*”),f ),
+                      the subject string s such that regular expression r matches                                                                        1                               2                            3
+                                                                                                   1                        f   ≡Select(Price,CostRec,Id = f ∧Date = f ),
+                      some suﬃx of s[0 : t], and r matches some preﬁx of s[t : `],                                           1                                                     4                  5
+                                                                2                                                           f4 ≡ Select(Id,MarkupRec,Name = v1),
+                      where ` = Length(s). Furthermore, if c is positive (nega-                                             f   ≡SubStr(v ,pos(SlashTok,,1),pos(EndTok,,1)),
+                                                         th                                                                  5                    2
+                      tive), then t is the |c|               such match starting from the left                              f   ≡SubStr2(f ,NumTok,1), f ≡ SubStr2(f ,DecNumTok,1),
+                      side (right side). We use the expression s[t : t ] to denote                                           2                     6                      3                     1
+                                                                                          1     2                           f6 ≡ Select(Markup,MarkupRec,Name = v1).
+                      the substring of s between positions t1 and t2. We use no-                                                The expression f looks up the Id of the item in v from
+                                                                                                                th                                        4                                                    1
+                      tation SubStr2(vi,r,c) as an abbreviation to denote the c                                             the MarkupRec table and expression f generates a substring
+                      occurrence of r in v , i.e., SubStr(v ,pos(,r,c),pos(r,,c)).                                                                                                  5
+                                                    i                       i                                               of the date in v2, which are then used to look up the Price of
+                         Aregularexpressionriseither a token τ, a token sequence                                            theitemfromtheCostRectable(f ). Theexpressionf looks
+                      TokenSeq(τ ,...,τ ) or  (which matches the empty string).                                                                                                 1                             6
+                                       1          n                                                                         up the Markup percentage of the item from the MarkupRec
+                      The tokens τ range over some ﬁnite (but easily extensible)                                            table and f generates a substring of this lookup value by ex-
+                      set and typically correspond to character classes and spe-                                                             2
+                      cial characters. For example, tokens UpperTok, NumTok, and                                            tracting the ﬁrst numeric token (thus removing the % sign).
+                      AlphTok match a nonempty sequence of uppercase alpha-                                                 Similarly, the expression f3 generates a substring of f1, re-
+                      betic characters, numeric digits, and alphanumeric charac-                                            moving the $ sign. Finally, the top-level expression concate-
+                                                                                                                            nates f , f , and f with constant strings “+0.” and “*”.
+                      ters respectively. DecNumTok matches a nonempty sequence                                                         1    2           3
+                      of numeric digits and/or decimal point. SlashTok matches                                                  Example 5. Indexing with concatenated strings:
+                      the slash character. Special tokens StartTok and EndTok                                               Abike merchant maintained an inventory of BikePrices ta-
+                      match the beginning and end of a string respectively.                                                 ble, and wanted to compute the price quote table by perform-
+                         Example 4. An Excel user wanted to transform names                                                 ing lookup of bike Price after concatenating the bike name
+                      to a format where the last name is followed by the initial                                            (v1) and the engine cc value (v2) as shown in Figure 6.
+                      letter of the ﬁrst name, e.g., “Alan Turing” → “Turing
+                      A”. An expression in L that can perform this transfor-
+                                                             s                                                                                                                            BikePrices
+                      mation is: Concatenate(f ,ConstStr(“ ”),f ) where f                                       ≡
+                                                               1                            2                1                Input v          Input v           Output            Bike               Price
+                      SubStr2(v1,AlphTok,2) and f2 ≡ SubStr2(v1,UpperTok,1).                                                             1                2                        Ducati100          10,000
+                      This expression constructs the output sting by concatenating                                            Honda            125               11,500            Ducati125          12,500
+                             nd                                                                                               Ducati           100               10,000
+                      the 2       word of input string, the constant string whitespace,                                                                                            Ducati250          18,000
+                      and the 1st capital letter in input string.                                                             Honda            250               19,000            Honda125           11,500
+                         For more details on the syntactic transformation language                                            Ducati           250               18,000            Honda250           19,000
+                      Ls, see [8]. Now we present the extended language Lu.                                                                                                        · · ·              · · ·
+                      5.1       Semantic Transformation Language L                                                          Figure 6: A lookup transformation that requires
+                                                                                                            u               concatenating input strings before performing selec-
+                         Let R and R denote the set of grammar rules of lan-
+                                   t            s                                                                           tion from a table.
+                      guages L and L respectively.                          We subscript each non-
+                                    t             s
+                      terminal in the two languages with t and s for disambiguat-                                               The desired transformation can be expressed in the ex-
+                      ing the names of non-terminals in the extended language.                                              tended language as: Select(Price,BikePrices,Bike = es)
+                                                                                                                     746
+                            where es = Concatenate(v1,v2). The expression es concate-                                                                            edges of the dag consist of more sophisticated (substrings
+                            nates the two input string variables v1 and v2, which is then                                                                        of) lookup expressions, whose predicates can in-turn be rep-
+                            used to perform the lookup in the BikePrices table.                                                                                  resented using nested-dags.
+                                 Example 6. Concatenating table outputs: A user                                                                                       Consider Example6, wheretheinputstringis“c4 c3 c1”
+                            had a series of three company codes in a column and wanted                                                                           and the output string is “Facebook Apple Microsoft” (of
+                            to expand them into the corresponding series of company                                                                              length 24). The dag G that represents the set of all transfor-
+                            names using a table Comp that mapped company codes to the                                                                            mations consistent with this input-output pair is shown in
+                            company names as shown in Figure 7.                                                                                                  Figure 8. For better readability, we only show some of the
+                                                                                                                                                                 relevant nodes and edges of the dag G. The edge from node
+                                                                                                                                                                 0 to node 8 corresponds to all expressions e˜ that generate
+                                                                                                                           Comp                                                                                                                            1
+                                                                                                                   Id         Name                               the string Facebook. One of the lookup transformations,
+                                                                                                                                                                                                                     ˜
+                               Input v               Output                                                                                                      Select(Name,Comp,Id = f ), in e˜ requires syntactic trans-
+                                             1                                                                     c1         Microsoft                                                                               1              1
+                                                                                                                                                                                         ˜
+                               c4 c3 c1              Facebook Apple Microsoft                                      c2         Google                             formations f1 to extract substring c1 from the input string,
+                               c2 c5 c6              Google IBM Xerox                                              c3         Apple                                             ˜
+                                                                                                                                                                 where f1 is itself represented as a nested-dag as shown in
+                               c1 c5 c4              Microsoft IBM Facebook                                        c4         Facebook                           the ﬁgure. The edges for expressions e˜ and e˜ also consist
+                               c2 c3 c4              Google Apple Facebook                                         c5         IBM                                                                                                               3              5
+                                                                                                                   c6         Xerox                              of similar nested-dags.
+                                                                                                                   · · ·      · · ·                                   Theorem 3                      (Properties of data structure D ).
+                                                                                                                                                                                                                                                                                   u
+                                                                                                                                                                 (a) The number of transformations in L that are consistent
+                            Figure 7: A nested syntactic and lookup transfor-                                                                                                                                                                    u
+                            mation. It requires concatenating results of multi-                                                                                  with a given input-output example may be exponential in the
+                            ple lookup transformations, each of which involves a                                                                                 number of reachable entries, the number of columns in a pri-
+                            selection operation that indexes on some substring                                                                                   mary key, and the length of the largest reachable string.
+                            of the input.                                                                                                                        (b) However, the data structure Du can represent these po-
+                                                                                                                                                                 tentially exponential number of transformations in size poly-
+                                This transformation is expressed in L as:                                                                                        nomial in the number of reachable entries, the number of
+                                                                                                             u                                                   primary keys, the number of columns in a primary key, and
+                            Concatenate(f1,ConstStr(“ ”),f2,ConstStr(“ ”),f3), where                                                                             the length of the largest reachable string.
+                            f    ≡Select(Name,Comp,Id = SubStr2(v ,AlphTok,1)), f ≡
+                             1                                                                               1                                2
+                            Select(Name,Comp,Id = SubStr2(v1,AlphTok,2)) and f3 ≡                                                                                (a) Proof of (a) follows from Theorem 1(a). The number
+                            Select(Name,Comp,Id = SubStr2(v1,AlphTok,3)). The ex-                                                                                of transformations can also be exponential in the length of
+                            pressions f , f , and f                         extract the ﬁrst, second, and third                                                  the largest reachable string as we are using GenerateStr
+                                                 1      2               3                                                                                                                                                                                                               s
+                            words from the input string respectively, which are then                                                                             procedure for checking reachability which has this worst case
+                            used for performing the table lookups and the results are                                                                            complexity. (b) We show that the size of the data structure
+                                                                                                                                                                                                  2              2
+                            concatenated with whitespaces to obtain the output string.                                                                           generated is O(t p m ` ) in Theorem 4(a).
+                            5.2          DataStructureforSetofExpressionsinL                                                                                     5.3           Synthesis Algorithm for Lu
+                                                                                                                                                  u
+                                         ˜              ˜
+                                LetRt andRs denotethesetofgrammarrulesforthedata                                                                                 Procedure GenerateStr
+                            structures that represent set of expressions in languages L                                                                                                                             u
+                                                                                                                                                   t             Recall that the GenerateStr procedure for language L
+                                                                                                                           ˜                                                                                                  t                                                         t
+                            and Ls respectively (See [8] for description of Rs). We con-                                                                         (§4.3) performs reachability on table entries based on ex-
+                            struct the grammar rules for the data structure that rep-                                                                            act string matches (T[C,r] = η). The key idea in case of the
+                            resents set of expressions in the extended language L                                                               by
+                                                                                                                                           u                     language L is to perform a more relaxed reachability on ta-
+                                                                                                     ˜          ˜                                                                      u
+                            taking the union of the two rules Rt ∪ Rs and modifying                                                                              ble entries taking into account the possibility of performing
+                            some rules as follows:                                                                                                               syntactic manipulations on previously reachable strings.
+                                 ˜                                                                                                                                                                                                 0
+                                f          :=        ConstStr(s) | ˜e | SubStr(˜e ,˜p                                   , ˜p    )                                     Weﬁrst deﬁne a GenerateStr procedure by making two
+                                   s                                                 t                       t      s       s                                                                                                      t
+                                                                                                                     1        2                                  modiﬁcations to the GenerateStr procedure.                                                            First, we
+                                 p˜        :=        C=s|C=˜e                                                                                                                                                                           t
+                                   t                                              s                                                                              replace the condition “T[C,r] = val(η)” in GenerateStr
+                                                                      s      t                                                               f                                                                                                                                          t
+                                                                                  ˜               ˜                              ˜            s
+                                 e˜        :=        Dag(α˜,α ,α ,ξ,W) | f , where W : ξ → 2
+                                   s                                                               s                                                             (Line 9 in Figure 5(a)) by the condition “GenerateStr (σ∪
+                                                                                                                                                                                                                                                                               s
+                                The most interesting aspect of this data structure is the                                                                        η˜, T[C,r]) contains any expression that uses a variable from
+                                             s      t ˜                                                                                                          σ∪η˜”. We use the notation σ∪η˜ to denote a state that ex-
+                            Dag(α˜,α ,α ,ξ,W) construct, which succinctly represents a                                                                                                                                                                                                    0
+                                                                                                                                                                 tendsσandmapsηtoval(η)forallη ∈ η˜. TheGenerateStr
+                            set of Concatenate expressions in Lu using a dag (directed                                                                                                                                                                                                    t
+                            acyclic graph), where α˜ is a set of nodes containing two                                                                            procedure marks a table entry as reachable if it can be com-
+                                                                                                                                                                 puted using the GenerateStr procedure (from [8]) on pre-
+                                                                                                     s                t     ˜                                                                                                s
+                            distinct source and target nodes α and α , ξ is a set of                                                                             viously reachable strings. The GenerateStr procedure can
+                            edges over nodes in α˜ that induces a dag, and W maps each                                                                                                                                                                    s
+                                             ˜                                                                                                                   perform concatenation of constant strings and substrings of
+                            edge in ξ to a set of atomic expressions. The semantics [[.]]                                                                        previously reachable strings (η˜). We add an additional check
+                            of the Dag constructor is:                                                                                                           that the expressions synthesized by GenerateStr contains
+                                                                                                                                                                                                                                                                      s
+                                               s      t ˜                                                                                                        a variable from σ ∪ η˜ to avoid expressions containing only
+                            [[Dag(α˜,α ,α ,ξ,W)]] = {Concatenate(f ,...,f                                                        ) |
+                                                                                                             s              sn
+                                                                                                              1                                                  constant string expressions. For our experiments, we en-
+                                                  ˜                             ˜                                                 s               t
+                              f     ∈[[W(ξ )]],ξ ,..,ξ ∈ ξ form a path between α and α }
+                               si                  i        1          n                                                                                         force an even stronger restriction that there exists a string
+                            The set of all Concatenate expressions represented by the                                                                            η ∈ (σ ∪ η˜) such that either T[C,r] is substring of η or η
+                            Dag constructor includes exactly those whose ordered argu-                                                                           is a substring of T[C,r]. This provides eﬃciency without
+                            ments belong to the corresponding edges on any path from                                                                             any practical loss of precision. The second modiﬁcation is
+                            αs to αt. This dag representation is similar to the represen-                                                                        in Line 10 in Figure 5(a), where we replace the generalized
+                            tation of string expressions in [8]. However, in our case, the                                                                       predicate with C0 = {GenerateStr (σ ∪η˜,T[C0,r])}.
+                                                                                                                                                                                                                                        s
+                                                                                                                                                        747
+                                                                                                                            ������                         ������     
+                                                                                                                                                          7
+                                                                                                                a              6           a                        a                                                                                                                                                                              ˜
+                                                                                                                                                                                                                                                            e˜      ≡{Select(Name,Comp,Id = f ),
+                                                                                               ������                 0                          1                         2                                                                                       1                                                                                     1
+                                                                                                  1                                                                                                                                                                                      ConstStr(“Facebook”),...}
+                                                                                                                                         ������      
+                                                                                                                                            8                                                                                                               e˜      ≡{ConstStr(“ ”),...}
+                                                                                                                                                                                                                                                               2
+                                                                                                                                                                                                                                                                                                                                                   ˜
+                                                                                                                                                                                                                                                            e˜      ≡{Select(Name,Comp,Id = f ),
+                                                                      ������                                                                                                                                                                                       3                                                                                     2
+                                                                               ������                          ������                         ������                       ������                           ������                                                                                           ConstStr(“Apple”),...}
+                                                                                                              2                          3                        4                            5
+                                                                                  1                                                                                                                                                                         e˜      ≡{ConstStr(“ ”),...}
+                                                                      0                         8                         9                       14                        15                            24                                                   4
+                                                                                                                                                                                                                                                                                                                                                   ˜
+                                                                                                                                                                                                                                                            e˜      ≡{Select(Name,Comp,Id = f ),
+                                                               ˜                                                                                                                                                                                               5                                                                                     3
+                                                              f ≡Dag({a ,a ,a },a ,a ,{ha ,a i,ha a i,ha a i},W })
+                                                                 1                             0        1        2           0         2             0        1             1 2                 0 2                     2                                                                ConstStr(“Microsoft”),...}
+                                                                  where W (ha ,a i) = e˜ , W (ha ,a i) = e˜ , W (ha ,a i) = e˜
+                                                                                          2          0        1                  6            2          1        2                  7           2          0        2                   8                  e˜      ≡{ConstStr(“c”),...}
+                                                                                                                                                                                                                                                               6
+                                                                                                                                                                                                                                                            e˜      ≡{ConstStr(“1”),...}
+                                                              G≡Dag({0,...,24),0,24,{hi,ji | 0 ≤ i < j ≤ 24},W )                                                                                                                                               7
+                                                                                                                                                                                                                1                                           e˜      ≡{SubStr2(v ,AlphTok,1),...}
+                                                                  where W (h0,8i) = e˜ ,W (h8,9i) = e˜ ,W (h9,14i) = e˜ , ...                                                                                                                                  8                                          1
+                                                                                          1                                 1         2                                2          2                                   3
+                                                                                       Figure 8: A partial Dag representation of the set of expressions in Example 6.
+                                                                                                                                                                                                                                                                                        s         t     ˜                                               s         t     ˜
+                                            The GenerateStr procedure for the extended language                                                                                                                            Intersect (Dag(α˜ ,α ,α ,ξ ,W ),Dag(α˜ ,α ,α ,ξ ,W ))
+                                                                                             u                                                                                                                                                          u                     1         1         1       1           1                       2         2         2       2           2
+                                      Lu can now be deﬁned as:                                                                                                                                                                                                                                  s         s              t         t       ˜
+                                                                                                                                                                                                                                               =Dag(α˜1 ×α˜2,(α1,α2),(α1,α2),ξ12,W12),where
+                                           GenerateStr (σ: Input state, s: Output string)                                                                                                                                         ˜                                                   0         0                            0             ˜                       0             ˜
+                                                                               u                                                                                                                                                 ξ         ={h(α ,α ),(α ,α )i | hα ,α i ∈ ξ ,hα ,α i ∈ ξ }
+                                                             t                                                                   0                                                                                                  12                        1        2              1         2                  1         1               1           2         2               2
+                                         1 (η˜,η ,Progs) = GenerateStr (σ,s);                                                                                                                                                                                                               0         0                                                              0
+                                                                                                                                 t                                                                                               and W (h(α ,α ),(α ,α )i) = {Intersect (f,f ) |
+                                         2 return GenerateStr (σ∪η˜,s);                                                                                                                                                                            12               1         2             1         2                                                  s
+                                                                                                           s                                                                                                                                                                             f ∈ W (hα ,α0i),f0 ∈ W (hα ,α0i)}
+                                      The GenerateStr procedure ﬁrst constructs the set of all                                                                                                                                                                                                           1           1         1                           2           2        2
+                                                                                      u                                                                                                                                          Theintersect rule for Dag intersects the two dags in a man-
+                                      reachable table entries (η˜) from the set of input strings
+                                                                                                                     0                                                                                                    ner similar to the intersection of two ﬁnite state automatons.
+                                      in σ using the GenerateStr procedure. It then uses the
+                                                                                                                     t                                                                                                    The new mapping W                                                is computed by performing intersec-
+                                      GenerateStr procedure to construct the Dag for generating                                                                                                                                                                                     12
+                                                                         s                                                                                                                                                tion of the expressions on the two corresponding edges of
+                                      the output string s from the set of strings that includes val-
+                                                                                                                                                                                                                          the dags. (Rules for Intersect are deﬁned in [8].)
+                                      ues of input variables (in state σ) as well as the reachable                                                                                                                                                                                                               s
+                                      table entries (represented by η˜).                                                                                                                                                         Theorem 4                                  (Synthesis Algorithm Properties).
+                                            Consider the ﬁrst input-output pair (“c4 c3 c1”, “Face-                                                                                                                       (a) The GenerateStr procedure is sound and k-complete.
+                                      book Apple Microsoft”) in Example 6. The GenerateStr                                                                                                                                                                                             u
+                                                                                                                                                                                                       u
+                                                                                                                                          0                                                                               The computational complexity of GenerateStr procedure is
+                                      algorithm ﬁrst uses the GenerateStr procedure to compute                                                                                                                                                                                                                                                           u
+                                                                                                                                          t                                                                                         2                   4                                               2
+                                                                                                                                                                                     0                                    O(t p m ` ) (assuming O(l ) complexity for the new check
+                                      the set of reachable table entries. The GenerateStr proce-
+                                                                                                                                                                                     t                                    on Line 9), and the size of the data structure constructed by
+                                      dure ﬁnds that the table entry T[Id,4] = c4 is reachable                                                                                                                                                   2                  2
+                                      from the input string “c4 c3 c1” as there exists an expres-                                                                                                                         it is O(t p m ` ), where t is the number of reachable strings
+                                      sion SubStr2(v1,AlphTok,1) that can generate the string c4.                                                                                                                         in k iterations, p is the maximum number of candidate keys
+                                      It then adds the string Facebook from row 4 to the reachable                                                                                                                        of any table, m is the maximum number of columns in any
+                                      set η˜. Similarly, table entries c3, Apple, c1, and Microsoft                                                                                                                       candidate key, and ` is the length of the longest reachable
+                                      are also added to η˜. It then uses the GenerateStr pro-                                                                                                                             string.                (b) The Intersectu procedure is sound and com-
+                                                                                                                                                                                         s                                plete.               The computational complexity of Intersect                                                                                          (and
+                                      cedure to construct a dag for generating the output string                                                                                                                                                                                                                                                                            u
+                                      “Facebook Apple Microsoft” from the set {“c4 c3 c1”,                                                                                                                                hence the size of the data structure returned by it) is O(d2),
+                                      c1, c2, c3, Facebook, Apple, Microsoft}(σ∪η˜). Itﬁrst                                                                                                                               where d is the size of the input data structures.
+                                      creates a Dag of 25 nodes (α˜ = {0,...,24}) with 0 as the                                                                                                                           The proof of Th. 4 and more details about O(l2) assump-
+                                      source node and 24 as the target node. The algorithm then                                                                                                                           tion for check on Line 9 are given in [16]. The worst-case
+                                      assigns a set of expressions to each edge hi,ji that can gener-                                                                                                                     quadratic blowup in the size of the output returned by the
+                                      ate the substring s[i,j]. For example, the algorithm adds                                                                                                                           Intersect procedure doesn’t happen in practice (as we re-
+                                      the expression that selects the string Facebook from σ ∪ η˜                                                                                                                         port in §7) making the synthesis algorithm very eﬃcient.
+                                      to the edge h0,8i; the expression in turn corresponds to a
+                                      lookuptransformationwithnestedsub-dagsasshowninFig-                                                                                                                                 5.4                Ranking
+                                      ure 8. Similarly, it adds the expression e˜ that generates a
+                                                                                                                                                        2                                                                        The partial orders of ranking schemes of L and L are
+                                      whitespace to the edge h8,9i, and so on.                                                                                                                                                                                                                                                                             t                     s
+                                                                                                                                                                                                                          also used to rank expressions in L . In addition, we deﬁne
+                                                                                                                                                                                                                                                                                                                          u
+                                      Procedure Intersect                                                                                                                                                                 some additional partial orders for expressions in Lu. We
+                                                                                                    u                                                                                                                     prefer lookup expressions that match longer strings in table
+                                      The Intersect procedure for the extended language L                                                                                                                                 entries for indexing than the ones that match shorter strings.
+                                                                                u                                                                                                                      u                  Weprefer lookup expressions with fewer constant string ex-
+                                      consists of the union of rules of Intersect and Intersect
+                                                                                                                                                          t                                            s                  pressions and ones that generate longer output strings.
+                                      procedures along with the following four additional rules.
+                                                                                    0                                                                0
+                                      Intersect (e˜ ,e˜ ) = Intersect (e˜ ,e˜ )
+                                                                   u t t                                                              t      t       t                                                                    6.             STANDARDDATATYPES
+                                                                                                               0                                                                                  0
+                                      Intersect (C = e˜ ,C = e˜ ) = (C = Intersect (e˜ ,e˜ ))
+                                                                   u                     s                     s                                                                 s       s        s                              The language Lu can also model a rich class of transfor-
+                                                                                                                                                          0        0            0
+                                                                                                                                                                ˜             ˜                                           mations on strings that represent standard data types such
+                                      Intersect (SubStr(e˜ ,p˜ ,p˜ ),SubStr(e˜ ,p                                                                                         , p          ))         =
+                                                                   u                              t        s          s                                   t         s             s
+                                                                                                             1           2                                             1            2                                     as date, time, phone numbers, currency, or addresses. Ma-
+                                                                                                                              0                                                                0
+                                                                                                                                                                                            ˜
+                                                            SubStr(Intersect (e˜ ,e˜ ),IntersectPos(p˜ ,p                                                                                             ),
+                                                                                                               t      t       t                                                    s            s
+                                                                                                                                                                                     1             1                      nipulation of these data types typically requires some back-
+                                                                                                                                                                                              0
+                                                                                                                                                                                            ˜
+                                                                                                                                      IntersectPos(p˜ ,p                                              ))                  ground knowledge associated with these data types. For
+                                                                                                                                                                                   s            s
+                                                                                                                                                                                     2             2
+                                                                                                                                                                                                              748
+                                                                                                  Input v1     Output
+                                                                                                  6-3-2008     Jun 3rd, 2008
+                                                                                                  3-26-2010    Mar 26th, 2010
+                                                                                                  8-1-2009     Aug 1st, 2009
+                                                                                                  9-24-2007    Sep 24th, 2007
+                                                                                      Figure 10: Formatting dates using examples.
+                                                                                     Weencode the background knowledge concerning months
+                                                                                  in a table Month with two columns MN and MW, where each of
+                                                                                  the columns constitutes a candidate key by itself. The table
+                                                                                  is populated with 12 entries: (1,January), ..., (12,December).
+                                                                                  WealsomaintainatableDateOrdwithtwocolumnsNumand
+                                                                                  Ord, where the ﬁrst column constitutes a primary key. The
+                                                                                  table contains 31 entries (1,st), (2,nd), (3,rd), ..., (31,st).
+                             (a)                             (b)                  The desired transformation is represented in Lu as :
+              Figure 9: User interface of our programming-by-                     Concatenate(SubStr(Select(MW,Month,MN = e1),
+              example Excel add-in. (a) and (b) are the screen-                           pos(StartTok,,1),3),ConstStr(“ ”),e2,
+                                                                                          Select(Ord,DateOrd,Num = e ),ConstStr(“, ”),e )
+              shots before and after clicking the Apply button.                                                         2                    3
+                                                                                  wheree =SubStr2(v ,NumTok,1),e = SubStr2(v ,NumTok,
+                                                                                          1              1              2              1
+              example, for dates we have the knowledge that month 2               2), and e3 = SubStr2(v1,NumTok,3).
+              corresponds to the string February, or for phone numbers               The expression concatenates the following strings: the
+              we have the knowledge that 90 is the ISD code for Turkey.           string obtained by lookup of ﬁrst number token of v1 in table
+              This background knowledge can be encoded as a set of rela-          Month, the constant string whitespace, the second number
+                                                                                  token of v , the string obtained by lookup of second number
+              tional tables in our framework (once and for all). This allows                1
+              the synthesis algorithm for L to learn transformations over         token of v1 in table DateOrd, the constant string “, ”, and
+                                            u                                     the string corresponding to third number token of v1.
+              strings representing these data types. We now present some             Unfortunately, it is not possible to encode semantics of
+              examples from Excel help-forums where users were strug-             data-typeswithinﬁnitedomainsusingrelationaltables. One
+              gling with performing manipulations over such strings.              such data-type is numbers, which often entail rounding and
+                 Example 7      (Time Manipulation). An Excel user                formatting transformations [17].
+              needed to have spot times (shown in column 1 in Figure 9(a))        7.    EXPERIMENTS
+              converted to the hh:mm AM/PM format (as shown in col-
+              umn 2 in Figure 9(a)). The Excel user posted this problem              We have implemented the inductive synthesis algorithm
+              on a help-forum to which an expert responded by providing           for the transformation language L in C# as an add-in for
+              the following macro:     TEXT(C1,"0000")+0                                                              u
+                                                                                  Microsoft Excel Spreadsheet system as shown in Figure 9.
+              When we showed this example to a team of Excel experts in           Wehard-code a few useful relational tables of our own (such
+              a live presentation, it drew a response: “There are 40 diﬀer-       as the one that maps month numbers to month names),
+              ent ways of doing this!”. When we asked them to describe            while also allowing the user to point to existing Excel tables
+              any one of those ways, we got the response “I don’t exactly         to be used for performing the transformation.
+              remember how to do it. I will have to investigate”.                    Benchmarks: We report experimental results on a set
+              We encode the background knowledge concerning time in               of 50 problems collected from several Excel help-forums and
+              a table Time with three columns 24Hour,12Hour and AMPM,             the Excel product team (including all problems described in
+              wheretheﬁrstcolumnconstitutesaprimarykey,andsodoes                  this paper). Out of these 50 problems, 12 problems can be
+                                                                                  modeled in the lookup language L whereas the remaining
+              the combination of the second and third columns. The table                                               t
+              is populated with 24 entries: (0,0,AM), ..., (11,11,AM),            38 of them require the extended language Lu. The detailed
+              (12,12,PM), (13,1,PM), ..., (23,11,PM). The desired                 description of these 50 problems can be found in [16].
+                                                                                     Eﬀectiveness of data structure D : We ﬁrst present
+              transformation can be represented in our language as:                                                         u
+                                                                                  the statistics about the number of expressions in L       that
+              Concatenate(Select(12Hour,Time,b1),ConstStr(“ : ”),                                                                        u
+                 SubStr(v ,−3,−1),ConstStr(“ ”),Select(AMPM,Time,b )              are consistent with the user-provided set of input-output
+                          1                                               1       examples for each benchmark problem in Figure 11(a). The
+                whereb1 ≡ (24Hour = SubStr(v1,pos(StartTok,,1),−3)).             ﬁgure shows that the number of such consistent expressions
+                 The SubStr expression in b1 computes the substring of                                                                     10
+              the input between the start and 3rd character from end, to          are very large and are typically in the range from 10       to
+                                                                                     30
+              compute the hour part of the time in column v . This hour           10 . Figure 11(b) shows that the size of our data structure
+                                                               1                  D to represent this large number of expressions typically
+              string is then used to perform lookup in table Time to com-           u
+              puteits corresponding 12Hour format and AMPM value. These           varies from 100 to 2000, where each terminal symbol in the
+              lookup strings are then concatenated with the minute part           grammar rules of the data structure contributes a unit size
+              of the input string and constant strings : and whitespace.          to the size of the data structure.
+                                                                                     Eﬀectiveness of ranking: Use of a ranking scheme en-
+                 Example 8      (Date Manipulation). An Excel user                ables users to provide fewer input-output examples to auto-
+              wanted to convert dates from one format to another as shown         mate their repetitive task. Hence, the eﬀectiveness of our
+              in Figure 10, and the ﬁxed set of hard-coded date formats           ranking scheme can be measured by the number of examples
+              supported by Excel 2010 do not match the input and output           required for the intended program to be ranked as the top-
+              formats. Thus, the user solicited help on a forum.                  most program. In our evaluation, all benchmark problems
+                                                                              749
+                                             Large number of consistent expressions                                                                          Succinct Representation 
+                              s  1E+33                                                                                                 2,000
+                                 1E+30                                                                                               e 1,800
+                                 1E+27                                                                                               tur1,600
+                             ssionre1E+24                                                                                              1,400
+                             xp  1E+21                                                                                               Struc1,200
+                                 1E+18                                                                                               ta-1,000
+                             of e1E+15                                                                                               a   800
+                             r e 1E+12                                                                                                   600
+                                 1E+09                                                                                               e of D400
+                              1000000                                                                                                Siz 200
+                             Numb 1000
+                                       1
+                                           1     5     9    13 17 21 25 29 33 37 41 45 49                                                        1     5     9 13 17 21 25 29 33 37 41 45 49
+                                                                     50 Benchmarks                                                                                         50 Benchmarks 
+                                                                       (a)                                                                                                  (b)
+                       Figure 11: (a) Number of expressions consistent with given i-o examples and (b) Size of data structure to
+                       represent all consistent expressions.
+                                     Running Time                       Size of Data-structure after Intersection                   performed before a lookup operation in our extended trans-
+                             s)12                                                             First I/O example
+                             ond10                                  e10,000                                                         formation language can be likened to the problem of record
+                               8                                   tur                        After Intersection                    matching. Most of the prior work in this area [5, 12] has
+                                                                   truc1,000                                                        focused on designing appropriate similarity functions such
+                             (in sec6                              a-s
+                             me Ti4                                t 100                                                            as edit distance, jaccard similarity, cosine similarity, and
+                               2                                   Da                                                               HMM25. A basic limitation of most of them is that they
+                             ing                                   e of 10
+                             Runn0                                 Siz                                                              have limited customizability.                        Arasu et.al. have proposed
+                                 1 6 11 16 21 26 31 36 41 46           1                                                            a customizable similarity measure that can either be user-
+                                        50 Benchmarks                      1  2  3   4  5  6  7  8   9 10 11 12 13 14
+                                                                                          14 Benchmarks                             programmed [1] or can be inferred from examples of match-
+                                          (a)                                               (b)                                     ing textual records [2]. In both these cases, the underlying
+                       Figure 12: (a) Running time (in seconds) to learn                                                            transformation rules only involve constant strings, e.g., US
+                       the program and (b) Size of the data structure D                                                             →UnitedStates. Our record matching is also inferred from
+                                                                                                                        u
+                       before and after performing Intersect .                                                                      examples, but it involves generalized transformation rules
+                                                                                                u
+                                                                                                                                    consisting of syntactic operations such as regular expression
+                       required at most 3 examples to learn the transformation: 35                                                  matching, substring, and concatenate.
+                       benchmarks required 1 example, 13 benchmarks required 2                                                      Learning Complex Schema Matches: The problem of
+                       examples and 2 benchmarks required 3 examples.                                                               synthesizing semantic string manipulations is also related to
+                           Performance: We present the running time of our syn-                                                     the problem of ﬁnding complex semantic matches between
+                       thesis algorithm to learn the desired transformation for each                                                the data stored in disparate sources. The iMAP system [4]
+                       benchmark problem in Figure 12(a) (sorted in increasing or-                                                  ﬁnds the schema matches that involve concatenation of col-
+                       der). Note that 88% of benchmark problems ﬁnished in less                                                    umn strings across diﬀerent tables using a domain-oriented
+                       than 1 second each and 96% of problems ﬁnished in less                                                       approach. Another approach by Warren and Tompa [19]
+                       than 2 seconds each. The experiments were performed on a                                                     learns the relationships that involve concatenation of col-
+                       machine with Intel Core i7 1.87GHz CPU and 4GB RAM.                                                          umn substrings, but within a single table using a greedy
+                           Size of data structure after Intersection: Finally, we                                                   approach. Our language-theoretic approach learns relation-
+                       show empirically that the Intersect                               procedure does not                         ships that involve concatenation of column substrings across
+                                                                                      u                                             multiple database tables without using any domain knowl-
+                       cause a quadratic blowup in the size of the data structure                                                   edge about the column entries.
+                       for any of our benchmark problems. We compare the sizes
+                       of the data structure corresponding to the ﬁrst input-output                                                 QuerySynthesis by Example: Theview synthesis [3, 18]
+                       example and the data structure obtained after performing                                                     problem aims to ﬁnd the most succinct and accurate query
+                       the Intersectu procedure in Figure 12(b). As we can see                                                      for a given database view instance. The high-level goal of
+                       the size of the data structure mostly decreases after inter-                                                 this work is similar to that of our inductive synthesis algo-
+                       section and increases slightly in a few cases, but it is very                                                rithm for the lookup transformation language L , but there
+                                                                                                                                                                                                                    t
+                       far from a quadratic increase in its size.                                                                   are some key diﬀerences: (i) View synthesis techniques infer
+                                                                                                                                    a relation from a large representative example view, while
+                       8.       RELATEDWORK                                                                                         we infer a transformation from a set of few example rows
+                                                                                                                                    (which is a critical usability aspect for end-users). (ii) View
+                           Within the database literature, our work is most closely                                                 synthesis techniques infer the most likely relation, while our
+                       related to the problems of record matching, learning schema                                                  lookup synthesis algorithm infers a succinct representation
+                       matches and query synthesis. We have detailed some diﬀer-                                                    of all possible hypotheses, which enables its extension to a
+                       ences below, but the most signiﬁcant diﬀerence is that we                                                    synthesis algorithm for the language Lu. (iii) The technique
+                       put these concepts together.                                                                                 in [3] does not consider join or projection operations.
+                       Record Matching: The task of syntactic manipulation
+                                                                                                                            750
+              Text-editing Systems using Demonstrations and Ex-                 10.    REFERENCES
+              amples: QuickCode [8] is a programming by example sys-             [1] A. Arasu, S. Chaudhuri, and R. Kaushik.
+              temforautomatingsyntacticstringtransformationsinspread-                Transformation-based framework for record matching.
+              sheets. It synthesizes programs with restricted form of regu-          In ICDE, pages 40–49, 2008.
+              lar expressions, conditionals, and loops for performing syn-       [2] A. Arasu, S. Chaudhuri, and R. Kaushik. Learning
+              tactic string transformations. Our work leverages Quick-               string transformations from examples. PVLDB,
+              Code to perform semantic string transformations.                       2(1):514–525, 2009.
+                Programming-by-demonstration systems for text-editing            [3] A. Das Sarma, A. Parameswaran, H. Garcia-Molina,
+              like SMARTedit [14] or simultaneous editing [15] require the           and J. Widom. Synthesizing view deﬁnitions from
+              user to provide a complete demonstration or trace, where the           data. In ICDT, pages 89–103, 2010.
+              demonstration consists of a sequence of the editor state after     [4] R. Dhamankar, Y. Lee, A. Doan, A. Y. Halevy, and
+              eachprimitiveaction, really spelling out how to do the trans-          P. Domingos. iMAP: Discovering complex mappings
+              formation, but on a given example. This is the main reason             between database schemas. In SIGMOD, pages
+              whysuchsystemshavenotyetbeenverysuccessful[13]. Our                    383–394, 2004.
+              system is based on Programming by Example (as opposed              [5] A. K. Elmagarmid, P. G. Ipeirotis, and V. S. Verykios.
+              to Programming by Demonstration) – it requires the user                Duplicate record detection: A survey. IEEE Trans.
+              to provide only the ﬁnal state (as opposed to also providing           Knowl. Data Eng., 19(1):1–16, 2007.
+              the intermediate states).                                          [6] M. Gualtieri. Deputize end-user developers to deliver
+                The work in [10] describes a programming by example                  business agility and reduce costs. In Forrester Report
+              technology for learning layout transformations on tables. In           for Application Development and Program
+              contrast, this paper describes a learning algorithm for syn-           Management Professionals, April 2009.
+              thesizing string transformations based on table lookups.
+                Thesystemsdescribedabovearestructuredalongthegen-                [7] S. Gulwani. Dimensions in program synthesis. In
+              eral formalism described in §3; however, this paper presents           PPDP, pages 13–24, 2010.
+              an instantiation to a novel domain of semantic string ma-          [8] S. Gulwani. Automating string processing in
+              nipulation based on a novel learning algorithm. None of the            spreadsheets using input-output examples. In POPL,
+              examples that we describe in this paper can be addressed               pages 317–330, 2011.
+              by any of these systems (except Example 4, which can be            [9] S. Gulwani, W. R. Harris, and R. Singh. Spreadsheet
+              handled by QuickCode) because they don’t implement any                 data manipulation using examples. In
+              reasoning about semantic data types.                                   Communications of the ACM, 2012. To Appear.
+                                                                                [10] W. R. Harris and S. Gulwani. Spreadsheet table
+              9.   CONCLUSIONANDFUTUREWORK                                           transformations from examples. In PLDI, pages
+                Programsynthesis is the task of synthesizing a program in            317–328, 2011.
+              someunderlying language from speciﬁcations that can range         [11] S. Jha, S. Gulwani, S. A. Seshia, and A. Tiwari.
+              fromlogical declarative speciﬁcations to examples or demon-            Oracle-guided component-based program synthesis. In
+              strations. This topic has been studied extensively in AI and           ICSE, pages 215–224, 2010.
+              PLcommunities with the goal of easing the burden of algo-         [12] N. Koudas, S. Sarawagi, and D. Srivastava. Record
+              rithm designers or software developers. (See [7] for a recent          linkage: similarity measures and algorithms. In
+              survey.) Since program synthesis is a hard combinatorial               SIGMOD, pages 802–803, 2006.
+              problem, and these users write sophisticated programs, we         [13] T. Lau. Why programming-by-demonstration systems
+              have not yet been able to design robust tools that can pro-            fail: Lessons learned for usable ai. AI Magazine,
+              vide signiﬁcant value to this class of users on a daily basis.         30(4):65–67, 2009.
+              As a result, existing program synthesis techniques have not       [14] T. Lau, S. Wolfman, P. Domingos, and D. Weld.
+              yet found signiﬁcant adoption in real world. In contrast, this         Programming by demonstration using version space
+              paper targets end-users, whose needs are much simpler com-             algebra. Machine Learning, 53(1-2):111–156, 2003.
+              pared to those of software developers. This paper presents        [15] R. C. Miller and B. A. Myers. Interactive
+              one such tool that is ready to be deployed for use by end-             simultaneous editing of multiple text regions. In
+              users in real world. More signiﬁcantly, the impact potential           USENIX Annual Technical Conference, General
+              is huge: 500 million spreadsheet users who struggle with               Track, pages 161–174, 2001.
+              spreadsheets on a daily basis! We believe that further re-        [16] R. Singh and S. Gulwani. Learning semantic string
+              search in this area of program synthesis for end-users can             transformations from examples. Technical Report
+              potentially bring a computing revolution by democratizing              MSR-TR-2012-5, Microsoft Research, 2012.
+              the ability to eﬀectively use computational devices.              [17] R. Singh and S. Gulwani. Synthesizing number
+                Inthispaper, wehaveconsideredspreadsheettables, which                transformations from input-output examples. In CAV,
+              are typically small in size and lead to real-time performance          2012. To Appear.
+              of our learning algorithm. It would be interesting to con-        [18] Q. T. Tran, C.-Y. Chan, and S. Parthasarathy. Query
+              sider improvements to our learning algorithm to allow for              by output. In SIGMOD, pages 535–548, 2009.
+              eﬃcient handling of larger database tables (where the num-        [19] R. H. Warren and F. W. Tompa. Multi-column
+              ber of reachable strings can be huge). There might also be             substring matching for database schema translation.
+              an opportunity for designing new interaction models where              In VLDB, pages 331–342, 2006.
+              users may point out the set of relevant sub-tables.
+                                                                            751

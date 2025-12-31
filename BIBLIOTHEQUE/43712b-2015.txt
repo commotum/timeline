@@ -1,0 +1,1074 @@
+                                         Results and Analysis of SyGuS-Comp’15
+                         Rajeev Alur              DanaFisman             Rishabh Singh              ArmandoSolar-Lezama
+                                 University of Pennsylvania              Microsoft Research       Massachusetts Institute of Technology
+                            Syntax-Guided Synthesis (SyGuS) is the computational problem of ﬁnding an implementation f that
+                            meets both a semantic constraint given by a logical formula ϕ in a background theory T, and a
+                            syntactic constraint given by a grammar G, which speciﬁes the allowed set of candidate implementa-
+                            tions. Such a synthesis problem can be formally deﬁned in SyGuS-IF, a language that is built on top
+                            of SMT-LIB.
+                                TheSyntax-GuidedSynthesisCompetition(SyGuS-Comp)isanefforttofacilitate, bringtogether
+                            and accelerate research and development of efﬁcient solvers for SyGuS by providing a platform
+                            for evaluating different synthesis techniques on a comprehensive set of benchmarks. In this year’s
+                            competition we added two specialized tracks: a track for conditional linear arithmetic, where the
+                            grammar need not be speciﬁed and is implicitly assumed to be that of the LIA logic of SMT-LIB,
+                            and a track for invariant synthesis problems, with special constructs conforming to the structure of
+                            an invariant synthesis problem. This paper presents and analyzes the results of SyGuS-Comp’15.
+                     1    Introduction
+                     Syntax guided synthesis is a form of synthesis where in addition to a speciﬁcation, the user provides a
+                     syntactic description of the space of possible programs that the synthesizer is allowed to consider. This
+                     style of synthesis was popularized by the Sketch project [19] and has become an important approach
+                     underpinning a variety of synthesis efforts (e.g. [9, 20, 22]). Within the common framework of syntax
+                     guided synthesis, however, there are a number of possible approaches that can be used to solve a given
+                     synthesis problem, and until recently, research on the relative merits of these different approaches had
+                     beenhamperedbythedifﬁcultyofmakingdirectcomparisonsaboutalgorithmsimplementedindifferent
+                     systems and with very different interfaces.
+                         The Syntax Guided Synthesis competition (SyGuS-Comp) was started as a way to accelerate ad-
+                     vances in the ﬁeld by offering a uniform standard notation and formalism for describing these problems,
+                     allowing for direct comparisons between different solution methods. The SyGuS formalism [13] is de-
+                     rived from the SMT-LIB format [5], a popular format for describing SMT problems, with the goal of
+                     makingiteasytolearnforusersandeasytosupportforsynthesizerdevelopers. In the short time that the
+                     formalismhasbeeninpubliccirculation,ithasalreadyperformedwellinmanyofthesegoals. Ithaspro-
+                     vided important insights into the relative merits of different algorithms [1, 2] which have been exploited
+                     to help develop new algorithms [8], and has been used to evaluate brand new algorithms [3, 10, 14].
+                     Beyond synthesizer developers, there is a growing community of users that is coalescing around the
+                     formalism.
+                         The SyGuS problem is formally deﬁned as the problem of ﬁnding an implementation of a function
+                     f that meets both a semantic constraint given by a logical formula ϕ in a background theory T, and
+                     a syntactic constraint given by a grammar G. More concretely, let ϕ be a formula in some theory T
+                     that involves some free variables x0,...xi and uses an unknown function f. The goal of synthesis is to
+                     discover an implementation fimp such that replacing fimp for f in ϕ makes the formula valid for all values
+                     of the free variables.
+                                                                    ∀x0,...xi. ϕ[f/fimp]
+                     ˇ                                                                   c
+                         ´                                                              R.Alur,D.Fisman,R.Singh&A.Solar-Lezama
+                     Cerny, Kuncak, Madhusudan (Eds.): Fourth Workshop on
+                     Synthesis (SYNT 2015)                                              This work is licensed under the
+                     EPTCS202,2016,pp.3–26,doi:10.4204/EPTCS.202.3                      Creative Commons Attribution License.
+        4                        Results and Analysis of SyGuS-Comp’15
+        The syntactic restriction implies that the function fimp must belong to the grammar G also provided by
+        the user.
+        Example Asanexample,considertheproblemofﬁndingabit-vectorfunctionthatreturnsabit-vector
+        with a 1 in the position of the least signiﬁcant zero in its input bit-vector and zero everywhere else. This
+        problem is deﬁned in terms of the theory of bit-vectors, which includes operations such as bitwise and,
+        bitwise or, as well as left and right shifts and basic arithmetic among bit-vectors. The example problem
+        can be formalized in terms of two constraints that must be satisﬁed by the desired function. The ﬁrst
+        constraint is that if x is not zero, f(x) should have a one in the same position as x has a zero, so bitwise
+        and(&)of f(x) and the bitwise negation of x (∼x) should not be zero.
+                       ∀x. x > 0 ⇒(f(x) & ∼x)>0
+        The way we enforce that there is a single one and that it corresponds to the least signiﬁcant zero is by
+        enforcing that if we shift f(x) right by any amount, then bitwise anding with the bitwise negation of x
+        will now yield zero.
+                     ∀x,y. y > 0 ⇒ (f(x)  y & ∼x)=0
+         These two constraints can be expressed succinctly in SyGuS with the following notation.
+        (set-logic BV)
+        (synth-fun f ((x (BitVec 32))) (BitVec 32)
+               ((Start (BitVec 32) (x 0 1
+                         (bvand Start Start)
+                         (bvor Start Start)
+                         (bvnot Start)
+                         (bvadd Start Start)))))
+        (declare-var x (BitVec 32))
+        (declare-var y (BitVec 32))
+        (constraint (=> (bvult 0 x) (bvult 0 (bvand (f x) (bvnot x)))))
+        (constraint (=> (bvult 0 y) (= 0 (bvand (bvshr (f x) y) (bvnot x)))))
+        (check-synth)
+        The set-logic directive indicates that the constraints should be interpreted in terms of the theory of
+        bitvectors. The directive declare-var is used to declare x and y as 32-bit bitvector variables. The con-
+        straints are introduced with the directive constraint, and check-synth marks the end of the problem
+        and prompts the synthesizer to solve for the missing function. Crucially, in order for the synthesizer to
+        generate f, it needs a grammar, which is provided as part of the synth-fun directive. In this example,
+        we have signiﬁcantly reduced the space of possible functions by restricting the search to expressions
+        involving bitwise and, or, bitwise negation, sum and the constants 0 and 1, instead of asking the system
+        to consider completely arbitrary expressions in the theory of bitvectors.
+                 R. Alur, D. Fisman, R. Singh & A. Solar-Lezama                                                  5
+                 1.1   Conditional Linear Integer Arithmetic Track
+                 For problems where the grammar consists of the set of all possible integer linear arithmetic terms, it
+                 is sometimes possible to apply specialized solution techniques that exploit the information that decision
+                 proceduresforintegerlineararithmeticareabletoproduce. Forthisreason, the2015SyGuScompetition
+                 included a separate track where the grammar for all the unknown functions was assumed to be the entire
+                 theory of Integer Linear Arithmetic with ITE conditionals.
+                 Example As a simple example, consider the problem of synthesizing a function max2 that produces
+                 the maximumoftwointegers. The problem can be speciﬁed with the constraint below:
+                 (set-logic LIA)
+                 (synth-fun max2 ((x Int) (y Int)) Int)
+                 (declare-var x Int)
+                 (declare-var y Int)
+                 (constraint (>= (max2 x y) x))
+                 (constraint (>= (max2 x y) y))
+                 (constraint (or (= x (max2 x y)) (or (= y (max2 x y)))))
+                 (check-synth)
+                     Note that the deﬁnition of the unknown function max2 does not include a grammar this time, but
+                 because the problem is deﬁned in the theory of linear integer arithmetic (LIA), the default grammar
+                 consists of all the operations available in the theory.
+                 1.2   Invariant Synthesis Track
+                 One of the main applications of SyGuS is invariant synthesis. For this problem, the goal is to discover
+                 an invariant that makes the veriﬁcation condition for a given loop valid. Such a problem can be easily
+                 encoded in SyGuS, but invariant synthesis problems have structure that some solution algorithms are
+                 able to exploit and that can be lost when encoding it into SyGuS. For this reason, the 2015 installment
+                 of the competition also included a separate track for invariant synthesis problems where the additional
+                 structure is made apparent. In the invariant synthesis version of the SyGuS format, the constraints are
+                 separated into pre-condition, post-condition and transition relation, and the grammar for the unknown
+                 invariant is assumed to be the same as that for the conditional linear arithmetic track.
+                 Example Forexample,considerthefollowing simple loop.
+                 Pre: i >= 0     and    j=j0 and i=i0;
+                 while(i > 0){
+                      i = i - 1;
+                      j = j + 1;
+                 }
+                 Post: j = j0 + i0;
+                 Suppose we want to prove that the value of j at the end of the loop equals the value of i + j at the
+                 beginning of the loop. The veriﬁcation condition for this loop would check that (a) the precondition
+                 implies the invariant, (b) that the invariant is inductive, so if it holds before an iteration and the loop
+                 condition is true, then it will hold after that iteration, and (c) that the invariant together with the negation
+                 of the loop condition implies the postcondition. All of these constraints can be expressed in the standard
+              6                                               Results and Analysis of SyGuS-Comp’15
+              SyGuSformat, but they can be expressed more concisely using the extensions explicitly deﬁned for this
+              purpose. Speciﬁcally, the encoding will be as follows.
+              (set-logic LIA)
+              (synth-inv inv-f ((i Int) (j Int) (i0 Int) (j0 Int)))
+              (declare-primed-var i0 Int)
+              (declare-primed-var j0 Int)
+              (declare-primed-var i  Int)
+              (declare-primed-var j  Int)
+              (define-fun pre-f ((i Int) (j Int) (i0 Int) (j0 Int)) Bool
+                                (and (>= i 0) (and (= i i0) (= j j0))))
+              (define-fun trans-f ((i Int) (j Int) (i0 Int) (j0 Int)
+                                   (i! Int) (j! Int) (i0! Int) (j0! Int)) Bool
+                                   (and (and (= i! (- i 1)) (= j! (+ j 1)))
+                                        (and (= i0! i0) (= j0! j0))))
+              (define-fun post-f ((i Int) (j Int) (i0 Int) (j0 Int)) Bool
+                                 (= j (+ j0 i0)))
+              (inv-constraint inv-f pre-f trans-f post-f)
+              (check-synth)
+                 The directive (declare-primed-var i) is equivalent to separately declaring i and i!, where the
+              primed version of the variables is used to distinguish their value before and after the loop body. Just like
+              in the earlier example, the function to be synthesized inv f does not include a grammar, so the entire
+              LIAgrammarisassumed. HerethereturntypeisalsonotgivenandisassumedtobeBoolsinceinvariant
+              are assumed to be predicates. The constraint inv-constraint is syntactic sugar for the full veriﬁcation
+              condition involving the invariant, precondition, postcondition and transition function.
+              1.3  SyGuS-Comp’14summary
+              The ﬁrst SyGuS competition, SyGuS-Comp’14 consisted of a single track — the general track — in
+              which the benchmark provides the grammar describing the desired syntactic restrictions for that bench-
+              mark. The background theory could be either linear interger arithmetic or bitvectors. Five solvers com-
+              peted in SyGuS-Comp’14. The solver who won the ﬁrst place was the ENUMERATIVE solver which
+              solved 126 out of 241 benchmarks.
+              1.4  SyGuS-Comp’15summary
+              The 2015 instance of SyGuS-Comp was the second iteration of the competition and the ﬁrst iteration to
+              include the separate conditional linear integer arithmetic and invariant synthesis tracks. As elaborated
+              in Section 2, there were a total of eight solvers submitted to the competition which represent a range
+              of solution strategies. In the rest of the paper, we describe the details of the benchmarks used for the
+                 R. Alur, D. Fisman, R. Singh & A. Solar-Lezama                                                  7
+                 competition, the solution approaches used by each of the participants and the results of the competition
+                 on each of the different categories of benchmarks.
+                 2    Competition Settings
+                 2.1   Participating Benchmarks
+                 Wecollected several benchmarks from various sources using an open call for benchmarks, from which
+                 wesampled309benchmarksfortheGeneralTrack,73benchmarksfortheInvariantSynthesisTrack,and
+                 67benchmarksfortheConditionalLinearArithmetictrack. These benchmarks can broadly be classiﬁed
+                 into following 13 categories (11 categories for the General Track). The number of benchmarks in each
+                 of these categories and the contributors for the new set of benchmarks is shown in Table 1.
+                     • Array Benchmarks: This category consists of benchmarks that involve synthesizing a function
+                       over an integer array of a bounded size. Since the current SyGuS-IF format does not support
+                       arrays, we represent them using an ordered sequence of integer variables. One major class of
+                       benchmarks in this category is array-search, which requires to synthesize a loop-free function
+                       to ﬁnd an appropriate index for insertion of a given value into a sorted array of size n. Another
+                       major class of benchmark is array-sum-m-n, which requires to synthesize a function to ﬁnd ﬁrst
+                       two elements in an array of size n whose sum is greater than m.
+                     • Let Benchmarks: The benchmarks in this category use the let construct as speciﬁed in the
+                       SyGuS-IF format. The let expressions allow synthesizers to represent multiple occurrences of
+                       commonsubexpressions succinctly, which helps in improving the scalability. The let expressions
+                       in speciﬁcation constraints can be desugared, but they can not be desugared when used in gram-
+                       mar productions. For example, the production T := (let [z=U] z + z) denotes sum of two
+                       identical subexpressions built using addition operator, but the same can not be speciﬁed using a
+                       context-free grammar.
+                     • Invariant Generation Benchmarks (Bounded and Unbounded Integers): This category of
+                       benchmarks consists of loop invariant synthesis problems from the domain of program veriﬁca-
+                       tion. Some of these benchmarks are obtained from the Competition of Software Veriﬁcation (SV-
+                       COMP)andothers are from the literature on invariant synthesis. It involves two sub-categories:
+                       onethat uses unbounded integers and second that bounds the range of integers that can be used for
+                       the invariant expression.
+                     • ICFPBenchmarks: Thisbenchmarksinthiscategoryaresomeofthechallengingproblemstaken
+                       from the 2013 ICFP Programming Competition on program synthesis. These benchmarks in-
+                       volve synthesizing bit-vector functions from a domain-speciﬁc language of bit-vectors consisting
+                       of primitive bitwise operators such as shift, not, add, or, xor etc. The language also consists of
+                       a constrained comparison operator and a fold operator. The correctness speciﬁcation for these
+                       benchmarks is provided using 64-bit input-output bit-vector examples.
+                     • Hacker’s Delight Benchmarks: This category involves benchmarks that are derived from 20 dif-
+                       ferent bit-manipulation problems from the Hackers Delight book. For these benchmarks, there are
+                       3 increasingly challenging levels of grammars (d0, d1, and d5) that are provided for the unknown
+                       function, where the level d0 consists of only operators that are necessary for the unknown function
+                       and the level d5 consists of complete bit-vector grammar.
+                  8                                                          Results and Analysis of SyGuS-Comp’15
+                       BenchmarkCateogry          NumberofBenchmarks               Contributors (in 2015)
+                       Arrays                                31
+                       Bitvectors                             5
+                       CompilerOptimizations                 21                        Nissim Ofek (Yale):  21
+                       HackersDelight                        44
+                       ICFP                                  50
+                       Integers                              34               Shambwaditya Saha (UIUC):     14
+                       InvariantGeneration                   28
+                       InvariantGenerationUbdd               28
+                       Let                                   15
+                       MotionPlanning                        12              Sarah Chasins (UC Berkeley):   12
+                       MultipleFunctions                     41
+                       INVTrack                              73                      Pranav Garg (UIUC):    51
+                       LIATrack                              67
+                  Table 1: The number of benchmarks in each individual category used in SyGuS-COMP 2015 together
+                  with the number of new contributions and their contributors.
+                     • Integer Benchmarks: These benchmarks involve synthesizing functions that involve complex
+                        branching structure over linear arithmetic expressions. For example, the max benchmarks require
+                        to synthesize a function using comparison operator to compute maximum of n integers.
+                     • BitVector Benchmarks: This category of benchmarks involve synthesizing a complex function
+                        over a set of Boolean values represented using a bit-vector. For example, the parity benchmarks
+                        compute the parity of a given set of Boolean values, and the Morton benchmarks compute the
+                        Mortonnumbers.
+                     • Compiler Optimization Benchmarks: The benchmarks in this category come from the domain
+                        of compiler optimization where the goal is to synthesize a simpler expression (constrained by a
+                        grammar) that is functionally equivalent with a given complicated expression.
+                     • Multiple Functions Benchmarks: This class of benchmarks consists of synthesis problems that
+                        involve synthesizing multiple unknown functions that satisfy a given set of constraints.
+                     • MotionPlanningBenchmarks: Thebenchmarksinthiscategorycomefromthedomainofrobot
+                        motionplanning,wherethetaskistosynthesizeafunctiontocontrolrobotmovement(constrained
+                        by a grammar of possible movements) that reach from one point in space to another while main-
+                        taining some invariant constraints such as no collision.
+                     • LIA Track Benchmarks: The benchmarks in this category come from the General Track cat-
+                        egories such as integer benchmarks, array benchmarks, and motion planning benchmarks. The
+                        grammar for the unknown functions for this category comprises of expressions from the entire
+                        theory of Integer Linear Arithmetic with ITE conditionals as described in Section 3.2.
+                     • INV Track Benchmarks: The benchmarks in this category come from the domain of program
+                        veriﬁcation, wherethepre-condition,transitionfunction, andthepost-conditionarespeciﬁedusing
+                        explicit constructs in the SyGuS-IF format.
+                 R. Alur, D. Fisman, R. Singh & A. Solar-Lezama                                              9
+                                                                 Solvers
+                                                           T   S
+                                                           D   U
+                                                       S   S   G   E
+                                                       C   C   Y   V
+                                                       -   -   S   I           T   C
+                                                       T   T   -   T       C   S   I
+                                                       S   S               A       T
+                                                       I   I   5   A       -   A   S
+                                                       M   M   .   R       H   O   A
+                                                       E   E   1   E   T
+                                                               -           C   T   H
+                                                       H   H   4   M   D   T   Y   C
+                                                       C   C   C   U   -   E   S   O
+                                                       L   L   V   N   E   K   O   T
+                                                                       C
+                                             Tracks    A   A   C   E   I   S   S   S
+                                               LIA    1   1   1   0   0   0   0   0
+                                               INV    1   0   1   0   1   0   0   0
+                                            General   0   0   1   1   0   2   2   1
+                                            Table 2: Solvers participating in each track
+                 2.2  Participating Solvers
+                 Atotal of eight solvers were submitted to this year’s competition, two of the solvers were submitted
+                 with two conﬁgurations. Table 2 summarizes which solver participated in which track and in how many
+                 conﬁgurations. Thus a total of 3 solvers participated in both the LIA and the INV tracks. In the general
+                 track participated 5 solvers, out of which 2 with two conﬁgurations. Table 2 lists all the submitted solvers
+                 and their authors.
+                    Six of the solvers are based on the CEGIS approach: the enumerative solver (ENUMERATIVE),
+                 the stochastic solver (STOCHASTIC), the Sketch solver (SKETCH-AC), the abstract solution Analyzing
+                 SynthesisTool(SOSYTOAST),theAlchemistCSsolver(ALCHEMIST-CS),andtheAlchemisCSDT solver
+                 (ALCHEMIST-CSDT). The approaches of these solvers differ in the way the candidate expression is
+                 chosen.
+                    Theenumerative solver enumerates the candidate solutions by increasing length, and tries the small-
+                 est candidatethatwasnotrefutedsofar. Inbuildingnewexpressionsitusesaclassiﬁcationtoequivalence
+                 classes based on correctness on the current set of examples. For further details on the enumerative solver
+                 see [1, 2].
+                    The stochastic solver chooses the candidate expression by a probabilistic walk on a graph where
+                 nodes are expressions and edges capture single-edits of the expression parse tree. It uses the Metropolis-
+                 Hastings Algorithm using a score function that is inversely proportional to the number of instances in the
+                 current set of examples, on which the expression is incorrect. For further details see [1, 2].
+                    TheSketchsolverfollowsasymbolicapproachtoCEGISandusesanSMTsolverstochoosethenext
+                 candidate expression [18]. The Sketch Adaptive-Concretization combines symbolic and explicit CEGIS
+                 approaches [8] by randomly concretizing highly inﬂuential unknowns. This approaches lends itself to
+                 parallelism. Indeed SKETCH-AC is the only solver that used all four cores in this year’s competition (all
+                 the other solvers used a single core).
+                    The SOSYTOAST solver reﬁnes the enumerative CEGIS approach by considering abstract expres-
+                 sions; these are expressions that combine grammar non-terminals and concrete symbols. The idea is
+                 to use an SMT solver to refute impossible abstract expressions, instead of refuting all their respective
+                 concretizations. A check of the feasbility of an abstract expression to be a solution involves qunatifer
+                 alternation. The SMT calls are thus bounded by a small time unit (10 seconds) [15].
+                    Thetools ALCHEMIST-CS[12]andALCHEMIST-CSDT[17]arespecializedsolversfortheLIAtrack.
+                 They are base on the Alchemist [16], they both synthesize nested if-then-else expressions, and com-
+                 10                                                        Results and Analysis of SyGuS-Comp’15
+                              Solver    Authors
+                     ALCHEMIST-CS       Daniel Neider (UIUC), Shambwaditya Saha (UIUC) and P. Madhusudan (UIUC)
+                   ALCHEMIST-CSDT       Shambwaditya Saha (UIUC), Daniel Neider (UIUC) and P. Madhusudan (UIUC)
+                   CVC4-1.5-SYGUS       AndrewReynolds(EPFL),ViktorKuncak(EPFL),CesareTinelli (Univ. of Iowa),
+                                        Clark Barrett (NYU), Morgan Deters (NYU) and Tim King (Verimag)
+                      ENUMERATIVE       Abhishek Udupa (Penn)
+                             ICE-DT     Daniel Neider (UIUC), P. Madhusudan (UIUC) and Pranav Garg (UIUC)
+                         SKETCH-AC      Jinseong Jeon (UMD), Xiaokang Qiu (MIT), Armando Solar-Lezama (MIT) and
+                                        Jeffrey S. Foster (UMD)
+                        SOSYTOAST       Heinz Riener (DLR) and Ruediger Ehlers (DLR)
+                        STOCHASTIC      MukundRaghothama(Penn)
+                                             Table 3: Submitted solvers and their authors
+                 bine enumeration and constraint-solver based technique to ﬁnd leaf expressions The ALCHEMIST-CSDT
+                 works in two modes, in the ﬁrst all variables (qunatiﬁed and unquantiﬁed) are assumed to be integers,
+                 and in the second variables may be either integers or Booleans. The ALCHEMIST-CS tool can only solve
+                 point-wise SyGuS problems. A SyGuS problem is said to be point-wise if the following holds: let F be
+                 the class of all functions that are solutions to the speciﬁcation; then any function h that maps each input
+                 to an output consistent to some function in F, is also a solution to the speciﬁcation.
+                     The ICE-DT [11] tool is a specialized solver for the invariant synthesis track. It builds on the ICE
+                 learning approach [6] — an invariant synthesis approach in which the teacher responses to a given hy-
+                 pothesis may be concrete examples, counterexamples or implication. ICE-DT extends the ICE approach
+                 by using decision trees as suggested in [7].
+                     The CVC4-1.5-SYGUS solver is the only solver that is implemented inside an SMT solver [14]. It
+                 reducesthesynthesisproblemtoanunsatisﬁbilityofquantiﬁedSMTformulae. Indeed,asnotedin[2,1],
+                 for linear integer arithmetic problems, suppose the synthesis problem involves two variables x and y, then
+                 it can be articulated as the following quantiﬁed SMT satisﬁability query: ∃a,b,c. ∀x,y. ϕ[f/ax+by+
+                 c]. Since traditional SMT solvers are focused on instnatiation-based methods to show unsatisﬁability,
+                 the CVC4-1.5-SYGUS tool reformulates LIA problems as unsatisﬁability of the synthesis conjecture
+                 ∀f,∃x0,x1,...,xi,¬ϕ[f,x0,x1,...,xi]. For non-LIA problems, the CVC4-1.5-SYGUS uses an encoding
+                 of the syntax restrictions using ﬁrst order variables and uses a deep embedding into an extension of the
+                 background theory T with a theory of algebraic data types.
+                 2.3   Experimental Setup
+                 ThesolverswererunontheStarExecplatform[21]withadedicatedclusterof12nodes,whereeachnode
+                 consisted of two 4-core 2.4GHz Intel processors with 256GB RAM and a 1TB hard drive. The memory
+                 usage limit of each solver run was set to 128GB. The wallclock time unit was set to 3600 seconds (thus,
+                 a solver that used all cores could consume at most 14400 seconds cpu time).
+                     Thesolutionsthat the solvers produce are being checked for both syntactic and semantic correctness.
+                 That is, a ﬁrst post-processor checks that the produced expression adheres to the grammar speciﬁed in
+                 the given benchmark, and if this check passes, a second post-processor checks that the solution adheres
+                 to semantic constraints given in the benchmark (by invoking an SMT solver).
+                                                                                                R. Alur, D. Fisman, R. Singh & A. Solar-Lezama                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          11
+                                                                                                                                                                                                                                                                                                                     Number〰つof〰つBenchmark〰つSolved〰つ〰つ
+                                                                                                                                                                                                                                                                                                                          and〰つSolved〰つUniquely〰つper〰つCategory〰つ
+                                                                                                                                                                                80〰つ
+                                                                                                                                                                                60〰つ                                                                                                                                                                                                                                                                                                                                                                  solved〰つuniquely〰つ
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      solved〰つ
+                                                                                                                                                                                40〰つ                                                                                                                                                                                                                                                                                                                                                                  total〰つ
+                                                                                                                                                                                20〰つ
+                                                                                                                                                                                    0〰つ
+                                                                                                                                                                                                         V〰つ                        〰つ                    s〰つ                      s〰つ                        〰つ                     t〰つ                        〰つ                     s〰つ                        〰つ                        〰つ                                                  〰つ                        〰つ
+                                                                                                                                                                                                     IN                       LIA                     ay                         r                      pts                       lg                        fp                     er                        en                        dd                         et〰つ                     an                         nc
+                                                                                                                                                                                                                                                    r                        to                                                D                        Ic                                                                                                      L                         l
+                                                                                                                                                                                                                                                   r                       c                        O                        s                                                   g                        G                         b                                                                              u
+                                                                                                                                                                                                                                                A                        e                        p                       k                                                  te                     Inv                        nU                                                     tP                      ltF
+                                                                                                                                                                                                                                                                   itV                     om                      Hac                                                   In                                                 e                                                  Mo
+                                                                                                                                                                                                                                                                 B                       C                                                                                                                               G                                                                             Mu
+                                                                                                                                                                                                                                                                                                                                                                                                                   Inv
+                                                                                                                                                                                                                                 Figure 1: Results on the number of solved benchmarks.
+                                                                                                3                         Competition Results and Analysis
+                                                                                                In this section we present the results of SyGuS-COMP’15. We start with an overview of the results
+                                                                                                in subsection 3.1. In subsection 3.2 we try to understand the different features a certain benchmark
+                                                                                                may or may not have, and analyze each benchmark category in terms of the mentioned features. In
+                                                                                                subsection 3.3 we provide detailed results of the competition — going category by category, we present
+                                                                                                for each benchmark the range of times the solver took to solve that benchmark and which solver was the
+                                                                                                fastest, and the range of obtained expression sizes, and which solver produced the smallest expression.
+                                                                                                Finally, we conclude in subsection 3.4 with some interesting observations and conjectures.
+                                                                                                3.1                              Results Overview
+                                                                                                Figure 1 shows for each track and category (a) the total number of benchmarks (in green), (b) the number
+                                                                                                of benchmarks solved by at least one solver (in red), and (c) the number of benchmarks solved by only
+                                                                                                one of the solvers (in blue).
+                                                                                                                     Figure 2 on the top shows for each track and category the number of benchmarks solved by each of
+                                                                                                the solvers. It is evident from the ﬁgure that on the INV track, ICE-DT solved more instances than the
+                                                                                                others; it solved 57 out of 67 benchmarks. The Alchemist solver solved 53 benchmarks in the INV track.
+                                                                                                                     In the LIA track the leading solver is CVC4-1.5-SYGUS, which solved 70 out of 73 benchmarks.
+                                                                                                Thesecondplace goes to ALCHEMIST-CSDT which solved 47 instances.
+                                                                                                                     CVC4-1.5-SYGUS is also the winner in the general track, in which it solved 179 out of 309 bench-
+                                                                                                marks. The second place in this track goes to the ENUMERATIVE solver, the winner of last year’s
+                                                                                                competition, which solved 139 instances. The third place goes to the STOCHASTIC solver, which solved
+                                                                                                109instances.
+                                                                                                                     Figure2onthebottomshowsforeachtrackandcategorythenumberofbenchmarkssolveduniquely
+                                                                                                by each of the solvers. We say that a solver solved a benchmark uniquely if it is the only solver to solve
+                                                                                                that benchmark. It is evident that on the INV track, the ICE-DT solver solved more benchmarks uniquely,
+                                                                                                whereasintheLIAtrackthe CVC4-1.5-SYGUS solversolvedmorebenchmarksuniquely. Inthegeneral
+                                                                                                track, both CVC4-1.5-SYGUS and ENUMERATIVE solved many benchmarks that all the other solvers
+                                                                                                did not. It is interesting to see that for each benchmark category, there is a clear winner in terms of the
+                                                                                                numberofbenchmarkssolveduniquely.
+                                                12                                                                                                                                                                  Results and Analysis of SyGuS-Comp’15
+                                                                                                                                                      Number〰つof〰つBenchmark〰つSolved〰つ
+                                                                                                                                                                  per〰つSolver〰つper〰つCategory〰つ
+                                                                                       180〰つ                                                                                                                                                                              StochasMc〰つ
+                                                                                       160〰つ                                                                                                                                                                              SosyToast〰つ
+                                                                                       140〰つ                                                                                                                                                                              Sketch搠嵢AC〰つ
+                                                                                       120〰つ                                                                                                                                                                              ICE〰つDT〰つ
+                                                                                       100〰つ                                                                                                                                                                              EnumeraMve〰つ
+                                                                                         80〰つ                                                                                                                                                                             CVC4搠嵢1.5〰つ
+                                                                                         60〰つ                                                                                                                                                                             Alchemist〰つCSDT〰つ
+                                                                                         40〰つ                                                                                                                                                                             Alchemist〰つCS〰つ
+                                                                                         20〰つ
+                                                                                           0〰つ
+                                                                                                       〰つ          〰つ         s〰つ          s〰つ          〰つ          t〰つ          〰つ         s〰つ          〰つ           〰つ         t〰つ          〰つ           〰つ
+                                                                                                     V                                    r           ts          g            p           r            n           d                                     c
+                                                                                                   IN           LIA         ay                       p            l            f          e            e           d           Le          lan          n
+                                                                                                                           r            to         O            D            Ic          g           G            b                                    u
+                                                                                                                           r           c          p            s                                    v           U                        tP          tF
+                                                                                                                         A            e         m             k                        te         In           n                                     l
+                                                                                                                                   itV         o           Hac                       In                     Ge                        Mo         Mu
+                                                                                                                                  B           C                                                          Inv
+                                                                                                                                                 Number〰つof〰つBenchmark〰つSolved〰つUniquely〰つ
+                                                                                                                                                                      per〰つSolver〰つper〰つCategory〰つ
+                                                                                        25〰つ                                                                                                                                                                          StochasKc〰つ
+                                                                                                                                                                                                                                                                      SosyToast〰つ
+                                                                                        20〰つ                                                                                                                                                                          Sketch搠嵢AC〰つ
+                                                                                                                                                                                                                                                                      ICE〰つDT〰つ
+                                                                                        15〰つ                                                                                                                                                                          EnumeraKve〰つ
+                                                                                                                                                                                                                                                                      CVC4搠嵢1.5〰つ
+                                                                                        10〰つ                                                                                                                                                                          Alchemist〰つCSDT〰つ
+                                                                                         5〰つ                                                                                                                                                                          Alchemist〰つCS〰つ
+                                                                                         0〰つ
+                                                                                                     〰つ          〰つ         s〰つ         s〰つ         〰つ         t〰つ          〰つ         s〰つ          〰つ          〰つ         t〰つ         〰つ          〰つ
+                                                                                                    V         LIA         ay           r         pts          lg          fp         er          en          dd         Le          lan          nc
+                                                                                                 IN                      r           to         O           D           Ic          g           G           b                                  u
+                                                                                                                        r           c          p           s                                   v          U                       tP         tF
+                                                                                                                      A         itVe       om             k                     Inte         In         en                     Mo            l
+                                                                                                                              B           C            Hac                                         InvG                                   Mu
+                                                                                 Figure 2: Results on the number of solved benchmarks per solver per category.
+                 R. Alur, D. Fisman, R. Singh & A. Solar-Lezama                                            13
+                 3.2  Benchmarks’Features
+                 Since the solving strategies for synthesizers can be greatly inﬂuenced by the problem representation, we
+                 quantify here some different features that are exhibited by the benchmarks from different categories in
+                         1
+                 Table 3.2. We consider here four main categories: 1) whether the invocation of the unknown function is
+                 alwayspresent with the same set of arguments (single invocation) or there are multiple different function
+                 invocations (multiple invocation), 2) whether there is a single unknown function (single unknown) or
+                 multiple unknown functions (multiple unknown), 3) whether the speciﬁcation constraint is complete
+                 (complete spec) or partially speciﬁed using input-output examples (partial spec), and ﬁnally 4) whether
+                 the grammar for the unknown function is restricted, semi-general, or general.
+                 Function Invocation  Wesayabenchmarkbelongstothesingleinvocationclass if the unknown func-
+                 tion is called (possibly multiple times) with the same set of arguments in the speciﬁcation constraint. For
+                 example, consider the speciﬁcation constraint for the max4 benchmark. This benchmark belongs to the
+                 single invocation class because the max4 function is always called with the same set of arguments x, y,
+                 z, and w.
+                 (constraint (>= (max4 x y z w) x))
+                 (constraint (>= (max4 x y z w) y))
+                 (constraint (>= (max4 x y z w) z))
+                 (constraint (>= (max4 x y z w) w))
+                 (constraint (or (= x (max4 x y z w))
+                               (or (= y (max4 x y z w))
+                               (or (= z (max4 x y z w))
+                                   (= w (max4 x y z w))))))
+                    Similarly, we say a benchmark belongs to the multiple invocation class if the unknown function is
+                 called multiple times with different set of arguments. For example, consider the icfp 7 10 benchmark,
+                 where the unknown function f is called multiple times with different set of arguments.
+                 (constraint (= (f #x1be88589ba201842) #xe4177a7645dfe7bd))
+                 (constraint (= (f #x49ea2ae53e599623) #x93d455ca7cb32c46))
+                 (constraint (= (f #xea82cc5e6104247d) #xea82cc5e6104247d))
+                 (constraint (= (f #x75820d31bed79b87) #xeb041a637daf370e))
+                 (constraint (= (f #xe682665199ee31a8) #x197d99ae6611ce57))
+                 NumberofUnknownFunctions Wesayabenchmarkbelongstotheclassofsingleunknownclassif
+                 there is only one unkown function that needs to be synthesized. For example, the max4 and icfp 7 10
+                 benchmarks above require to synthesize a single function max4 and f respectively. The benchmarks that
+                 require to synthesize multiple unknown functions are said to belong to the multiple unkown class. For
+                 example, consider the speciﬁcation constraint from the s8 benchmark that requires to synthesize three
+                 unknownfunctions f1, f2, and f3, such that their sum is equal to a given linear arithmetic expression.
+                 (constraint (= (+ (+ (f1 x y z) (f2 x y z)) (f3 x y z)) (+ (+ x y) z)))
+                 (constraint (= (f2 x y z) (- y 1)))
+                   1Thementionedfeatures may not exist in all benchmarks of the category, but they are present in most of the benchmarks in
+                 that category.
+                 14                                                     Results and Analysis of SyGuS-Comp’15
+                         Benchmark              Function     # Unkown     Speciﬁcation  Grammar
+                         Category               Invocations  Functions    Constraint    Generality
+                         Array                  Single       Single       Complete      Restricted
+                         Let                    Single       Multiple     Complete      Restricted
+                         Invariant Generation   Multiple     Single       Complete      General
+                         ICFP                   Multiple     Single       Partial       General
+                         HackerDel-d0           Single       Single       Complete      Restricted
+                         HackerDel-d1           Single       Single       Complete      Semi-General
+                         HackerDel-d5           Single       Single       Complete      General
+                         Integer                Single       Single       Complete      Semi-General
+                         Bitvector              Single       Single       Complete      Semi-General
+                         CompilerOpts           Single       Single       Complete      Restricted
+                         MultipleFuncs          Multiple     Multiple     Partial       Restricted
+                         MotionPlanning         Multiple     Single       Complete      Semi-General
+                         LIATrack               Single       Single       Complete      General
+                         INVTrack               Multiple     Single       Partial       General
+                             Table 4: The list of features present in benchmarks from different categories.
+                    Wenotethatmultipleunknownfunctionscanbetheoretically represented as a single unknown func-
+                 tion by taking the union of respective grammars of the functions and adding a new Start non-terminal.
+                 But, we still distinguish benchmarks into different categories based on number of unknown functions as
+                 somesolvers might exploit the additional structural information present in the benchmarks.
+                 Speciﬁcation Constraint  Since the speciﬁcation language for the SyGuS-IF is based on constraints
+                 and is therefore quite general, the speciﬁcation for different benchmarks can be deﬁned with varying
+                 levels of completeness. We say a benchmark belongs to the partial spec class if the speciﬁcation con-
+                 straint allows for multiple possible semantic solutions for the unkown functions. We say two functions
+                 are semantically different if there exists some input for which they produce different outputs. For exam-
+                 ple, the speciﬁcation for the icfp 7 10 benchmark is partial as it is speciﬁed using a set of input-output
+                 examples. The speciﬁcation for the s8 benchmark shown above is also partial as it allows for multiple
+                 possible functions f1, f2, and f3.
+                    Ontheotherhand,wesayabenchmarkbelongstothecompletespecclassifthecompletefunctional
+                 speciﬁcation of the unknown function is provided. For example, consider the speciﬁcation for the com-
+                 piler optimization benchmark qm loop 1, where the constraint on the unknown function qm-loop fully
+                 speciﬁes the result of the function for every input.
+                 (set-logic LIA)
+                 (define-fun qm ((a Int) (b Int)) Int (ite (< a 0) b a))
+                 (synth-fun qm-loop ((x Int)) Int
+                     ((Start Int (x 0 1 3
+                                     (- Start Start)
+                                     (+ Start Start)
+                 R. Alur, D. Fisman, R. Singh & A. Solar-Lezama                                                 15
+                                      (qm Start Start)))))
+                 (declare-var x Int)
+                 (constraint (= (qm-loop x) (ite (<= x 0) 3 (- x 1))))
+                 (check-synth)
+                 GrammarGenerality Wedivide the benchmarks into three categories based on the generality of the
+                 grammars for the unknown functions. The restricted grammar class consists of benchmarks where the
+                 grammarsarerestrictedtoonlycontainoperatorsandvariablesthatarestrictlynecessaryfortheunknown
+                 function. The second class of grammar, semi-general grammar, consists of a few more choices for op-
+                 erators and rules that might not be necessarily needed for synthesizing the unknown function. The third
+                 class of grammar, general grammar, consists of a very general grammar that consists of all possible op-
+                 erators and variables from a given theory. For example, consider the grammars for the hd-17-d0-prog
+                 (restricted grammar), hd-17-d1-prog (semi-general), and hd-17-d5-prog (general grammar) bench-
+                 marks where all the constraints are same except for the generality of the grammar. The benchmark
+                 hd-17-prog is taken from the Hacker’s Delight book that needs to synthesize a bitvector function to
+                 turn-off the rightmost contiguous string of 1 bits in the input bitvector x.
+                 ;; hd-17-d0-prog
+                 (synth-fun f ((x (BitVec 32))) (BitVec 32)
+                      ((Start (BitVec 32) ((bvand Start Start)
+                                                (bvadd Start Start)
+                                                (bvsub Start Start)
+                                                (bvor Start Start)
+                                                 x
+                                                #x00000001))))
+                 ;; hd-17-d1-prog
+                 (synth-fun f ((x (BitVec 32))) (BitVec 32)
+                      ((Start (BitVec 32) ((bvand Start Start)
+                                                (bvadd Start Start)
+                                                (bvxor Start Start)
+                                                (bvsub Start Start)
+                                                (bvor Start Start)
+                                                (bvnot Start)
+                                                (bvneg Start)
+                                                x
+                                                #x00000001
+                                                #x00000000
+                                                #xFFFFFFFF))))
+        16                       Results and Analysis of SyGuS-Comp’15
+        ;; hd-17-d5-prog
+        (synth-fun f ((x (BitVec 32))) (BitVec 32)
+          ((Start (BitVec 32) ((bvnot Start)
+                     (bvxor Start Start)
+                     (bvand Start Start)
+                     (bvor Start Start)
+                     (bvneg Start)
+                     (bvadd Start Start)
+                     (bvmul Start Start)
+                     (bvudiv Start Start)
+                     (bvurem Start Start)
+                     (bvlshr Start Start)
+                     (bvashr Start Start)
+                     (bvshl Start Start)
+                     (bvsdiv Start Start)
+                     (bvsrem Start Start)
+                     (bvsub Start Start)
+                     x
+                     #x0000001F
+                     #x00000001
+                     #x00000000
+                     #xFFFFFFFF))))
+         The grammars for the unknown functions in the Conditional Linear Arithmetic (LIA) track and the
+        Invariant Synthesis (INV) track belong to the class of general grammars, where the following grammar
+        is used for all unknown functions in the benchmarks.
+        (synth-fun f ((x1 Int) ... (xn Int)) Int
+          ((Start Int (StartInt))
+           (StartInt Int (x1 ... xn ConstantInt
+            (+ StartInt StartInt)
+            (- StartInt StartInt)
+            (* StartInt ConstantInt)
+            (* ConstantInt StartInt)
+            (div StartInt ConstantInt)
+            (mod StartInt ConstantInt)
+            (ite StartBool StartInt StartInt)))
+           (ConstantInt (Constant Int))
+           (StartBool Bool (true false
+            (and StartBool StartBool)
+            (or StartBool StartBool)
+            (=> StartBool StartBool)
+            (xor StartBool StartBool)
+            (xnor StartBool StartBool)
+                 R. Alur, D. Fisman, R. Singh & A. Solar-Lezama                                                 17
+                           (nand StartBool StartBool)
+                           (nor StartBool StartBool)
+                           (iff StartBool StartBool)
+                           (not StartBool)
+                           (= StartBool StartBool)
+                           (<= StartInt StartInt)
+                           (= StartInt StartInt)
+                           (>= StartInt StartInt)
+                           (> StartInt StartInt)
+                           (< StartInt StartInt)))))
+                 3.3   Detailed Results
+                 In the following section we show the results of the competition from the benchmark’s perspective. For a
+                 given benchmark we would like to know: how many solvers solved it, what is the min and max time to
+                 solve, what are the min and max size of the expressions produced, which solver solved the benchmark
+                 the fastest, and which solver produced the smallest expression.
+                     We represents the results per benchmarks in groups organized per tracks and categories. For in-
+                 stance, Fig. 3 shows all benchmarks of the INV tracks (ﬁrst half in the upper ﬁgure, and second half
+                 in the lower ﬁgure). The black bars show the range of the time to solve among the different solvers in
+                 psuedo logarithmic scale (as indicated on the upper part of the y-axis). Inspect for instance benchmark
+                 anpf-new.sl. The black bar indicates that the fastest solver to solve it used between 10 to 30 second,
+                 and the slowest did not solve it within the given time bound (3600 second). The black number above
+                 the black bar indicates the exact number of seconds (ﬂoor-rounded to the nearest second) it took the
+                 slowest solver to solve a benchmark (and ∞ if at least one solver exceeded the time bound). Thus, we
+                 can see that the slowest solver to solve array-new.sl took 167 seconds to solve it. The white number
+                 at the lower part of the bar indicates the time of the fastest solver to solve that benchmark. Thus, we can
+                 see that the fastest solver to solve anpf-new.sl required 21 second to do so, and the fastest solver to
+                 solve array-new.sl took less than a second. The colored squares/rectangles next to the lower part of
+                 the black bar, indicate which solvers were the fastest to solve that benchmark (according to the solvers’
+                 legendatthetop). Here, fastest means in the same logarithmic scale as the absolute fastest solver. For in-
+                 stance, we can see that ALCHEMIST-CS wasthefastesttosolveanpf-new.sl,thatboth ALCHEMIST-CS
+                 and ICE-DT solved cegar-new.sl in less than a second, and that all solvers (ICE-DT,ALCHEMIST-CS,
+                 and CVC4-1.5-SYGUS)solved dec-new.sl in less than a second.
+                     Similarly, the gray bars indicate the range of expression sizes in psuedo logarithmic scales (as in-
+                 dicated on the lower part of the y-axis), where the size of an expression is determined by the number
+                 of nodes in its parse tree. The black number at the bottom of the gray bar indicates the exact size ex-
+                 pression of the largest solution (or ∞ if it exceeded 1000), and the white number at the top of the gray
+                 bar indicates the exact size expression of the smallest solution. The colored squares/rectangles next to
+                 the upper part of the gray bar indicates which solvers (according to the legend) produced the smallest
+                 expression (where smallest means in the same logarithmic scale as the absolute smallest expression). For
+                 instance, for tacas.sl the smallest expression produced had size 7, the biggest expression had size 121,
+                 and the solver which produced the smallest expression is CVC4-1.5-SYGUS. For treax1.sl all solvers
+                 produced an expression of size smaller than 10, and the absolute value of the smallest expression was 7.
+                     Finally, at the top of the ﬁgure above each benchmark there is a number indicating the number
+                 of solvers that solved that benchmark. For instance, one solver solved anpf-new.sl, two solvers
+                                                          18                                                                                                                                                                                                   Results and Analysis of SyGuS-Comp’15
+                                                                                                                                                                                               Invaraint Generation Track - Part 1
+                                                                                                                                                                                                   Alchemist CS                                CVC4-1.5                            ICE DT
+                                                                                                            1      3       2       2      2       2       1      3       0       0      2       3       3      3       3       2      3       3       2      1       1       2      3       3       0      0       2       1      3       3       2      2       1       2
+                                                                                          >3600            ∞              ∞ ∞ ∞ ∞ ∞                                     ∞ ∞ ∞                                                 ∞                      ∞ ∞ ∞ ∞                                       ∞ ∞ ∞ ∞                                       ∞ ∞ ∞ ∞
+                                                                                 [1000,3600)[100,300)                                                                                                                                                                                                    3098
+                                                                                   [300,1000)[30,100)                                                   383                                           474            671                                                                  454                                           586
+                                                                                     [100,300)[10,30)             167                                                                                                                       286
+                                                                                       [30,100)[3,10)
+                                                                                         [10,30)[1,3)      21                                                                                  11                                     12                                                                                         10
+                                                                                wallclock-time[3,10)[0,1)                                                                                                                      9                                                    9
+                                                                                             [1,3)0                                               1                                     2                                                             1      2       2       2                                             1                      2              1
+                                                                                             [0,1)                 0       0       1      1                      1       0       0              0       0      1       0              0       0                                     0       0       1              1              0       0              1               0
+                                                                                           [1,10)
+                                                                                         [10,30)[1,10)             7       9       9                             7                              7       7      7       8              7       7                              3      7       7                                     7       7
+                                                                                       [30,100)[10,30)            21                     29                                             11     28      28                     13      12     12                                    21      21                                    27      27      19
+                                                                                     [100,300)[30,100)     41                                    35                                                                   40                             33     31                                                    55      47                            53      47      49
+                                                                                expr-size[300,1000)[100,300)                                                                                                                                                       185
+                                                                                   [300,1000)>1000                                                      745
+                                                                                          >1000            ∞              ∞ ∞ ∞ ∞ ∞                                     ∞ ∞ ∞                                                 ∞                      ∞ ∞ ∞ ∞                                       ∞ ∞ ∞ ∞                                       ∞ ∞ ∞ ∞
+                                                                                                                                                                                                                                        fig9.sl                               inc.sl
+                                                                                                                                                                                                                                                                                                     matrix2.sl     sum1.sl         sum3.sl        sum4.sl
+                                                                                                             anfp-new.slarray-new.sl                               dec-new.sl             ex11-new.sl            ex14-new.slfig1-new.sl        fig9_vars.sl                           inc_simp.slinc_vars.sl
+                                                                                                                             cegar1-new.sl  cegar2-new.sl  cggmp-new.sl                                                                                formula22.slformula25.slformula27.sl                                 sum1_vars.sl   sum3_vars.sl    sum4_simp.slsum4_vars.sltacas_vars.sl
+                                                                                                                                                                          dec_simpl-new.sldec_vars-new.slex11_vars-new.sl       fig1_vars-new.sl                                                             matrix2_simp.sl
+                                                                                                                                    cegar1_vars-new.slcegar2_vars-new.sl                         ex11_simpl-new.sl
+                                                                                                                                                                                                                                benchmarks
+                                                                                                                                                                                               Invaraint Generation Track - Part 2
+                                                                                                                                                                                                    Alchemist CS                               CVC4-1.5                            ICE DT
+                                                                                                            3       3       3       0       0       1       3       3      2       3       2       2       2       2       3       3      3       2       2       0       3       3       3       1      0       3       3       3       2       2       2       3      3
+                                                                                           >3600                                   ∞ ∞ ∞                                  ∞               ∞ ∞ ∞ ∞                                                ∞ ∞ ∞                                           ∞ ∞                                    ∞ ∞ ∞
+                                                                                  [1000,3600)[100,300)    1864                                                                                                                          1653                                                                           2222
+                                                                                    [300,1000)[30,100)                                                                            711                                                                           736                                                            675
+                                                                                      [100,300)[10,30)                                                            148
+                                                                                        [30,100)[3,10)                                                     51                                                                                                                                                   65
+                                                                                          [10,30)[1,3)                                             13                                                                             14
+                                                                                wallclock-time[3,10)[0,1)
+                                                                                              [1,3)0                                                                                                       1       1                                                                              2
+                                                                                              [0,1)         0       1       1       0       0               0       0      1       0       0       1                       1       0      0       0       0               1       1       1              0       0       0       0       1       1       1       1      1
+                                                                                            [1,10)
+                                                                                          [10,30)[1,10)     7       7       7                               7       7              9       8                               7       7      7                               7       7       7                      7       7       8                               7      9
+                                                                                        [30,100)[10,30)                                                    21      21      21                     29                              23      23     11      17                                      13             17      17      23      13      27      27
+                                                                                      [100,300)[30,100)                                            59                                                     35
+                                                                                expr-size[300,1000)[100,300)121                                                                                                  170
+                                                                                    [300,1000)>1000
+                                                                                           >1000                                   ∞ ∞ ∞                                  ∞               ∞ ∞ ∞ ∞                                                ∞ ∞ ∞                                           ∞ ∞                                    ∞ ∞ ∞
+                                                                                                                                                                                                                                                                                                                                                                          w1.sl
+                                                                                                              tacas.sltreax1.sl       trex3.sl       v/anfp.slv/array.sl                                                    v/dec.sl                v/ex11.sl              v/ex14.sl               v/ex23.sl       v/ex7.sl        v/fig1.sl      v/fig3.sl       vsend.sl
+                                                                                                                              trex1_vars.sl  trex3_vars.sl                           v/cegar1.sl     v/cegar2.sl    v/cggmp.sl              v/dec_vars.sl                                                                  v/ex7_vars.sl
+                                                                                                                                                                     v/array_simp.slv/array_vars.sl                                 v/dec_simpl.sl                  v/ex11_vars.sl v/ex14_simp.slv/ex14_vars.slv/ex23_vars.sl             v/fig1_vars.sl  v/fig3_vars.sl
+                                                                                                                                                                                             v/cegar1_vars.slv/cegar2_vars.sl                               v/ex11_simpl.sl
+                                                                                                                                                                                                                                 benchmarks
+                                                                                                                                                            Figure 3: Evaluation of INV benchmarks.
+                 R. Alur, D. Fisman, R. Singh & A. Solar-Lezama                                                 19
+                 solved cegar-new.sl, three solvers solved array-new.sl, and no solver solved matrix2.sl or
+                 matrix2-simp.sl. Note that the reason matrix2.sl has 1 as the lower time bound, is that that is
+                 the time to terminate rather than the time to solve. Thus, one of the solvers has terminated within less
+                 than 1 second, but either it did not produce a result, or it produced an incorrect result. When no solver
+                 produced a correct result, there will be no colored squares/rectangles next to the lower parts of the bars.
+                     Figures 3-11 presents the results of each benchmark in the competition. The results are organized
+                 per category. The results for ICFP category are not included, since only one benchmark was solved. This
+                 benchmark is the icfp 28 10.sl benchmark, it was solved by CVC4-1.5-SYGUS and SOSYTOAST, in
+                 both conﬁgurations. The two solvers (in the overall three conﬁgurations) terminated in less than two
+                 seconds, producing an expression of size two. It seems that the solvers ﬁnd it difﬁcult to handle the
+                 benchmarks in this category since the speciﬁcation constraints are too partial.
+                 3.4   Observations
+                 Correlating the number of instances solved by the different solvers (as depicted in Fig. 2) and the features
+                 a certain category has (as detailed in Table. 3.2) the following observations can be made:
+                     • The CVC4-1.5-SYGUS solver preforms best on benchmarks with single invocation and a single
+                       unknown.
+                     • The ICE-DT solver, designated to solve invariant synthesis problems, does best on invariant syn-
+                       thesis problems, which are multiple invocation.
+                     • The ENUMERATIVE and STOCHASTIC solver preform well on multiple invocation problems (of
+                       the general track).
+                     • The SKETCH-AC solver preforms well on benchmarks with a restricted grammar.
+                     Wenote that we have tested the solvers submitted to the general track on the instances of the INV
+                 and LIA track translated to general SyGuS. None of them solved any of those instances. For most
+                 of the solvers the problem seemed to be lack of support for arbitrary constants — the translation to
+                 general SyGuS included the grammar term (Constant Int) which allows any integer to appear in the
+                 speciﬁcation, and the solvers for the general track that mostly build on guiding the search according
+                 to the syntactic structure do not support this construct. The reason CVC4-1.5-SYGUS failed on these
+                 benchmarksisthatitwasn’tdesignedtosupportthelesscommonBooleanconnectivessuchasnandand
+                 xnor that the translation to general SyGuS allowed in order to be as permissive as possible. For next
+                 year’s competition we plan to test the general solvers on a restricted, yet general, subset of LIA, e.g. one
+                 consisting of just zero and one as constants and a small subset of the Boolean operators from which the
+                 others can be derived (e.g. and, or, and not).
+                     Withregardtosizeexpressionswenotethatthe ENUMERATIVEsolverbydeﬁnitionalwaysproduces
+                 the smallest expression. Inspecting ﬁgures 3-11 we observe that in many cases most solvers produced
+                 expressions of relatively the same size. Though the CVC4-1.5-SYGUS solver often produces very large
+                 expressions. Forinstance, onthearray search 7.sbenchmark,inwhichSKETCH-ACproducedanex-
+                 pressionofsize31, CVC4-1.5-SYGUS’sexpressionwasofsize3,311,andontheLinExpr inv1 ex.sl,
+                 in which both ENUMERATIVE and SKETCH-AC produced an expression of size 14, STOCHASTIC pro-
+                 duced an expression of size 42, CVC4-1.5-SYGUS produced an expression of size 4,022. The largest
+                 expression produced was for benchmark array search 15.sl. Its size is 1,843,271. It is the solution
+                 of CVC4-1.5-SYGUS which is the only solver to solve this benchmark.
+                                                          20                                                                                                                                                                                                   Results and Analysis of SyGuS-Comp’15
+                                                                                                                                                                                       Linear Integer Arithmetic Track - Part 1
+                                                                                                                                                                                        Alchemist CS                                Alchemist CS DT                                   CVC4-1.5
+                                                                                                         1      1       1      1      1      1      3      3      3      2      2      2      2      2       1      1      3      3      3      3      2      2      1      1      1       1      1      1      1      1      1      3      3      1      1      1      1
+                                                                                        >3600           ∞ ∞ ∞ ∞ ∞ ∞                                              ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞                                                                      ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞                                                                       ∞ ∞ ∞ ∞
+                                                                               [1000,3600)[100,300)                                                                                                                                   2671
+                                                                                 [300,1000)[30,100)
+                                                                                   [100,300)[10,30)
+                                                                                     [30,100)[3,10)
+                                                                                       [10,30)[1,3)                                                       11                                                                                   17
+                                                                                wallclock-time[3,10)[0,1)                                                                                                                                                                                                                            4                                  3
+                                                                                           [1,3)0                                                                                                                                                                                                                                                         1      2
+                                                                                           [0,1)         0      0      0       0      0      0      1      0      0      0      0      0      0      0      0       0      0      0      0      0      0      0      0      0      0      0       0      0      0      0      0      0      0      1
+                                                                                         [1,10)
+                                                                                       [10,30)[1,10)                                                                                                                                                                                                                                        8
+                                                                                     [30,100)[10,30)                                               21                                                                     16     11     19     19     28     28                                                                     24
+                                                                                   [100,300)[30,100)                                               53     31     41     51     61     71     81      91                                 57     57                                                                                   30
+                                                                                expr-size[300,1000)[100,300)                                             109
+                                                                                 [300,1000)>1000                                                                                                                                                                   369 678 678                                                                   781 958
+                                                                                        >1000           ∞ ∞ ∞ ∞ ∞ ∞                                              ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞                                                                      ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞                                                                       ∞ ∞ ∞ ∞
+                                                                                                                                                                                                                                                                                                                                              fg_fivefuncs.slfg_max10.slfg_max11.slfg_max12.slfg_max13.sl
+                                                                                                                                                                                                                                                                                                                                      fg_eightfuncs.sl
+                                                                                                           fg_array_search_10.slfg_array_search_11.slfg_array_search_12.slfg_array_search_13.slfg_array_search_14.slfg_array_search_15.slfg_array_search_2.slfg_array_search_3.slfg_array_search_4.slfg_array_search_5.slfg_array_search_6.slfg_array_search_7.slfg_array_search_8.slfg_array_search_9.slfg_array_sum_10_5.slfg_array_sum_2_15.slfg_array_sum_2_5.slfg_array_sum_3_15.slfg_array_sum_3_5.slfg_array_sum_4_15.slfg_array_sum_4_5.slfg_array_sum_5_15.slfg_array_sum_6_15.slfg_array_sum_6_5.slfg_array_sum_7_15.slfg_array_sum_7_5.slfg_array_sum_8_15.slfg_array_sum_8_5.slfg_array_sum_9_15.slfg_array_sum_9_5.sl
+                                                                                                                                                                                                              fg_array_sum_10_15.sl
+                                                                                                                                                                                                                               benchmarks
+                                                                                                                                                                                        Linear Integer Arithmetic Track - Part 2
+                                                                                                                                                                                        Alchemist CS                                Alchemist CS DT                                    CVC4-1.5
+                                                                                                          2      0       1      1      3      3       2      2      2      2       2      1      3      2       3      1      3      3       3      3      3       3      3      3      3       3      3      3      3       3      3      3      3       3      2      2
+                                                                                         >3600                  ∞ ∞ ∞                                ∞ ∞ ∞ ∞ ∞ ∞                                       ∞              ∞                                                                                                                                         ∞ ∞
+                                                                                [1000,3600)[100,300)   1890
+                                                                                  [300,1000)[30,100)
+                                                                                    [100,300)[10,30)
+                                                                                      [30,100)[3,10)                                                                                                                         59                                                                       33
+                                                                                        [10,30)[1,3)                                                                                                           27
+                                                                                wallclock-time[3,10)[0,1) 7             5       7             4
+                                                                                            [1,3)0                                                                                                                                                                 2                                                                              2       2
+                                                                                            [0,1)                                      0      0       0      0      0      0       0      0      0      0       0      0      0       1      0      1      1      0       1      0      0       0      0      0      0       0      0      0      0       0      0      0
+                                                                                          [1,10)
+                                                                                        [10,30)[1,10)                                                                                                                                                                            3                            2      4       7      5
+                                                                                      [30,100)[10,30)    10                           11                                                        21                                   24     28     20     23      21                    11     11                                         14      19     18
+                                                                                    [100,300)[30,100)    49                                  42      71                                         38             84                                  34     37      77     36                           31                                                        36     36
+                                                                                expr-size[300,1000)[100,300)                                               151 242                                     219                   131                                        105
+                                                                                  [300,1000)>1000                                                                         346 471 616                         391 505
+                                                                                         >1000                  ∞ ∞ ∞                                ∞ ∞ ∞ ∞ ∞ ∞                                       ∞              ∞ ∞                                                                                                                                       ∞ ∞
+                                                                                                           fg_VC22_a.slfg_VC22_b.slfg_max14.slfg_max15.slfg_max2.slfg_max3.slfg_max4.slfg_max5.slfg_max6.slfg_max7.slfg_max8.slfg_max9.sl
+                                                                                                                                                                                                                                                                    fg_mpg_ite1.slfg_mpg_ite2.sl        fg_ninefuncs.sl                                    fg_sixfuncs.slfg_tenfunc1.slfg_tenfunc2.sl
+                                                                                                                                                                                                                                       fg_mpg_guard1.slfg_mpg_guard2.slfg_mpg_guard3.slfg_mpg_guard4.slfg_mpg_plane1.slfg_mpg_plane2.slfg_mpg_plane3.slfg_polynomial.slfg_polynomial1.slfg_polynomial2.slfg_polynomial3.slfg_polynomial4.slfg_sevenfuncs.sl
+                                                                                                                                                                                                   fg_mpg_example1.slfg_mpg_example2.slfg_mpg_example3.slfg_mpg_example4.slfg_mpg_example5.sl
+                                                                                                                                                                                                                               benchmarks
+                                                                                                                                                             Figure 4: Evaluation of LIA benchmarks.
+                                                                    R. Alur, D. Fisman, R. Singh & A. Solar-Lezama                                                                                                                                                                                                                                                                                                                                             21
+                                                                                                                                                                                                                                                               Arrays Category
+                                                                                                                                                                                         CVC4-1.5                                  Enumerative                                       Sketch-AC                                   SosyToast                                  Stochastic
+                                                                                                                                  1         1         1        1         1         1         4         3         2        2         2         2         1         1         1        1         2         3         1         2        1         1         1         1         1         1        1         1         1         1         1
+                                                                                                            >3600                ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞
+                                                                                                  [1000,3600)[100,300)
+                                                                                                    [300,1000)[30,100)
+                                                                                                       [100,300)[10,30)
+                                                                                                         [30,100)[3,10)
+                                                                                                           [10,30)[1,3)                                                           12                                                                                       17       17
+                                                                                              wallclock-time  [3,10)[0,1)                                      3         7                                                                                                                                                                                                                                                     4         4
+                                                                                                                [1,3)0                                1                                                                                                                                                                                                                                                    1         1
+                                                                                                                [0,1)             0         1                                                0         0        0         0         0         0         0         0                            0         0         0         0        0         0         0         0         0        0         0
+                                                                                                              [1,10)
+                                                                                                            [10,30)[1,10)
+                                                                                                         [30,100)[10,30)                                                                    11        16        21                                                                            24        14
+                                                                                                       [100,300)[30,100)                                                                                                 31        31        36        56                                                                   30
+                                                                                              expr-size[300,1000)[100,300)                                                                                                                                                                                       109                189 173
+                                                                                                    [300,1000)>1000                                                                                                                                                                                                                                     833
+                                                                                                            >1000                ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞
+                                                                                                                                    array_search_10.slarray_search_11.slarray_search_12.slarray_search_13.slarray_search_14.slarray_search_15.slarray_search_2.slarray_search_3.slarray_search_4.slarray_search_5.slarray_search_6.slarray_search_7.slarray_search_8.slarray_search_9.slarray_sum_10_5.slarray_sum_2_15.slarray_sum_2_5.slarray_sum_3_15.slarray_sum_3_5.slarray_sum_4_15.slarray_sum_4_5.slarray_sum_5_15.slarray_sum_6_15.slarray_sum_6_5.slarray_sum_7_15.slarray_sum_7_5.slarray_sum_8_15.slarray_sum_8_5.slarray_sum_9_15.slarray_sum_9_5.sl
+                                                                                                                                                                                                                                                                             array_sum_10_15.sl
+                                                                                                                                                                                                                                                                          benchmarks
+                                                                                                                                                                                    Figure 5: Evaluation of Arrays benchmarks.
+                                                                                                                                                                                                                  Compiler Optimizations and Bitvectors Category
+                                                                                                                                                                                             CVC4-1.5                                 Enumerative                                      Sketch-AC                                  SosyToast                                  Stochastic
+                                                                                                                                        2           1          2           1          0          0           3          2           0          3           2          1           3          2           0          0           3          1           2          0          0           3          1           0          0           0
+                                                                                                                 >3600                 ∞           ∞          ∞          ∞           ∞          ∞           ∞          ∞           ∞          ∞           ∞          ∞           ∞          ∞           ∞          ∞          ∞           ∞          ∞           ∞          ∞           ∞          ∞           ∞          ∞           ∞
+                                                                                                       [1000,3600)[100,300)
+                                                                                                         [300,1000)[30,100)
+                                                                                                           [100,300)[10,30)
+                                                                                                              [30,100)[3,10)
+                                                                                                                [10,30)[1,3)
+                                                                                              wallclock-time      [3,10)[0,1)                                                                                                                                                                                                                                                4
+                                                                                                                     [1,3)0                                                                                             1           1                                 3                      1           1          1                                  1          1                                 1           1          1           1
+                                                                                                                     [0,1)              0           0          0           0          0          0           0                                 0           0                      0                                             0          0                                             0
+                                                                                                                   [1,10)
+                                                                                                                 [10,30)[1,10)                                                                               7                                 5           9                      7                                             7                                                        7
+                                                                                                               [30,100)[10,30)         24                                                                               11                                           11                     13                                            11          13                                           11
+                                                                                                            [100,300)[30,100)                      56         34
+                                                                                              expr-size   [300,1000)[100,300)                                            106
+                                                                                                         [300,1000)>1000
+                                                                                                                 >1000                 ∞           ∞          ∞          ∞           ∞          ∞           ∞          ∞           ∞          ∞           ∞          ∞           ∞          ∞           ∞          ∞          ∞           ∞          ∞           ∞          ∞           ∞          ∞           ∞          ∞           ∞
+                                                                                                                                                                                        BitVectors/parity.sl
+                                                                                                                                                                                                                                                 CompOpts/qm_loop_1.slCompOpts/qm_loop_2.slCompOpts/qm_loop_3.slCompOpts/qm_max2.slCompOpts/qm_max3.slCompOpts/qm_max4.slCompOpts/qm_max5.slCompOpts/qm_neg_1.slCompOpts/qm_neg_2.slCompOpts/qm_neg_3.slCompOpts/qm_neg_4.slCompOpts/qm_neg_5.sl
+                                                                                                                                          BitVectors/parity-AIG-d0.slBitVectors/parity-AIG-d1.sl   CompOpts/qm_area_sel_2.slCompOpts/qm_choose_01.slCompOpts/qm_choose_yz.slCompOpts/qm_in_range.sl                                                                                        CompOpts/qm_neg_eq_1.slCompOpts/qm_neg_eq_2.slCompOpts/qm_neg_eq_3.slCompOpts/qm_neg_eq_4.slCompOpts/qm_neg_eq_5.sl
+                                                                                                                                                                 BitVectors/parity-NAND-d0.slBitVectors/parity-NAND-d1.sl
+                                                                                                                                                                                                                                                                             benchmarks
+                                                                                                                         Figure 6: Evaluation of Compiler Optimization and Bitvectors benchmarks.
+                         22                                                                                   Results and Analysis of SyGuS-Comp’15
+                                                                                    Let and Motion Planning Category
+                                                                     CVC4-1.5       Enumerative       Sketch-AC       SosyToast      Stochastic
+                                                 0   0    0   0   0   0   1   0   1   1   0   0   0   0   0   2   1   2   1   1   0   3   1   3    1   1   0
+                                         >3600   ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞                                    ∞       ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞
+                                     [1000,3600)[100,300)
+                                      [300,1000)[30,100)                                                             345
+                                       [100,300)[10,30)
+                                        [30,100)[3,10)                                                        45
+                                         [10,30)[1,3)                        25           11  15  18  20  19
+                                   wallclock-time[3,10)[0,1)
+                                          [1,3)0                                                                      1   1   1   1               2    2   2
+                                          [0,1)  0   0    0   0   0   0   0       0   0                       0   0                   0   0   0
+                                          [1,10)
+                                         [10,30)[1,10)                                                        1   1   1   7   1       1   1   7   7
+                                        [30,100)[10,30)                  16      22  28                                                               13
+                                       [100,300)[30,100)
+                                   expr-size[300,1000)[100,300)
+                                      [300,1000)>1000
+                                         >1000   ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞
+                                                          Let/logcount.slLet/logcount2.slLet/twolets1.slLet/twolets10.slLet/twolets3.slLet/twolets4.slLet/twolets5.slLet/twolets6.slLet/twolets7.slLet/twolets8.slLet/twolets9.sl
+                                                  Let/logcount-d1.slLet/logcount-d5.slLet/logcount2-d1.slLet/logcount2-d5.sl
+                                                                                                               MotPlan/mpgL_d1s3.slMotPlan/mpgL_d1s7.slMotPlan/mpgL_d4s3.slMotPlan/mpgL_d4s7.slMotPlan/mpgL_d5s3.slMotPlan/mpgL_d5s7.slMotPlan/mpgoL_d1s3.slMotPlan/mpgoL_d1s7.slMotPlan/mpgoL_d4s3.slMotPlan/mpgoL_d4s7.slMotPlan/mpgoL_d5s3.slMotPlan/mpgoL_d5s7.sl
+                                                                                                  benchmarks
+                                                      Figure 7: Evaluation of Let and Motion Planning benchmarks.
+                         4      Discussion
+                         Thesyntax-guidedsynthesiscompetitionofthisyear(SyGuS-Comp’15)addedtwospecialtracks,above
+                         the general track of last year’s competition: The LIA track where the background theory is conditional
+                         linear integer arithmetic and no grammar is given, instead the grammar is implicitly assumed to be that
+                         of the LIA logic of SMT-LIB; and the INV track (also using LIA and no syntactic constraints) consisting
+                         of invariant synthesis problems and using special constructs that convey the structure of an invariant
+                         synthesis problem.
+                               A total of eight solvers were submitted to this year’s competition. On the LIA and INV tracks
+                         competed three solvers (with an overlap of two), and in the general track competed ﬁve solvers in seven
+                         conﬁgurations. The winner of the LIA track and general track was the CVC4-1.5-SYGUS solver [14],
+                         which is the only solver to participate in all tracks and the ﬁrst solver to implement a syntax-guided
+                         synthesis engine inside an SMT solver. The winner of the INV track was the ICE-DT solver [11], a
+                         special solver for invariant synthesis problems.
+                               Weclassiﬁed the benchmarks participating in the competition into several categories and analyzed
+                         the features a certain category has or has not. Correlating the results with the features we observe that
+                         CVC4-1.5-SYGUS preforms best on benchmarks where there is a single function to be synthesized,
+                         and that function is always invoked using the same set of parameters. On benchmarks with multiple
+                         functions to synthesize or in which functions are invoked with different parameters, the ENUMERATIVE
+                         and STOCHASTIC solver (which won ﬁrst and second place in last year’s competition) seem to preform
+                         better.
+                               We hope this report sheds some light on the correlations of solver’s performance and benchmark
+                         features, and can be of help to improve the development of future solvers. In next year’s competition we
+                         are considering devoting a track to benchmarks where obtaining a small expression is more crucial than
+                         obtaining it fast, as is the case for instance, in compiler optimization problems.
+                                                          R. Alur, D. Fisman, R. Singh & A. Solar-Lezama                                                                                                                                                                                                                                                                                  23
+                                                                                                                                                                                     Invaraint Generation with Bounded Integers
+                                                                                                                                                              CVC4-1.5                           Enumerative                               Sketch-AC                            SosyToast                           Stochastic
+                                                                                                                 2        0        3        4        1        2        2        3         3        2        3        2        3        2        0        2        2        0        3         3        3        3        3        3        4        2        3        3
+                                                                                              >3600             ∞ ∞ ∞                               ∞ ∞ ∞ ∞                                       ∞                 ∞                 ∞ ∞ ∞ ∞ ∞                                                                                                    ∞
+                                                                                     [1000,3600)[100,300)                                 1960                                                                                                                                                      2425
+                                                                                       [300,1000)[30,100)                                                                                                                   304                                                                                                 897      400
+                                                                                         [100,300)[10,30)                                                                                                 146                                                                      135                                 234
+                                                                                           [30,100)[3,10)                                                                                                                                                                                    74
+                                                                                             [10,30)[1,3)                                                                                13                                                    14                                                                                                           12
+                                                                                wallclock-time [3,10)[0,1)                5                          3                                                                                                                     4                                    4                                                     7
+                                                                                                 [1,3)0          2                                                                                                                                                2
+                                                                                                 [0,1)                             0        0                 0        0        0         0        0        0        0        0        0                 0                          0        0         0        0        0        0        0        0        0        0
+                                                                                                [1,10)
+                                                                                              [10,30)[1,10)
+                                                                                            [30,100)[10,30)     19       19       19       19       19        19       19       19       19       19       19       19       19       19       19       19       19        19       19       19       19       19       19       19       19       19       19       19
+                                                                                          [100,300)[30,100)
+                                                                                expr-size[300,1000)[100,300)
+                                                                                       [300,1000)>1000
+                                                                                              >1000             ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞
+                                                                                                                  inv_gen_array.sl   inv_gen_cgr1.slinv_gen_ex14.slinv_gen_ex23.slinv_gen_ex7.slinv_gen_fig1.slinv_gen_fig3.slinv_gen_fig6.slinv_gen_fig8.slinv_gen_fig9.slinv_gen_finf1.slinv_gen_finf2.slinv_gen_tcs.sl                   inv_gen_w1.slinv_gen_w2.sl
+                                                                                                                           inv_gen_cegar2.sl                                                                                            inv_gen_n_c11.slinv_gen_sum1.slinv_gen_sum3.slinv_gen_sum4.slinv_gen_term2.slinv_gen_term3.slinv_gen_trex1.slinv_gen_trex2.slinv_gen_trex4.slinv_gen_vmail.slinv_gen_winf1.slinv_gen_winf2.sl
+                                                                                                                                                                                                                                  benchmarks
+                                                                                                                                                                                  Invaraint Generation with Unbounded Integers
+                                                                                                                                                              CVC4-1.5                           Enumerative                               Sketch-AC                            SosyToast                           Stochastic
+                                                                                                                 4        0        4        5        1        4        2        5         4        5        4        5        5        3        0        5        2        0        4         5        3        5        4        4        5        5        4        4
+                                                                                              >3600             ∞ ∞                                 ∞                 ∞                                                               ∞ ∞                        ∞ ∞                                  ∞
+                                                                                     [1000,3600)[100,300)                        2678 1838                  1083              1045                                                                                                                                                                1178
+                                                                                       [300,1000)[30,100)                                                                                                                                              466
+                                                                                         [100,300)[10,30)                                                                                                 281      214      104                                                                                                          153
+                                                                                           [30,100)[3,10)                                                                                                                                                                           33                                  61
+                                                                                             [10,30)[1,3)                                                                                                                                                                                                                        14                         13
+                                                                                wallclock-time [3,10)[0,1)                5                          3                                    4        5                                            5                 5        5                  7                 5                                                     4
+                                                                                                 [1,3)0
+                                                                                                 [0,1)           0                 0        0                 0        0        0         0        0        0        0        0        0                 0                          0        0         0        0        0        0        0        0        0        0
+                                                                                                [1,10)
+                                                                                              [10,30)[1,10)
+                                                                                            [30,100)[10,30)     19       23       21       23       19       23        19       23       19       19       25       25       19       19       23       19       19        21       27       21       21       19       21       25       19       25       19       19
+                                                                                          [100,300)[30,100)                       31
+                                                                                expr-size[300,1000)[100,300)
+                                                                                       [300,1000)>1000
+                                                                                              >1000             ∞ ∞                                 ∞                 ∞                                                               ∞ ∞                        ∞ ∞                                  ∞
+                                                                                                                  unbdd_inv_gen_array.slunbdd_inv_gen_cgr1.slunbdd_inv_gen_ex14.slunbdd_inv_gen_ex23.slunbdd_inv_gen_ex7.slunbdd_inv_gen_fig1.slunbdd_inv_gen_fig3.slunbdd_inv_gen_fig6.slunbdd_inv_gen_fig8.slunbdd_inv_gen_fig9.slunbdd_inv_gen_finf1.slunbdd_inv_gen_finf2.slunbdd_inv_gen_tcs.slunbdd_inv_gen_w1.slunbdd_inv_gen_w2.sl
+                                                                                                                           unbdd_inv_gen_cegar2.sl                                                                                      unbdd_inv_gen_n_c11.slunbdd_inv_gen_sum1.slunbdd_inv_gen_sum3.slunbdd_inv_gen_sum4.slunbdd_inv_gen_term2.slunbdd_inv_gen_term3.slunbdd_inv_gen_trex1.slunbdd_inv_gen_trex2.slunbdd_inv_gen_trex4.slunbdd_inv_gen_vmail.slunbdd_inv_gen_winf1.slunbdd_inv_gen_winf2.sl
+                                                                                                                                                                                                                                  benchmarks
+                                                          Figure 8: Evaluation of Invariant Generations with/without unbounded integers benchmarks. (These are
+                                                          benchmarks from the general track.)
+                                                           24                                                                                                                                                                                                      Results and Analysis of SyGuS-Comp’15
+                                                                                                                                                                                                           Hackers Delight Category
+                                                                                                                                                          CVC4-1.5                             Enumerative                                Sketch-AC                              SosyToast                             Stochastic
+                                                                                                        4     5     5     5     5     5     5      5     5     5     5     5     5     5     5      5     5     5     5     5     5     5      5     5     4     4     5     4     2     2      3     2     2     4     1     5     4      3     2     1     1     0     0     0
+                                                                                       >3600                                                                                                                                                              ∞ ∞               ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞                                        ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞
+                                                                              [1000,3600)[100,300)                                                                                                                        1062                    2226
+                                                                                [300,1000)[30,100)                                                                                                                                                                   439                                                    358
+                                                                                  [100,300)[10,30)                                                                                                                                                                                                                                                                            276
+                                                                                    [30,100)[3,10)           44                43                                   42                42                 42          92                       59                                                     79                97                                         70 61
+                                                                                      [10,30)[1,3)                                                                                                 15                            12 12                                                         11
+                                                                                  wallclock-time[3,10)[0,1)10       8     6                 4     10           6           3     9           3                  7
+                                                                                           [1,3)0                                     3                  3                                                                                                                                                        3
+                                                                                           [0,1)        0     0     0     0     0     0     0     0      0     0     0     0     0     0     0      0     0     0     0     0     0     0     0      0     0     0     0     0     0     0                  0                 0     0     0      0     0     0
+                                                                                        [1,10)
+                                                                                      [10,30)[1,10)     5     5     5     7     7     4     6      5     5     5     5     5     7     7     5      5     6     9     9     9     6     9      5     9     9     7     8     8     8     9      9     9     9     9     9     9     8     8
+                                                                                    [30,100)[10,30)          14                                                                                                                               10 15                   17                                                     11                 19 19 19
+                                                                                  [100,300)[30,100)                                                                                                                                                                                                                                                               37
+                                                                                [300,1000)[100,300)
+                                                                                  expr-size
+                                                                                [300,1000)>1000
+                                                                                       >1000                                                                                                                                                              ∞ ∞               ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞                                        ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞
+                                                                                                         hd-01-d1-prog.slhd-01-d5-prog.slhd-02-d0-prog.slhd-02-d1-prog.slhd-02-d5-prog.slhd-03-d0-prog.slhd-03-d1-prog.slhd-03-d5-prog.slhd-04-d0-prog.slhd-04-d1-prog.slhd-04-d5-prog.slhd-05-d0-prog.slhd-05-d1-prog.slhd-05-d5-prog.slhd-06-d0-prog.slhd-06-d1-prog.slhd-06-d5-prog.slhd-07-d0-prog.slhd-07-d1-prog.slhd-07-d5-prog.slhd-08-d0-prog.slhd-08-d1-prog.slhd-08-d5-prog.slhd-09-d0-prog.slhd-09-d1-prog.slhd-09-d5-prog.slhd-13-d0-prog.slhd-13-d1-prog.slhd-13-d5-prog.slhd-14-d0-prog.slhd-14-d1-prog.slhd-14-d5-prog.slhd-15-d0-prog.slhd-15-d1-prog.slhd-15-d5-prog.slhd-17-d0-prog.slhd-17-d1-prog.slhd-17-d5-prog.slhd-19-d0-prog.slhd-19-d1-prog.slhd-19-d5-prog.slhd-20-d0-prog.slhd-20-d1-prog.slhd-20-d5-prog.sl
+                                                                                                                                                                                                                                 benchmarks
+                                                                                                                                          Figure 9: Evaluation of Hacker’s Delight benchmarks.
+                                                                                                                                                                                                                       Integers Category
+                                                                                                                                                             CVC4-1.5                             Enumerative                                Sketch-AC                             SosyToast                            Stochastic
+                                                                                                             1       1       4      4       5       5       1       1      1       1       1       1      5       4       2       1      1       1       1       1       1      1       1       1       1      3       3       3       2      2       2       4       3       2
+                                                                                           >3600            ∞ ∞ ∞ ∞                                        ∞ ∞ ∞ ∞ ∞ ∞                                           ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞                                                                                                                 ∞ ∞
+                                                                                  [1000,3600)[100,300)
+                                                                                    [300,1000)[30,100)
+                                                                                      [100,300)[10,30)
+                                                                                        [30,100)[3,10)
+                                                                                          [10,30)[1,3)                                                                                                   28
+                                                                                 wallclock-time[3,10)[0,1)                                  4       6                                                                                                                                                                                                         4
+                                                                                              [1,3)0                         1
+                                                                                              [0,1)          0       0              0       0       0       0      0       0       0       0       0      0       0       0       0      0       0       0       0      0       0       0       0       0      0       0       0       0      0       0       0       0      0
+                                                                                             [1,10)
+                                                                                           [10,30)[1,10)                                    3       1                                                     6                                                                                                                                                   3
+                                                                                         [30,100)[10,30)                    10      14                                                                           15                                                                                            12     14      16                                     17      29
+                                                                                      [100,300)[30,100)                                                                                                                  55      93                                                                                                   33      45
+                                                                                 expr-size[300,1000)[100,300)                                                                                                                           139 196 270                    127 259                                                                      105
+                                                                                    [300,1000)>1000                                                       460 552 673 808 957                                                                                  358
+                                                                                           >1000            ∞ ∞ ∞ ∞                                        ∞ ∞ ∞ ∞ ∞ ∞                                           ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞
+                                                                                                                                                             max10.slmax11.slmax12.slmax13.slmax14.slmax15.slmax2.slmax3.slmax4.sl max5.sl max6.sl max7.slmax8.sl max9.sl
+                                                                                                                                                     constant.sl                                                                                                                                                                                mpg_ite1.slmpg_ite2.sl
+                                                                                                                              LinExpr_inv1.sl commutative.sl                                                                                                                                                     mpg_guard1.slmpg_guard2.slmpg_guard3.slmpg_guard4.slmpg_plane1.slmpg_plane2.slmpg_plane3.sl
+                                                                                                               LinExpr_eq1ex.slLinExpr_eq2ex.slLinExpr_inv1_ex.sl                                                                                                         mpg_example1.slmpg_example2.slmpg_example3.slmpg_example4.slmpg_example5.sl
+                                                                                                                                                                                                                                   benchmarks
+                                                                                                                                                       Figure 10: Evaluation of Integers benchmarks.
+                                                          R. Alur, D. Fisman, R. Singh & A. Solar-Lezama                                                                                                                                                                                                                                                                                       25
+                                                                                                                                                                                                       Multiple Functions Category
+                                                                                                                                                          CVC4-1.5                            Enumerative                                 Sketch-AC                             SosyToast                             Stochastic
+                                                                                                        0      0     1      0     0      4     4      4     4      4     0      0     0      0     0      4     0      0      5     5      4     4      0     4      0     4      0     0      0     0      0     0      0      2     0      0     0      0     0      0     0
+                                                                                       >3600           ∞            ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞                                                                                       ∞ ∞ ∞ ∞ ∞ ∞                                                                   ∞ ∞ ∞ ∞
+                                                                              [1000,3600)[100,300)
+                                                                                [300,1000)[30,100)
+                                                                                  [100,300)[10,30)
+                                                                                    [30,100)[3,10)     61                        59
+                                                                                      [10,30)[1,3)                  13                                                                                          23                                     17           16                                                  22           25 25                     17
+                                                                                 wallclock-time[3,10)[0,1)    4             6                                                                                                                                                     5     5      5     5                                             5      5            5     5
+                                                                                           [1,3)0                                                                                                                             2     2                                                                       1      1            2
+                                                                                           [0,1)               0                         0     0      0     0      0                                      0            0      0     0      0     0            0            0      0     0      0     0      0     0                                0      0     0      0     0
+                                                                                         [1,10)
+                                                                                      [10,30)[1,10)                                      2     2      4     4      8                                      7                   6     1      3     9            9            7
+                                                                                    [30,100)[10,30)                 27                                                                                                                                                                                                         26
+                                                                                  [100,300)[30,100)
+                                                                                [300,1000)[100,300)
+                                                                                 expr-size
+                                                                                [300,1000)>1000
+                                                                                       >1000           ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞                                                                                                ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞ ∞
+                                                                                                                                                                           s0.sl                     s1.sl  s10.sls11.sl s12.sls2.sl  s3.sl s4.sl  s5.sl s6.sl  s7.sl s8.sl  s9.sl
+                                                                                                                                                                                 s0_d0.sls0_d1.sls0_d2.sl                                                                                                                                            three.sl
+                                                                                                                             fivefuncs.slninefuncs.sl                                                                                                                              seven_c1.slseven_c2.slseven_c3.slseven_c4.sl  sixfuncs.sltenfunc1.sltenfunc2.slthree_d0.slthree_d1.slthree_d2.slthree_d3.sl
+                                                                                                          eightfuncs.sl                   polynomial.slpolynomial1.slpolynomial2.slpolynomial3.slpolynomial4.sl                                                                                                            sevenfuncs.sl
+                                                                                                                fGeneral_plus10.slfivefuncs-copy.sl                                                                                                                                                          seven_three_d0.slseven_three_d1.sl
+                                                                                                                                                                                                                                benchmarks
+                                                                                                                               Figure 11: Evaluation of the Multiple Functions benchmarks.
+                                                          Acknowledgments
+                                                          Wewouldliketothankthefollowingpeopleforvariousinterestingdiscussionsrelatedtothecompetition,
+                                                          its tracks, the SyGuS format and various other topics related to syntax-guided synthesis: Sarah Chasins,
+                                                          Ruediger Ehlers, Pranav Garg, Viktor Kuncak, P. Madhusudan, Ken McMillan, Daniel Neider, Nissim
+                                                          Ofek,ArjunRadhakrishna,MukundRaghothama,AndrewReynolds,HeinzRiener,ShambwadityaSaha
+                                                          and Abhishek Udupa.
+                                                                       WewouldliketothankstheStarExecteam,andespeciallyAaronStump,forallowingustousetheir
+                                                          platform and for their remarkable support for SyGuS-Comp’s special needs.
+                                                                       This research was supported by US NSF grant CCF-1138996 (ExCAPE).
+                                                          References
+                                                                                                                                                           ´
+                                                              [1] Rajeev Alur, Rastislav Bodık, Eric Dallal, Dana Fisman, Pranav Garg, Garvit Juniwal, Hadas Kress-Gazit,
+                                                                           P. Madhusudan, Milo M. K. Martin, Mukund Raghothaman, Shambwaditya Saha, Sanjit A. Seshia, Rishabh
+                                                                           Singh, Armando Solar-Lezama, Emina Torlak & Abhishek Udupa (2015): Syntax-Guided Synthesis. In:
+                                                                           Dependable Software Systems Engineering, 40, IOS Press, pp. 1–25. doi:10.3233/978-1-61499-495-4-1.
+                                                                                                                                                          ´
+                                                              [2] Rajeev Alur, Rastislav Bodık, Garvit Juniwal, Milo M. K. Martin, Mukund Raghothaman, Sanjit A. Seshia,
+                                                                           Rishabh Singh, Armando Solar-Lezama, Emina Torlak & Abhishek Udupa (2013): Syntax-guided synthesis.
+                                                                           In: Formal Methods in Computer-Aided Design, FMCAD 2013, Portland, OR, USA, October 20-23, 2013,
+                                                                           pp. 1–8.
+                                                                                                                                                     ´
+                                                              [3] Rajeev Alur, Pavol Cerny & Arjun Radhakrishna (2015): Synthesis Through Uniﬁcation. In: Computer
+                                                                           Aided Veriﬁcation - 27th International Conference, CAV 2015, San Francisco, CA, USA, July 18-24, 2015,
+                                                                           Proceedings, Part II, pp. 163–179. doi:10.1007/978-3-319-21668-3 10.
+                                                                                                                                                     ´
+                                                              [4] Rajeev Alur, Pavol Cerny & Arjun Radhakrishna (2015): Synthesis Through Uniﬁcation. In: Computer
+                                                                           Aided Veriﬁcation - 27th International Conference, CAV 2015, San Francisco, CA, USA, July 18-24, 2015,
+                                                                           Proceedings, Part II, pp. 163–179. doi:10.1007/978-3-319-21668-3 10.
+                                                              [5] David R. Cok (2013): The SMT-LIBv2 Language and Tools: A Tutorial.
+                   26                                                               Results and Analysis of SyGuS-Comp’15
+                                                 ¨
+                     [6] Pranav Garg, Christof Loding, P. Madhusudan & Daniel Neider (2014): ICE: A Robust Framework for
+                         Learning Invariants. In: Computer Aided Veriﬁcation - 26th International Conference, CAV 2014, Held as
+                         Part of the Vienna Summer of Logic, VSL 2014, Vienna, Austria, July 18-22, 2014. Proceedings, pp. 69–87.
+                         doi:10.1007/978-3-319-08867-9 5.
+                     [7] Pranav Garg, Daniel Neider, P. Madhusudan, & Dan Roth (2015): Learning Invariants using Decision Trees
+                         andImplication Counterexamples. Technical report.
+                     [8] Jinseong Jeon, Xiaokang Qiu, Armando Solar-Lezama & Jeffrey S. Foster (2015): Adaptive Concretization
+                         for Parallel Program Synthesis. In: Computer Aided Veriﬁcation - 27th International Conference, CAV
+                         2015, San Francisco, CA, USA, July 18-24, 2015, Proceedings, Part II, pp. 377–394. doi:10.1007/978-3-
+                         319-21668-3 22.
+                     [9] SusmitJha, SumitGulwani,SanjitA.Seshia&AshishTiwari(2010): Oracle-guidedComponent-basedPro-
+                         gramSynthesis. In: Proceedings of the 32Nd ACM/IEEE International Conference on Software Engineering
+                         - Volume 1, ICSE ’10, pp. 215–224. doi:10.1145/1806799.1806833.
+                   [10] Aleksandar Milicevic, Joseph P. Near, Eunsuk Kang & Daniel Jackson (2015): Alloy*: A General-Purpose
+                         Higher-Order Relational Constraint Solver. In: 37th IEEE/ACM International Conference on Software En-
+                         gineering, ICSE2015,Florence,Italy, May16-24,2015,Volume1,pp.609–619.doi:10.1109/ICSE.2015.77.
+                   [11] Daniel Neider, P. Madhusudan & Pranav Garg (2015): ICE DT: Learning Invariants using Decision Trees
+                         andImplication Counterexamples. Private Communication.
+                   [12] Daniel Neider, Shambwaditya Saha & P. Madhusudan (2015): Alchemist CS: An SMT-based synthesizer for
+                         Functions in Linear Integer Arithmetic. Private Communication.
+                   [13] MukundRaghothaman&AbhishekUdupa(2014): LanguagetoSpecifySyntax-GuidedSynthesis Problems.
+                         CoRRabs/1405.5590.
+                   [14] Andrew Reynolds, Morgan Deters, Viktor Kuncak, Cesare Tinelli & Clark W. Barrett (2015):
+                         Counterexample-Guided Quantiﬁer Instantiation for Synthesis in SMT. In: Computer Aided Veriﬁcation
+                         - 27th International Conference, CAV 2015, San Francisco, CA, USA, July 18-24, 2015, Proceedings, Part
+                         II, pp. 198–216. doi:10.1007/978-3-319-21668-3 12.
+                   [15] Heinz Riener & Rudiger Ehlers (2015): absTract sOlution Analyzing Synthesis Tool (System Description).
+                         Private Communication.
+                   [16] ShambwadityaSaha,PranavGarg&P.Madhusudan(2015): Alchemist: LearningGuardedAfﬁneFunctions.
+                         In: Computer Aided Veriﬁcation - 27th International Conference, CAV 2015, San Francisco, CA, USA, July
+                         18-24, 2015, Proceedings, Part I, pp. 440–446. doi:10.1007/978-3-319-21690-4 26.
+                   [17] ShambwadityaSaha,DanielNeider&P.Madhusudan(2015): AlchemistCSDT:SynthesizingGuardedAfﬁne
+                         Functions using Constraint Solving and Decision-tree Learning. Private Communication.
+                                                                                   ´
+                   [18] Armando Solar-Lezama, Rodric M. Rabbah, Rastislav Bodık & Kemal Ebcioglu (2005): Programming
+                         by sketching for bit-streaming programs.  In: Proceedings of the ACM SIGPLAN 2005 Conference on
+                         Programming Language Design and Implementation, Chicago, IL, USA, June 12-15, 2005, pp. 281–294.
+                         doi:10.1145/1065010.1065045.
+                   [19] Armando Solar-Lezama, Liviu Tancau, Rastislav Bodik, Vijay Saraswat & Sanjit Seshia (2006): Combina-
+                         torial Sketching for Finite Programs. In: ASPLOS ’06, ACM Press, San Jose, CA, USA, pp. 404–415.
+                         doi:10.1145/1168857.1168907.
+                   [20] SaurabhSrivastava,SumitGulwani&JeffreyFoster(2010): Fromprogramveriﬁcationtoprogramsynthesis.
+                         POPL.doi:10.1145/1706299.1706337.
+                   [21] Aaron Stump, Geoff Sutcliffe & Cesare Tinelli (2014): StarExec: A Cross-Community Infrastructure for
+                         Logic Solving. In: Automated Reasoning - 7th International Joint Conference, IJCAR 2014, Held as Part
+                         of the Vienna Summer of Logic, VSL 2014, Vienna, Austria, July 19-22, 2014. Proceedings, pp. 367–373.
+                         doi:10.1007/978-3-319-08587-6 28.
+                                                      ´
+                   [22] Emina Torlak & Rastislav Bodık (2014): A lightweight symbolic virtual machine for solver-aided host lan-
+                         guages. In: PLDI, p. 54. doi:10.1145/2594291.2594340.

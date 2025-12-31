@@ -1,0 +1,708 @@
+                                                  Explaining Answers with Entailment Trees
+                                                              *1                      *2                          1                        2
+                                        BhavanaDalvi ,PeterJansen ,OyvindTafjord ,ZhengnanXie ,
+                                                                   2                                             2                    1
+                                             HannahSmith ,LeighannaPipatanangkura ,PeterClark
+                                                                1 Allen Institute for AI, Seattle, WA
+                                                                2 University of Arizona, Tucson, AZ
+                                                                            * equal contribution
+                                                    bhavanad@allenai.org,pajansen@arizona.edu
+                                                Abstract
+                           Our goal, in the context of open-domain tex-
+                           tual question-answering (QA), is to explain an-
+                           swers by showing the line of reasoning from
+                           what is known to the answer, rather than sim-
+                           ply showing a fragment of textual evidence (a
+                          “rationale”). If this could be done, new oppor-
+                           tunities for understanding and debugging the
+                           system’s reasoning become possible. Our ap-
+                           proach is to generate explanations in the form
+                           of entailment trees, namely a tree of multi-
+                           premise entailment steps from facts that are
+                           known, through intermediate conclusions, to
+                           the hypothesis of interest (namely the question
+                          + answer). To train a model with this skill,
+                           we created ENTAILMENTBANK 1 , the ﬁrst
+                           dataset to contain multistep entailment trees.                   Figure 1: Given a hypothesis (green, summarizing a
+                           Given a hypothesis (question + answer), we                       question+answer pair), and some partially relevant text
+                           deﬁne three increasingly difﬁcult explanation                    (or a corpus), our goal is to generate an entailment tree,
+                           tasks: generate a valid entailment tree given                    including intermediate nodes (blue), showing how the
+                           (a) all relevant sentences (b) all relevant and                  hypothesis follows from the text/corpus.
+                           someirrelevant sentences, or (c) a corpus. We
+                           show that a strong language model can par-                       Without this, it is hard to fully understand a sys-
+                           tially solve these tasks, in particular when the                 tem’s response and/or pinpoint the source of er-
+                           relevant sentences are included in the input                     rors if its conclusions are wrong. Conversely, if a
+                           (e.g., 35% of trees for (a) are perfect), and                    system could support its answers with a chain of
+                           with indications of generalization to other do-                  reasoning, new opportunities arise for interactively
+                           mains. This work is signiﬁcant as it provides                    teaching the machine by debugging its mistakes.
+                           a new type of dataset (multistep entailments)                       Ourapproachis to generate explanations in the
+                           and baselines, offering a new avenue for the
+                           community to generate richer, more system-                       form of multistep entailment trees, such as shown
+                           atic explanations.                                               in Figure 1, made up of individual, multi-premise
+                                                                                            textual entailment (TE) steps (Dagan et al., 2013;
+                      1    Introduction                                                     Lai et al., 2017). Although there are many single-
+                      Explanation remains a formidable challenge in AI.                     step entailment datasets available (Bentivogli et al.,
+                      While today’s explanation systems are good at pro-                    2011; Bowmanetal., 2015) no dataset of multistep
+                      viding a sentence or two of supporting evidence                       entailments exists, and so a signiﬁcant contribution
+                      (“rationales”) for an answer (DeYoung et al., 2019),                  of this paper is the construction of such a dataset,
+                      they rarely explain the chain of reasoning from                       called ENTAILMENTBANK. ENTAILMENTBANK
+                      what is known to the answer, i.e., how the answer                     contains 1,840 multistep entailment trees for ac-
+                      follows, given the evidence – the goal of this work.                  companying QA pairs, constructed using expert
+                                                                                            annotators, and is the ﬁrst dataset of its kind. We
+                         1ENTAILMENTBANKdataset,annotation tool and evalua-                 also deﬁne three explanation tasks over this dataset,
+                      tion code is available at https://allenai.org/data/entailmentbank     namely: generate a valid entailment tree for a given
+                                                                                       7358
+                              Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing, pages 7358–7370
+                                                                            c
+                                                  November7–11,2021. 2021Association for Computational Linguistics
+                                                            1             2               3     4            5
+                   Property↓, Dataset→         WorldTree V2        eQASC        HotpotQA , R4C StrategyQA      ENTAILMENTBANK
+                   Semantics of Inference         (informal)   1-Step Entailment    (informal)      Deduction    Entailment Tree
+                   Average Facts per Inference       5.6              2.0               2.4            2.9             7.6
+                                                       ‡                                  ‡
+                   Average Edges per Inference        9               1                 2               2               6
+                   Granularity of Inference          Fine           Coarse            Coarse         Coarse            Fine
+                   Explicit Ordering of Inference    No               No                No             Yes             Yes
+                   Authoring Method                 Expert          Crowd             Crowd          Crowd            Expert
+                                 1(Xie et al., 2020) 2(Jhamtani and Clark, 2020) 3(Yang et al., 2018) 4(Inoue et al., 2020) 5(Geva et al., 2021)
+                  Table 1: A comparison of ENTAILMENTBANK with other similar datasets. In general, ENTAILMENTBANK contains larger
+                  inference problems, at a ﬁner level of granularity than existing datasets, while being the only dataset to include multi-step
+                  entailments that make the reasoning steps explicit. ‡ WT2 and R4C explanations are implied (unannotated) graphs based on
+                  overlapping words or entities – values here are inferred by constructing graphs based on lexical overlap.
+                  QApairgiven(a) all relevant sentences (the leaves          2    Related Work
+                  of the gold entailment tree), (b) all relevant and         In the context of QA, there are multiple notions
+                  somedistractor sentences, or (c) a full corpus.            of explanation/justiﬁcation, including showing an
+                     Ourfocus here is on generating the derivation           authoritative, answer-bearing sentence (Perez et al.,
+                  (line of reasoning) showing how the evidence leads         2019), an attention map over a passage (Seo et al.,
+                  to the answer, rather than the pragmatics of decid-        2016), a synthesized phrase connecting question
+                  ing which parts of that to then show the user. This        and answer (Rajani et al., 2019), or the syntactic
+                  allows us to separate two (typically confounded)           pattern used to locate the answer (Ye et al., 2020;
+                  explanation requirements, namely correctness (of           Hancocketal.,2018). Thesemethodsareprimarily
+                  the derivation) from utility, allowing us to evaluate      designed for answers to “lookup” questions, to ex-
+                  derivations with a more objective measure (correct-        plain where/how an answer was found in a corpus.
+                  ness). This also sets the stage for future work on the        For questions requiring inference, the focus of
+                  pragmatics of what to show users (Miller, 2019).           this paper, an explanation is sometimes taken as
+                     Finally, we deﬁne and train generative models,          the chain of steps (typically sentences) leading to
+                  called EntailmentWriters, for this task, adapting          an answer. Because crowdsourcing such chains
+                  earlier techniques for generating deductive proofs         is difﬁcult, existing datasets typically simplify the
+                  (Tafjord et al., 2021). We ﬁnd the models partially        task, e.g., collecting answer-supporting sentences
+                  solve the dataset, with indications of generalization      but not how they combine, and/or largely focusing
+                  to other domains. Our contributions are thus:              onone-hop(length2)chains. Herewegeneralizeto
+                      • A formulation of explanation as multistep,           tasks requiring multi-step entailment trees, Table 1
+                        multi-premise textual entailment.                    illustrates these comparisons in detail.
+                      • ENTAILMENTBANK,theﬁrstdatasetofmul-                     Our trees are built from multi-premise entail-
+                        tistep entailment trees for QA, to support           ments (two or more sentences entail a hypothesis),
+                        entailment-based explanation. Each tree con-         introduced by Lai et al. (2017), in contrast to the
+                        tains an average of 6.6 nodes and 2.7 entail-        majority of prior datasets where typically a single
+                        mentsteps, with the full dataset of 1,840 trees      sentence entails H through (typically) paraphras-
+                        includingarangeofsmallandlargemulti-step             ing (Bentivogli et al., 2011; Bar-Haim et al., 2014;
+                        entailment problems.                                 Bowmanetal., 2015). We extend multi-sentence
+                      • Baseline results using a state-of-the-art, gener-    entailment in two ways. First, our trees also show
+                        ative model, showing that reasonable trees can       the provenance of each entailment, namely which
+                        be generated, in particular when the necessary       sentences are involved in each entailment (i.e., go-
+                        raw facts are provided as the model input (re-       ing beyond a classiﬁcation task). Second, ours is
+                        sulting in 35% of trees with zero errors). We        the ﬁrst dataset that chains multiple entailments
+                        also present indications that ENTAILMENT-            together into a hypothesis-directed tree, rather than
+                        BANK-trained models can generalize to other          containing separate, single-step entailments.
+                        domains.                                                Recent work in deductive reasoning has shown
+                                                                             that transformers can generate formal proofs with
+                                                                             high reliability, both in a formal setting (Polu and
+                  This work is signiﬁcant as it provides a new av-           Sutskever, 2020; Wang and Deng, 2020) and with
+                  enue for the community to generate richer, more            rules expressed in natural language (Saha et al.,
+                  systematic explanations.                                   2020). Inspired by this, we apply similar ideas to
+                                                                         7359
+                                                                                                             Controls
+                   Question
+                  Explanation
+                  (human readable)
+                                                                                                           Explanatory
+                  Entailment                                                                                Worksheet
+                     Tree
+                  Root Node                                                                                  Pool of
+                                                                                                          Relevant Facts
+                                                                                                            (drag and drop
+                                                                                                           into explanation)
+                 Intermediate
+                  Conclusion
+                   Leaf Node
+                Figure 2: The web-based authoring tool developed to enable authoring entailment trees. (top) The question and a human-
+                readable version of the semi-structured explanation are provided to the user. (bottom) The semi-structured explanation, including
+                the entailment tree, as currently authored by the user. Nodes (facts) can be dragged-and-dropped to change their ordering. White
+                nodes represent facts from the corpus, while orange nodes were authored by the user. (right) A shortlist (or pool) of top-ranked
+                relevant facts from the corpus that the user can choose to drag-and-drop into the explanation.
+                generatingentailmenttrees, in particular leveraging     • where each step is an entailment (a conclu-
+                the generative techniques used in the ProofWriter         sion that “a person would typically infer” (Da-
+                system (Tafjord et al., 2021) (Section 5).                gan et al., 2013)), i.e., the knowledge ex-
+                                                                          pressed in each node reasonably follows from
+                3   TheENTAILMENTBANKDataset                              the content of its immediate children.
+                ENTAILMENTBANKcontainstwoparts: 1,840en-                • at a ﬁne-grained granularity, where each
+                tailment trees, each tree showing how a question-         step encodes a single inference, e.g., making
+                answer pair (QA) is entailed from a small number          a single taxonomic inference, conjoining two
+                of relevant sentences (e.g., Figure 1); and a general     facts, or applying a single rule in the corpus.
+                corpus C, containing those and other sentences of       • that are explicit, with the informal goal of
+                domain-speciﬁc and general knowledge relevant to          including all the knowledge that a young child
+                the QA domain. We use these two parts shortly             would need to answer the question.
+                to deﬁne a simpler task (generate the tree given        • that are compositional, where more complex
+                the leaf sentences, without/with distractors) and a       conclusions can be drawn from simpler facts.
+                harder task (generate the tree from the corpus).        • that are relevant, concluding (a declarative
+                                                                          version of) the QA pair of interest.
+                   ENTAILMENTBANKusesmultiple-choiceques-
+                tions (and the correct answer option) from the ARC   3.2  Tool and Authoring Procedure
+                dataset of grade-school science questions (Clark
+                et al., 2018), and a corpus of science- and general  Constructing detailed entailment trees meeting the
+                knowledge derived from WorldTree V2 (Xie et al.,     abovedesiderataischallenging. To makeauthoring
+                2020; Jansen et al., 2018). WorldTree was created    easier, we designed a web-based graphical drag-
+                for grade-school level science, making it an ideal   and-drop authoring tool 2 (screenshot in Figure 2)
+                source for ENTAILMENTBANK’s corpus.                  that allows explanation authors to construct and
+                                                                     review explanations quickly.
+                3.1   Guidelines                                       Foreachquestion, the tool presents the user with
+                Three graduate and undergraduate annotators were     apooloftop-rankedrelevantfactsfromthecorpus3
+                trained to construct entailment trees for QA pairs,     2The ENTAILMENTBANK authoring tool was imple-
+                given a small number of potentially relevant sen-    mented as a Javascript browser client and npm back-end,
+                tences for each QA pair (drawn from WorldTree).      and is released as open source at https://allenai.org/data/
+                                                                     entailmentbank.
+                Speciﬁcally, they were trained to author trees:         3Details of the retrieval algorithm are in Appendix A.
+                                                                 7360
+                            Question: Why do astronauts need oxygen in the backpacks of their spacesuits?                                                   Train Dev Test              All
+                                           Answer: to help astronauts breathe in outer space
+                                               H: an astronaut requires the oxygen in                               Questions                               1,313 187         340      1,840
+                                                   a spacesuit backpack to breathe                                  Entailment reasoning steps              4,175 597 1,109 5,881
+                                there is no oxygen        an astronaut requires     spacesuit backpacks
+                                     in space              oxygen to breathe          contain oxygen                    Table 2: Summary statistics for the dataset splits.
+                             a vacuum does      space      an animal requires   an astronaut is a
+                               not contain       is a      oxygen to breathe     kind of animal                              rees0.2
+                                 oxygen        vacuum                                                                          0.1
+                                                                   an astronaut is a  a human is a                           . of T0
+                                                                    kind of human    kind of animal                                        2         4         6         8      10+
+                                                                                                                             Prop                 Entailment Steps
+                                   Question: In which way are evaporation and condensation similar?              Figure 4: Histogram of entailment steps in the training set.
+                                          Answer: both are caused by changes in heat energy
+                                        H: evaporating and condensing can both                                   Theaverage entailment tree contains 7.6 nodes (facts) across
+                                          be caused by changes in heat energy                                    3.2 entailment steps.
+                                 temperature is a measure     evaporating and condensing can be
+                                       of heat energy           caused by temperature changes                    1,840 randomly selected questions (of the 7,787 in
+                                  temperature changes can cause      evaporating and condensing are              ARC),whichinclude a total of 5,881 discrete en-
+                                          phase changes                    both phase changes                    tailment steps. Overall, approximately 600 (paid)
+                                                           evaporating is a         condending is a              workhourswereusedtobuildthedataset.
+                                                        kind of phase change      kind of phase change               Summary statistics for the train, development,
+                           Figure 3: Twoexamplemedium-complexityentailmenttrees,                                 and test sets are shown in Table 2. On average,
+                           paired with their questions. The root nodes of each tree (hy-                         each entailment tree includes 7.6 nodes across 3.2
+                           potheses) are denoted by H (green), and intermediate con-                             entailment steps, where each entailment step typi-
+                           clusions are blue. The top tree describes the reasoning to                            cally involves 3 facts (two leaves, that combine to
+                           determine why an astronaut requires oxygen in spacesuit back-
+                           packs, and the bottom to determine the similarity between two                         entail a conclusion). Figure 4 shows a histogram of
+                           concepts (evaporation and condensation).                                              entailment tree size (measured in terms of number
+                           that might be relevant to building an explanation.                                    of entailment steps). ENTAILMENTBANK includes
+                          Toassist in the tree construction process, the user                                    a diverse range of problem sizes, with half (50%)
+                           ﬁrst populates an “explanatory worksheet”, label-                                     of entailment trees representing short entailment
+                           ing facts that they anticipate will be included in                                    problems with one or two entailment steps (typi-
+                           the tree with a small number of speciﬁc categories                                    cally composed of 3-5 nodes), while the remaining
+                          (e.g., “core facts”, “grounding facts”). From this                                     50%oftreescontain 3-17 entailment steps.
+                          worksheet, the user then begins constructing the                                       3.4      Dataset Analysis
+                           entailment tree – typically starting at the bottom-
+                           most leaf nodes, authoring intermediate conclu-                                       To understand the entailment challenges in EN-
+                           sions from them, then progressively working on                                        TAILMENTBANK,weanalyzed100randomlysam-
+                           higher levels of the tree until they author a conclu-                                 pled entailment steps from trees in the training set.
+                           sion that directly answers the question.                                              Weidentiﬁed 6 common high-level categories of
+                               If the user requires a fact not present in the pool                               inference, shown in Table 3. Substitution types
+                           of provided facts, e.g., a missing science fact or a                                  refer to entailments that require a model to per-
+                           question-speciﬁc statement, the user can quickly                                      form taxonomic, merynomic, or other forms of
+                           add their own facts and use these in the tree. Once                                   chaining that substitute one entity for another in
+                           completed, the individual entailment steps are then                                   one of the input sentences. Inference from Rules
+                           separately reviewedbyadifferentauthorforquality                                       entailments require the application of a speciﬁc
+                           and suggested edits. In total, this process takes an                                  rule, speciﬁed as one of the input sentences, to the
+                           average of approximately 20 minutes per question.                                     other input sentence. Our analysis suggests that
+                          Twoexampletrees authored using this process are                                        approximately one-third (33%) of all entailments
+                           showninFigure 3.                                                                      require the application of domain-speciﬁc rules to
+                           3.3      Overall Dataset                                                              complete. Further Speciﬁcation or Conjunction
+                                                                                                                 entailments require a model to combine the details
+                           Duetothe large time investment required to gen-                                       of both input facts into a single output fact. Less
+                           erate detailed entailment trees, we author trees for                                  frequent types require inferring an object’s class
+                                                                                                          7361
+                     Inference Type              Prop.       ExampleEntailment
+                     Substitution                42% s whenalightwavehitsareﬂectiveobject,thelightwavewillbereﬂected
+                                                         1
+                                                        s    a mirror is a kind of reﬂective object
+                                                         2
+                                                        int whenalight wave hits a mirror, the light wave will be reﬂected
+                     Inference from Rule         33% s iftwospecieshavesimilarcharacteristics,theymayshareacommonancestor
+                                                         1
+                                                        s    rhinoceroses and horses have similar characteristics
+                                                         2
+                                                        int rhinoceroses and horses might share a common ancestor
+                     Further Speciﬁcation or     15% s ananimalrequireswarmthforsurvivalastheseasonchangestowinter
+                                                         1
+                     Conjunction                        s    thick fur can be used for keeping warm
+                                                         2
+                                                        int thick fur can be used for keeping warm as the season changes to winter
+                     Infer Class from Properties  4%    s    Acompoundismadeoftwoormoreelementschemicallycombined
+                                                         1
+                                                        s    sodiumchloride is made of two elements chemically combined
+                                                         2
+                                                        int sodiumchloride is a kind of compound
+                     Property Inheritance         4%    s    ananimal’s shell is usually hard
+                                                         1
+                                                        s    something hard can be used for protection
+                                                         2
+                                                        int ananimal’s shell is usually hard for protection
+                     Sequential Inference         3%    s    In molecular biology, translation follows transcription
+                                                         1
+                                                        s    transcription is when genetic information ﬂows from DNA to RNA
+                                                         2
+                                                        s    translation is when genetic information ﬂows from RNA to proteins
+                                                         3
+                                                        int In molecular biology, genetic information ﬂows from DNA to RNA to proteins
+                    Table 3: The prevalence of 6 common reasoning methods required to solve individual entailment tree steps, sampled from
+                   100randomentailment steps in the training corpus. Discrete entailment steps in ENTAILMENTBANK require diverse forms of
+                    reasoning to solve, from forms of taxonomic or merynomic chaining (substitution) to application of domain-speciﬁc rules. Here,
+                    s denotes input sentences, while int denotes entailed conclusions (intermediate nodes in the trees).
+                     n
+                    fromit’s properties, inheriting properties of objects,         the only valid entailment tree constructable from
+                    or determining orders for sequential reasoning. As             that input. This allows us to check validity by
+                    a whole, this analysis shows diverse forms of rea-             comparing the generated tree with T             . This ap-
+                                                                                                                               gold
+                    soning are required to successfully complete the               proximation is reasonable for tasks 1 and 2 below,
+                    entailment steps in ENTAILMENTBANK.                            becausetheirlimitedinputmakesitunlikelythatan
+                                                                                   alternative valid tree is constructable from the input.
+                    4    TaskDeﬁnitions                                            For task 3, though, to avoid alternative valid trees
+                    Because producing correct entailment trees from                being buildable from the input corpus, we remove
+                                                                                   the few sentences similar to S           from the corpus
+                    a corpus is challenging, we deﬁne three tasks of                                                   gold
+                    increasing difﬁculty that simplify the problems in-            on a per-question basis. Although these steps are
+                    herent in the task. The inputs to all three are a hy-          not fool-proof, they do allow tree validity to be
+                                                                                   reasonably approximated by comparing with T                ,
+                    pothesisH,namelyadeclarativeformofaquestion                                                                           gold
+                   +answer(QA),4 and some sentences S expressing                   a critical requirement for automatic evaluation.
+                    (both relevant and irrelevant) knowledge. The de-              Thethree tasks’ inputs are thus as follows:
+                    sired output is a valid entailment tree T where the            Task1(no-distractor): Inputs = H + QA + leaf
+                    leaves are sentences selected from S, the interme-                   sentences Sgold
+                    diate nodes int are intermediate conclusions (new              Task2(distractor): Inputs = H + QA + leaf sen-
+                                     i                                                   tences S       +15-20distractor sentences
+                    sentences, not part of the input), and the root node                           gold
+                    (conclusion) is the hypothesis H. T is valid if ev-            Task3(full-corpus): Inputs = H + QA + a cor-
+                    ery node n in the tree is entailed by its children.                  pus C
+                                 i                                                 Task3representsthefulltaskwhereC islarge. For
+                    The3tasksvarybythesizeofS,described below.                     ourexperiments,C istheWorldTreecorpusplusall
+                       As an approximation to make automated eval-                 additional science facts created by the annotators
+                    uation feasible, we ensure that S includes all the             (Section 3.2).5 The desired output in all cases is a
+                    leaf sentences Sgold that are in the gold entailment           valid entailment tree T, approximated as being the
+                    tree T     , and treat T       (+ valid reorderings) as
+                           gold              gold
+                                                                                       5Sometreesalsoneedquestion-speciﬁcscenariofacts(e.g.,
+                       4For convenience we provide both H and QA as inputs,        “Aball rolls down a hill.”), not in C but derivable from QA.
+                    although in principle H may be generated from QA automati-     Thus the full Task 3 also requires deriving these. (Our Task 3
+                    cally, e.g., using the QA2D model (Demszky et al., 2018)       baseline does not do this, so has a limitation).
+                                                                              7362
+                    gold entailment tree T           (+ valid reorderings).           Additional details about the model can be found in
+                                               gold
+                                                                                      Appendix C.
+                    5    Model                                                        6    Experiments
+                    Inspiredbythe“All-at-once”sequence-to-sequence                    Wetrain and test three EntailmentWriters, one for
+                    model in the ProofWriter system (Tafjord et al.,                  each task. The model inputs are those described
+                    2021), we train three T5-based generative models                  earlier for the three tasks, with the exception of
+                    (one per task), called EntailmentWriters.                         Task 3 where a retrieval step is inserted (the corpus
+                    5.1    Entailment Tree Encoding                                   Cistoolargetobeinputdirectly to T5). For this,
+                    Weencodeentailmenttreesasalinearstructurethat                     weretrieve 25 sentences from C using QA as the
+                    can be output by a generative model. To do this,                  query (using a RoBERTa-trained relevant sentence
+                    the input sentences S are labeled with identiﬁers                 ranker, details in Appendix A), and input those to
+                    (sent1, sent2, ...), and the hypothesis H is labeled              the model. The output in all cases is the entailment
+                    with the special identiﬁer ‘hypot’ (Figure 1). All                tree explaining (H, the declarative form of) QA.
+                    nodes in the output tree are then identiﬁers: sent*               6.1    Evaluation Metrics
+                    for leaf nodes, int* for internal nodes, and ‘hypot’              Weapproachevaluating entailment trees as a two
+                    for the conclusion (root node). As the int* nodes                 step problem. First, nodes in the predicted tree
+                    denote new sentences (not in the input), we include               T       are aligned with nodes in gold tree T                ,
+                    those sentences in the output immediately after                     pred                                                   gold
+                    their int* identiﬁer is ﬁrst introduced.                          using the sent* labels and Jaccard similarity for
+                                                                                      intermediate nodes. Thus, instead of doing exact
+                       When linearizing the tree, we start from leaf                  match against gold tree, we account for semantic-
+                    facts and work towards proving the root of the tree               preserving variants (Tree Alignment Algorithm
+                    (hypot). We use the symbol “&” to denote “and”,                   described in Appendix C).
+                    and “->” to denote “entails”. Thus the depth 2                       Once aligned, the aligned tree T0              is scored
+                    entailment tree in Figure 1 would be encoded as:                                                               pred
+                                                                                      against gold tree T            using the metrics below.
+                                                                                                               gold
+                      sent2 & sent5 -> int1: Eruptions block                          The F1/BLEURT metrics score elements of the
+                      sunlight ; sent4 & int1 -> hypot                                tree (micro-averaging the results), while “AllCor-
+                    Note here that the new sentence for intermediate                  rect” checks if all the elements are correct (1=yes,
+                    node int1, “Eruptions block sunlight”, is explicitly              0=no), i.e., the predicted tree is perfect along the
+                    part of the to-be-generated output. The task for the              dimension being considered. Our four metrics are:
+                    models is to output valid entailment trees encoded                   • Leaf Nodes (F1, AllCorrect): Does the pre-
+                    in this way, given the input.                                     dicted tree use the correct leaf sentences? We com-
+                                                                                      pute an F1 score by comparing leaf sentences S
+                    5.2    ModelDetails                                                                                                        pred
+                                                                                      to S      . The “AllCorrect” score is 1 if all nodes
+                                                                                            gold
+                    The EntailmentWriter models are built on top of                   are identiﬁed correctly (F1=1.0), 0 otherwise.
+                    the text-to-text pretrained T5 transformer (Raffel                   • Steps (F1, AllCorrect): Are the individual
+                    et al., 2020), where the inputs are as described in               entailment steps in the tree structurally correct? As
+                    Section 4 for Task 1 (no-distractor) and Task 2                   each intermediate node represents (the conclusion
+                    (distractor). For Task 3 (full-corpus), the corpus                of) a single step, the step is considered structurally
+                    exceeds T5’s token limit, so we add a retrieval                   correct (score 1) if its input sent*/int* node labels
+                    step of 25 sentences from the corpus C using the                  perfectly match the gold, 0 otherwise. We then
+                    hypothesis H as query. The output is the predicted                measure F1 comparing all steps in the two trees.
+                    entailment tree, encoded as described earlier.                    ThenAllCorrect=1 if F1=1.0, 0 otherwise.
+                       Weﬁne-tunethemodelsonthetrainingsets us-                          •Intermediates(F1,AllCorrect): Arethesyn-
+                    ing the default hyperparameters (including opti-                  thesized intermediate nodes correct? For com-
+                                                   6                                  paring gold and generated sentences, we use
+                    mizer) in the T5 library.         Weuse the largest T5-                       7
+                    11B model, ﬁne-tuned for 40k steps (batch size                    BLEURT (Sellametal., 2020). We deﬁne genera-
+                    8), selecting the checkpoint with highest dev score.                  7Using the state-of-the-art BLEURT-Large-512 model.
+                                                                                      Our analysis based on 300 hand-scored examples suggests
+                        6https://github.com/google-research/text-to-text-transfer-    its similarity scores correlate well with human ratings (corre-
+                    transformer                                                       lation=0.67,sensitivity=0.88,speciﬁcity=0.80)
+                                                                                 7363
+                                                                         Entailment Tree Scoring
+                                                        Leaves              Steps          Intermediates      Overall
+                                                    F1 AllCorrect      F1 AllCorrect       F1 AllCorrect     AllCorrect
+                            Task1(no-distractor)    99.0    89.4       51.5    38.2       71.2    52.9          35.6
+                            Task2(distractor)       89.1    48.8       41.4    27.7       66.2    53.2          25.6
+                            Task3(full-corpus)      39.7     3.8        7.8     2.9       36.4    13.2           2.9
+                  Table 4: Baseline scores of the generated entailment trees from EntailmentWriter, along four different dimensions (test set).
+                  F1/BLEURTscoresmeasurepredicted/gold overlap, while AllCorrect scores 1 when all the predictions are correct for a tree, 0
+                  otherwise. Scores on the Dev set are provided in Appendix Table A2, and results using the T5-large model are presented in
+                  Appendix Table A4.
+                  tion correctness as 1 if an aligned pair of intpred,      for Task 3 (since our model is not able to ingest the
+                  intgold gives BLEURT > 0.28,8 0 otherwise. F1             entire corpus), using the RoBERTa-based retriever
+                  is computed using the number of aligned, correct          (Appendix A). Note that the retrieval is a feature of
+                  intermediates wrt. the number of gold/predicted           our baseline system, not of the task speciﬁcation
+                  intermediates. AllCorrect=1 if F1=1, otherwise 0.         itself.
+                     •OverallProof(AllCorrect): Theoverall“All-               AsshowninTable4,theTask3resultsarelower,
+                  Correct” score for a generated proof is 1 only if all     indicating that the full task is difﬁcult. Although
+                  of the leaves, steps, and intermediates are all cor-      most trees are partially correct in places (e.g., leaf
+                  rect, i.e., the tree completely matches T     . Other-    F1=39%),fewperfectly match the gold tree. One
+                                                            gold
+                  wise it scores 0. This is a strict metric: any error in   additional source of error, not present in the earlier
+                  the generated tree will result in a score of 0.           Tasks, is that our IR component may not ﬁnd all
+                                                                            the required sentences S       for the tree. In fact,
+                  6.2   Results                                                                        gold
+                                                                            weﬁnditretrieves 66.1% of them on average (and
+                  Theresults are shown in Table 4. From these, sev-         also the model input does not include any question-
+                  eral conclusions can be drawn:                            speciﬁc scenario facts that may be needed). Thus
+                     First, in the Task 1 (no-distractor) easiest setting,  the lower scores for Task 3 also suggest that the
+                  where only the gold leaves are provided as input,         retrieval component is as critical as the tree builder
+                  the Task1 model performs reasonably well with             itself (if ingestion of the entire corpus is infeasi-
+                  over one-third of the trees perfectly matching the        ble); future solutions require either better retrieval
+                  gold tree. From a manual analysis of a random             or ingestion of the entire corpus. Or, alternatively, a
+                  sample of low-scoring trees, we ﬁnd an additional         modelcouldgenerateratherthanretrievesomesup-
+                  ≈20%arealsovalidbutstructureddifferently(thus             porting sentences (as illustrated in Figure 4), then
+                  incorrectly lowering their score), indicating our         use these post-hoc to identify suitable supporting
+                  evaluation metric is an underestimate. We discuss         corpus sentences.
+                  this in more detail in Section 6.3.2.                     6.3   Error Analysis and Future Work
+                     Second, Task 2 (distractor) increases the difﬁ-
+                  culty by adding distractors to the input gold sen-        Tounderstandwhyinvalidtreesaresometimesgen-
+                  tences until a total of 30 sentences are supplied as      erated, or valid trees mis-scored, we performed
+                  input. Despite this large number of distractors, the      several error analyses that we now describe.
+                  model is good at identifying the relevant facts           6.3.1   Individual Entailment Steps
+                  (leaves F1 = 89%, with nearly half the trees hav-        Weﬁrst analyze cases where the model is failing
+                  ing perfectly selected leaves). The overall tree          at individual entailment reasoning steps. For this
+                  structure in Task2 is (only) a little worse than          werandomly sampled 100 entailment steps from
+                  for Task1 (F1 of steps 41%, vs. 51% for Task 1),          imperfect entailment trees (AllCorrect= 0) in the
+                  despite the substantial additional task complexity.       development set. Manually evaluating these, we
+                     Finally, for Task 3, we reuse our Task 2 model         found that 30% were correct entailments (and 13%
+                  (no additional training) but add an IR component          were nearly correct), suggesting overall invalid
+                  to retrieve context from the entire corpus provided       trees still contain good steps within them. In
+                     8The BLEURTthreshold was picked using a subset of 300  cases where the step was invalid, we identify sev-
+                  manuallylabeledpairs. Whenwetestthisthresholdontherest    eral failure classes and suggest future directions:
+                  of the labeled pairs we get a high (89%) F1 score, indicating
+                  the threshold is reasonable.                                • Repetition: The entailed conclusion simply
+                                                                       7364
+                 repeats one of the input sentences (41%), likely be-    suggesting the automated evaluation is underes-
+                 cause, in many training instances, the intermediate     timating true task performance by ≈20% in this
+                 conclusions have high word overlap with input sen-      case. Future work on an improved evaluation met-
+                 tences. A future direction would be to modify the       ric would help reduce such understimates.
+                 loss function to encourage the model to add some-          • Correct leaves, but invalid steps (≈20%):
+                 thing novel compared with the input sentences.          For example, for a question asking “Can a person
+                    •Invalid Entailment: The entailed conclusion         see someone in a dark room? A: No”, the model
+                 does not follow from input sentences (47%): In          selects the correct leaf sentences but stitches them
+                 these cases, the model is using knowledge unstated      together in the wrong order, resulting in invalid
+                 in the input for this particular entailment step but    intermediate conclusions. Here, it incorrectly tries
+                 present somewhere else in the input context. A          to draw an entailment from “a person is in a dark
+                 future direction would be to explore an interative      room”and“apersonislookingintothedarkroom”,
+                 approach, where the model generates one entail-         producing “the person outside can see the person
+                 ment step at a time (a potentially easier entailment    in the dark room”, an invalid step and one that di-
+                 task) and then iterates.                                rectly contradicts the target answer. Future work
+                    • Mis-evaluation and Irrelevance: The en-            on more reliable entailment, e.g., using an iterative
+                 tailed conclusion is correct, but either different      approach and/or adding an entailment validation
+                 from gold or irrelevant to prove the hypothesis         module, may help address this.
+                 (12%). Future directions include improving the             • Disconnected trees (≈5%): We found 2 ex-
+                 evaluation metric, and adding a goal-directed term      amples where the generated entailment tree had
+                 to the loss function to encourage intermediates that    intermediate conclusions that were not used later
+                 are closer to H.                                        towards proving the hypothesis. Future work to
+                 6.3.2   Errors in the Full Entailment Trees             avoid this would be to apply structural constraints
+                 Weanalyzed an additional 50 imperfect trees on          on the output, enforcing a (single) tree structure.
+                 the dev set, and observed the following errors:            • Correct steps, but incorrect intermediate
+                    • Incorrect/missing leaves (≈50%): For exam-         conclusions (<5%): For example, for a question
+                 ple, for the question “Why do mosquitoes move           with H:“compression waves cause objects to move
+                 towards carbon dioxide...? A: It helps mosquitoes       in the same direction of the wave”, the model gets
+                 ﬁndfood”, the predicted tree misses using the criti-    the correct proof structure, but instead of conclud-
+                 cal input fact that “mosquitoes eat animal blood”,      ing a gold intermediate conclusion “longitudinal
+                 hence cannot infer “animals are a source of food        waves are also called compression waves” it pre-
+                 for mosquitoes”, hence cannot infer the importance      maturely predicts the ﬁnal conclusion H for the
+                 of moving towards carbon dioxide.                       intermediate (then re-predicts it in the ﬁnal step).
+                    • Imperfect evaluation (≈25%): We ﬁnd that              Finally, we grouped the Task 2 results accord-
+                 a signiﬁcant number of trees that were scored as        ing to the size (number of steps) in the gold tree.
+                 invalid are in fact valid, suggesting that our au-      Theresults are shown in Appendix Table A3, and
+                 tomated metrics underestimate tree validity. The        demonstrate that the scores drop signiﬁcantly as
+                 most commonreasonwasthatevenwiththesame                 the number of steps in the gold proof increases.
+                 input sentences, the tree can be structured in several  7   Generality
+                 valid ways. For example, a gold tree with structure:
+                     sent1 & sent2 & sent3 → hypot                       To what extent can ENTAILMENTBANK help for
+                 maybepredicted as:                                      other domains? Although a full investigation is
+                     sent1 & sent2 → int1; int1 & sent3 → hypot          out of the scope of this paper, we performed two
+                 scoring F1=100% for leaves but F1=0% for steps,         small out-of-domain (OOD) investigations. First,
+                 even though valid. (See Appendix D for an instan-       weusedtheeQASCdataset(Jhamtani and Clark,
+                 tiated example). This degree of restructuring is not    2020). eQASC provides a QA hypothesis H, 10
+                 captured by our metrics.                                retrieved sentences C, and lists valid single step
+                        To quantify this further, we randomly sam-       entailments from two sentences in C to H - i.e.,
+                 pled and rated 50 trees on Task 1 and found human       one-step(threenode)entailmenttrees. Runningour
+                 judgements estimated Overall AllCorrect at 58%          Task 2 EntailmentWriter to generate a tree given C
+                 (vs. 35.6% comparing with the gold tree, Table 4),      and H, we ﬁnd (comparing with the best-matching
+                                                                     7365
+                     Input: (a QA pair)                                                  tion one step at a time. To do this, we “shred-
+                     Q:Iwouldliketogorunning, but my ankle is injured.                   ded” the entailment trees into individual one-deep
+                         WhatshouldIdo?
+                     A:ice it                                                            trees (where the intermediate nodes become new
+                     Output:(explanation generated by EntailmentWriter)                  hypotheses to prove), and re-trained a model to
+                      Icing an injured body part can help to reduce the pain             generate similar one-deep entailment trees. This
+                      Anankleisakindofbodypart                                           model can then be used interactively, generating
+                      →Icinganinjuredanklecanhelptoreducethepain                         a one-deep explanation then allowing a user to se-
+                      Input: (a QA pair)                                                 lect which premise(s) to drill down into, based on
+                      Q:If I put some cheese in the fridge, will it melt?                what he/she wants to know more about, recursively
+                      A:no,because it will be too cold
+                      Output:(explanation generated by EntailmentWriter)                 calling the model to explain that premise further.
+                       If something is put in a cold place then it will remain cold      Although such generative models (both generating
+                       Arefrigerator is used for cooling things                          a full tree or a one-deep tree) can sometimes pro-
+                       →Ifsomethingisputinarefrigerator then it will remain              ducefalseornonsensicalfacts,onecouldapplyfact
+                          cold.
+                          Cheese is put in the fridge                                    veriﬁcation techniques, e.g., (Thorne et al., 2018;
+                          →Thecheesewillremaincoldintherefrigerator                      Christodoulopoulos et al., 2020), to validate the
+                             Cold objects do not melt in cold temperatures               generated facts, and generate an alternative expla-
+                             →Cheesewillnotmeltintherefrigerator                         nation if validation fails. These are exciting future
+                      Input: (a QA pair)                                                 directions that we are exploring.
+                      Q:Ifeel sad. What could I do to cheer myself up?
+                      A:listen to music
+                      Output: (explanation generated by EntailmentWriter)                8    SummaryandConclusion
+                       Musicis a kind of entertainment
+                       Entertainment can be used to cheer up a person                    Ourgoalistoenable machines to generate richer,
+                       →Musiccanbeusedtocheerupaperson                                   moresystematicexplanations. To this end, we have
+                          If a person is sad, they may want to cheer themselves up       developed a novel formulation of explanations as
+                          →Ifapersonissad,theymaywanttocheerthemselves
+                             upbylistening to music                                      multistep entailment trees, and created ENTAIL-
+                     Figure 5: Three examples of explanations fully generated            MENTBANK,theﬁrstlargedataset of such trees.
+                     by EntailmentWriter, zero-shot, out-of-domain. Here, all sen-          Wehavealsopresented baseline results for auto-
+                     tences (leaves and intermediates) are generated by the model.       matically generating entailment tree explanations
+                                                                                         for answers to science questions, trained on EN-
+                     gold tree) a F1 (leaves) of 67% and an Overall                      TAILMENTBANK. Theseinitial results suggest that
+                     AllCorrect score of 26% - a positive indication of                  such generation is possible, in particular when the
+                     transfer OOD. Note that this is without ﬁne-tuning                  necessary raw facts are included in the model in-
+                     oneQASC,andthateQASCdoesnotlistallvalid                             put. We have also presented indications that mod-
+                     entailments, hence good outputs may be missed.                      els trained on ENTAILMENTBANK can generalize
+                        Wealso trained a no-context version of Entail-                   to other domains. This suggests exciting oppor-
+                     mentWriter using ENTAILMENTBANK, that inputs                        tunities for future systems that can help users un-
+                     just a QA pair and outputs a tree, generating all the               derstand and debug a system’s answers, and ulti-
+                     tree sentences (both leaves and intermediates). We                  mately engage in meaningful dialogs that explore
+                     thenranthisonChallenge300,anexisting,indepen-                       the machine’s line of reasoning. ENTAILMENT-
+                     dently authored dataset of 300 test questions cov-                  BANKcontributes to this direction, offering a new
+                     ering multiple domains (Tafjord and Clark, 2021).                   resource for developing richer, more systematic ex-
+                     Fromamanualevaluationofarandomsampleof                              planations.       ENTAILMENTBANK is available at
+                     generated trees, ≈35% were valid, non-vacuous                       https://allenai.org/data/entailmentbank.
+                     trees. (≈ 25% of the remainder were valid but                       Acknowledgements
+                     largely repeated the question and answer). Three
+                     good examples are shown in Figure 5, again il-                      WethankGoogleforprovidingtheTPUsforcon-
+                     lustrating the potential of ENTAILMENTBANK for                      ducting experiments. We also thank the Allen Insti-
+                     explanation.                                                        tute of Artiﬁcial Intelligence and National Science
+                        Finally, as an experiment in interactive expla-                  Foundation award #1815948 to Peter Jansen for
+                     nation generation, we re-purposed ENTAILMENT-                       funding this work.
+                     BANK to train a model to generate an explana-
+                                                                                    7366
+                  References                                                Peter  A. Jansen,    Elizabeth  Wainwright,    Steven
+                  Roy Bar-Haim, I. Dagan, and Idan Szpektor. 2014.            Marmorstein, and Clayton T. Morrison. 2018.
+                     Benchmarking applied semantic inference: The pas-        WorldTree: A corpus of explanation graphs for el-
+                     cal recognising textual entailment challenges.  In       ementary science questions supporting multi-hop in-
+                    Language, Culture, Computation.                           ference. In LREC.
+                  L. Bentivogli, Peter Clark, I. Dagan, and Danilo Gi-      Harsh Jhamtani and P. Clark. 2020. Learning to ex-
+                     ampiccolo. 2011. The seventh pascal recognizing          plain: Datasets and models for identifying valid rea-
+                     textual entailment challenge. Theory and Applica-        soning chains in multihop question-answering. In
+                     tions of Categories.                                     EMNLP.
+                  Samuel R. Bowman, Gabor Angeli, Christopher Potts,        Daniel Khashabi, Sewon Min, Tushar Khot, Ashish
+                     and Christopher D. Manning. 2015. A large anno-          Sabharwal, Oyvind Tafjord, Peter Clark, and Han-
+                     tated corpus for learning natural language inference.    naneh Hajishirzi. 2020. UniﬁedQA: Crossing for-
+                     In EMNLP.                                                mat boundaries with a single QA system.          In
+                                                                              Findings-EMNLP.
+                  Christos Christodoulopoulos,    James Thorne, An-
+                     dreas  Vlachos,   Oana Cocarascu,      and Arpit       Alice Lai, Yonatan Bisk, and J. Hockenmaier. 2017.
+                     Mittal, editors.  2020.     Proc. 3rd Workshop           Natural language inference from multiple premises.
+                     on   Fact   Extraction   and   Veriﬁcation.  ACL.        In IJCNLP.
+                     Https://aclanthology.org/events/fever-2020/.           Yinhan Liu, Myle Ott, Naman Goyal, Jingfei Du, Man-
+                  Peter Clark, Isaac Cowhey, Oren Etzioni, Tushar Khot,       dar Joshi, Danqi Chen, Omer Levy, Mike Lewis,
+                    Ashish Sabharwal, Carissa Schoenick, and Oyvind           Luke Zettlemoyer, and Veselin Stoyanov. 2019.
+                    Tafjord. 2018. Think you have solved question an-         RoBERTa: A robustly optimized BERT pretraining
+                     swering? Try ARC, the AI2 reasoning challenge.           approach. ArXiv, abs/1907.11692.
+                    ArXiv, abs/1803.05457.
+                                                                            T. Miller. 2019. Explanation in artiﬁcial intelligence:
+                  Ido Dagan, Dan Roth, Mark Sammons, and Fabio Mas-           Insights from the social sciences.     Artif. Intell.,
+                     simo Zanzotto. 2013. Recognizing Textual Entail-         267:1–38.
+                     ment: Models and Applications. Morgan and Clay-
+                     pool.                                                  Ethan Perez, Siddharth Karamcheti, Rob Fergus, Jason
+                  Dorottya Demszky, Kelvin Guu, and Percy Liang.              Weston, Douwe Kiela, and Kyunghyun Cho. 2019.
+                     2018.   Transforming question answering datasets         Finding generalizable evidence by learning to con-
+                     into natural language inference datasets.   ArXiv,       vince Q&Amodels. In EMNLP.
+                     abs/1809.02922.                                        Stanislas Polu and Ilya Sutskever. 2020.   Generative
+                  Jacob Devlin, Ming-Wei Chang, Kenton Lee, and               language modeling for automated theorem proving.
+                     Kristina Toutanova. 2019.   BERT: Pre-training of        ArXiv, abs/2009.03393.
+                     deep bidirectional transformers for language under-    Colin Raffel, Noam Shazeer, Adam Roberts, Katherine
+                     standing. In NAACL-HIT.                                  Lee, Sharan Narang, M. Matena, Yanqi Zhou, W. Li,
+                  Jay   DeYoung,    Sarthak   Jain,   Nazneen    Rajani,      and Peter J. Liu. 2020. Exploring the limits of trans-
+                     E. Lehman, Caiming Xiong, R. Socher, and                 fer learning with a uniﬁed text-to-text transformer. J.
+                     Byron C. Wallace. 2019. ERASER: A benchmark              Mach.Learn. Res., 21:140:1–140:67.
+                     to evaluate rationalized NLP models. In ACL.           Nazneen Rajani, B. McCann, Caiming Xiong, and
+                  Mor Geva, Daniel Khashabi, Elad Segal, Tushar Khot,         R. Socher. 2019. Explain yourself! Leveraging lan-
+                     D. Roth, and Jonathan Berant. 2021.      Did Aris-       guage models for commonsense reasoning. In ACL.
+                     totle use a laptop?  A question answering bench-       Swarnadeep Saha, Sayan Ghosh, Shashank Srivastava,
+                     mark with implicit reasoning strategies.    ArXiv,       and Mohit Bansal. 2020. PRover: Proof generation
+                     abs/2101.02235.                                          for interpretable reasoning over rules. In EMNLP.
+                  Shuguang Han, Xuanhui Wang, Mike Bendersky, and           Thibault Sellam, Dipanjan Das, and Ankur P Parikh.
+                     MarcNajork.2020. Learning-to-rank with BERT in           2020. Bleurt: Learning robust metrics for text gen-
+                    TF-ranking. ArXiv, abs/2004.08476.                        eration. ArXiv, abs/2004.04696.
+                  Braden Hancock, Paroma Varma, Stephanie Wang,
+                     Martin Bringmann, Percy Liang, and Christopher         Minjoon Seo, Aniruddha Kembhavi, Ali Farhadi, and
+                      ´                                                       Hannaneh Hajishirzi. 2016. Bidirectional attention
+                     Re. 2018. Training classiﬁers with natural language
+                     explanations. In ACL.                                    ﬂowformachinecomprehension. In ICLR.
+                  N. Inoue, Pontus Stenetorp, and Kentaro Inui. 2020.       Oyvind Tafjord and Peter Clark. 2021.        General-
+                     R4C:AbenchmarkforevaluatingRCsystemstoget                purpose question-answering with Macaw.       ArXiv,
+                     the right answer for the right reason. In ACL.           abs/2109.02593.
+                                                                       7367
+                 Oyvind Tafjord, B. D. Mishra, and P. Clark. 2021.
+                    ProofWriter: Generating implications, proofs, and
+                    abductive statements over natural language. IJCAI.
+                 James    Thorne,    Andreas     Vlachos,    Christos
+                    Christodoulopoulos,   and   Arpit  Mittal.  2018.
+                    Fever: a large-scale dataset for fact extraction and
+                    veriﬁcation. In NAACL.
+                 Ming-Zhe Wang and Jun Deng. 2020.       Learning to
+                    provetheoremsbylearningtogeneratetheorems. In
+                    NeurIPS.
+                 Zhengnan Xie, Sebastian Thiem, Jaycie Martin, Eliz-
+                    abeth Wainwright, Steven Marmorstein, and Peter
+                    Jansen. 2020. WorldTree V2: A corpus of science-
+                    domain structured explanations and inference pat-
+                    terns supporting multi-hop inference. In LREC.
+                 Zhilin Yang, Peng Qi, Saizheng Zhang, Yoshua Ben-
+                    gio, William W Cohen, Ruslan Salakhutdinov, and
+                    Christopher D Manning. 2018.       HotpotQA: A
+                    dataset for diverse, explainable multi-hop question
+                    answering. ArXiv, abs/1809.09600.
+                 Qinyuan Ye, Xiaozhen Huang, and Xiang Ren. 2020.
+                    Teaching machine comprehension with composi-
+                    tional explanations. ArXiv, abs/2005.00806.
+                                                                    7368
+                            A RelevantFactRetrievalAlgorithm                                                                  Question: A student left a bar of chocolate in the sun on a hot day.
+                                                                                                                                       As the chocolate melted, what property changed?
+                                                                                                                                                       Answer: its shape
+                           Whenauthoringanentailment tree for a question,                                                                                 Gold Tree
+                            annotators are shown a pool of potentially relevant                                                               H: the shape of chocolate changes
+                            facts, selected from WorldTree, to help them get                                                                      when the chocolate melts
+                            started. To identify those facts, we could simply use                                         chocolate in the solid                    melted chocolate will
+                            standard information retrieval with the QA pair as                                           state has denite shape                     have variable shape
+                            the query. However, for this dataset, we are able to                                         matter in the      chocolate is         matter in the     chocolate changes
+                            dobetterthanthis: First, we train two “relevant sen-                                        solid phase has      a kind of         liquid phase has     from a solid to a
+                            tence” classiﬁers (using BERT (Devlin et al., 2019)                                          denite shape    solid substance       variable shape    liquid when it melts
+                            andRoBERTa(Liuetal.,2019)respectively)using                                                     chocolate is   chocolate is     melting means changing     chocolate melts
+                                                                                    9                                        usually a       a kind of     from a solid to a liquid by      in the 
+                            additional WorldTree annotations. Then, for each                                                   solid        substance        increasing heat energy        sunlight
+                            question, both models exhaustively score every fact
+                            in the corpus, and the top 20 facts from each are re-                                                                  Model-Generated Tree
+                            trieved, reranked using Tensorﬂow-Ranking-BERT                                                                    H: the shape of chocolate changes
+                            (Han et al., 2020), and presented as a ranked list to                                                                 when the chocolate melts
+                            the entailment tree annotator based on their ﬁnal                                             chocolate has variable                   the chocolate changes from
+                            scores.                                                                                        shape in liquid state                   a solid state to a liquid state
+                                                                                                                          matter in the    chocolate has         chocolate is          chocolate melts
+                            B Evaluation: Tree Alignment                                                                liquid phase has   denite shape           a kind of                in the 
+                                                                                                                         denite shape      in solid state        substance                sunlight
+                                   Algorithm                                                                                                                          melting means changing
+                                                                                                                                 chocolate is    matter in the        from a solid to a liquid by
+                            Predicted entailment trees are evaluated by ﬁrst                                                      usually a     solid phase has        increasing heat energy
+                                                                                                                                    solid       denite shape
+                            aligning them with gold entailment trees, using a
+                            variant of the algorithm in (Inoue et al., 2020), as                                      Figure A2: An example question, its gold entailment tree
+                            follows:                                                                                  (top), and a model-generated tree (bottom) that has different
+                                                                                                                      structure and different intermediate conclusions, but is still
+                                                                                                                      valid. The root nodes of each tree (hypotheses) are denoted by
+                                 • First, for each intermediate conclusion intpred                                    H(green), and intermediate conclusions are blue.
+                                    in T         , and int             in T         , we gather their
+                                           pred                 gold          gold                                    platform. Each model has 11B parameters and
+                                    ancestor leaf sentences.                                                          takes 22GB space on disk.
+                                 • Then,wealigneachintermediatenodeintpred                                                During training, we ran the model for different
+                                    to the ﬁrst intgold for which the Jaccard sim-                                    numberofsteps(upto40Kstepsintheintervals of
+                                    ilarity of their respective ancestor sentences                                    4K) and picked the model that gives best Overall
+                                    is maximum. For any intpred with zero Jac-                                        AllCorrect score on the Dev set. Thus our hyperpa-
+                                    card similarity to all gold nodes intgold, it is                                  rameter search involved 10 models each for Task 1
+                                    aligned to a dummy gold node with a blank                                         and Task 2. We picked the models after 16K and
+                                    conclusion.                                                                       32KstepsforTask1andTask2respectively. Table
+                            C TrainingandModelSelection                                                               A2showsmodelscoresonthedevelopmentset.
+                                                                                                                          Each Task required 16 hours of training. Infer-
+                            For Task 1 and Task 2, we trained T5 11B models                                           ence on 340 test questions takes 12 minutes. A
+                            on the training set using default hyperparameters                                         large fraction of this time is spent in saving the
+                            (except the number of steps) following the proce-                                         model checkpoints to disk or loading the model
+                            dure of Khashabi et al. (2020). We used batch size                                        from disk.
+                            of 8 and a block size of 512 tokens on both input                                         D TreeStructureVariation
+                            and output side. For both training and evaluation
+                            weusev3-8TPUsfromGooglecloudcomputing                                                     Asdescribed in Section 6.3.2, although our evalu-
+                                 9WorldTree includes annotations about which WorldTree                                ation metric accounts for different node ordering
+                            table rows are relevant to which questions, i.e., which rows                              and intermediates wording between the predicted
+                            are supporting evidence (“rationales”) for which question.                                and gold trees, there are still cases where a valid
+                            Althoughtheserationalesdonotidentifyallrelevantsentences,                                 predicted tree differs from the gold tree in a way
+                            they can be used as distant supervision (along with random                                which (undesirably) hurts its score. For example, a
+                            negative facts drawn from the corpus) to train a “relevant
+                            sentence” classiﬁer.                                                                      gold tree with the structure:
+                                                                                                               7369
+                                                                         Entailment Tree Scoring
+                                                        Leaves              Steps          Intermediates      Overall
+                                                    F1 AllCorrect      F1 AllCorrect       F1 AllCorrect     AllCorrect
+                            Task1(no-distractor)    99.2    90.9       61.8    50.3       74.2    56.2          43.3
+                            Task2(distractor)       89.4    52.9       46.6    35.3       69.1    54.6          32.1
+                            Task3(full-corpus)      42.7     3.7        8.5     3.2       38.7    13.4           3.2
+                  Table A2: Development set results, analogous to test set results for Table 4, showing baseline scores of the generated entailment
+                  trees from EntailmentWriter along four different dimensions (dev set).
+                         Numberof     Numberof           Leaves              Steps           Intermediates       Overall
+                            steps      questions    F1    AllCorrect    F1    AllCorrect    F1    AllCorrect   AllCorrect
+                              1           87        97.0      87.4     82.2      79.3      95.2      86.2         79.3
+                              2           84        90.5      58.3     35.0      21.4      69.5      58.3         17.9
+                              3           52        87.5      32.7     25.8       5.8      59.4      46.2          0.0
+                              4           38        87.9      31.6     33.2      10.5      53.6      39.5          7.9
+                              5           28        87.3      32.1     27.9       0.0      55.4      39.3          0.0
+                             ≥6           51        76.5      5.9      11.9       0.0      33.6      15.7          0.0
+                             Any          340       89.0      48.8     41.4      27.6      66.2      53.5         25.6
+                  Table A3: Results on Task 2 (distractor) broken down by the number of entailment steps in the gold tree, indicating that scores
+                  drop rapidly as trees get larger (more steps).
+                                                                         Entailment Tree Scoring
+                                                        Leaves              Steps          Intermediates      Overall
+                                                    F1 AllCorrect      F1 AllCorrect       F1 AllCorrect     AllCorrect
+                            Task1(no-distractor)    98.7    86.2       50.5    37.7       67.6    50.3          34.4
+                            Task2(distractor)       84.3    38.5       35.7    23.5       62.6    50.9          22.4
+                            Task3(full-corpus)      35.2     2.9        6.2     2.4       33.0    13.2           2.4
+                                  Table A4: Test set results using T5-large model, analogous to T5-11B results in Table 4.
+                      sent1 & sent2 & sent3 → hypot                         AllCorrect score on the Dev set. We picked the
+                  maybepredicted as:                                        models after 48K and 32K steps for Task 1 and
+                      sent1 & sent2 → int1; int1 & sent3 → hypot            Task 2 respectively. Table A4 shows model scores
+                  scoring F1=100% for leaves but (undesirably)              on the test set.
+                  F1=0% for steps, even though valid. Figure A2
+                  shows a more complex example, where both the
+                  gold and predicted trees have identical leaf nodes
+                  (leaf F1 = 100%), but different organization. Al-
+                  though both trees are valid, the predicted tree here
+                  (undesirably) scores Step F1 = 0%. Because of
+                  cases like this, our predicted scores are an under-
+                  stimate of the true quality of the predictions (by as
+                  muchas20%fromasmallstudy, as described in
+                  Section 6.3.2).
+                  E AdditionalResults: T5-large baseline
+                  Here, we trained a T5-large model using default hy-
+                  perparametersfollowingtheprocedureofKhashabi
+                  et al. (2020). We used batch size of 64 and a block
+                  size of 512 tokens on both input and output side.
+                  During training, we ran the model for different
+                  numberofsteps(upto80Kstepsintheintervals of
+                  8K)andpicked the model that gives best Overall
+                                                                       7370

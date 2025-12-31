@@ -1,0 +1,592 @@
+                                          COMMONSENSEQA:AQuestionAnsweringChallengeTargeting
+                                                                                            CommonsenseKnowledge
+                                                                 ∗∗,1,2                                              ∗,1                                            2                                              1,2
+                                     AlonTalmor                                  Jonathan Herzig                                  Nicholas Lourie                              Jonathan Berant
+                                                                            1School of Computer Science, Tel-Aviv University
+                                                                                     2Allen Institute for Artiﬁcial Intelligence
+                                       {alontalmor@mail,jonathan.herzig@cs,joberant@cs}.tau.ac.il,
+                                                                                                nicholasl@allenai.org
+                                                                   Abstract                                                        a) Sample ConceptNet for speciﬁc subgraphs
+                                                                                                                                         pebble            AtLocation                                        waterfall
+                                      Whenansweringaquestion,peopleoftendraw
+                                      upon their rich world knowledge in addi-                                                           stream          AtLocation                        AtLocation
+                                      tion to the particular context.                        Recent work                                                                      river         AtLocation        bridge
+                                                                                                                                          bank          AtLocation                          AtLocation
+                                      has focused primarily on answering questions
+                                      given some relevant document or context,                                                                           AtLocation
+                                      and required very little general background.                                                       canyon                                                                valley
+                                      To investigate question answering with prior                                                    …
+                                      knowledge, we present COMMONSENSEQA:                                                         b) Crowd source corresponding natural language questions 
+                                                                                                                                       and two additional distractors
+                                      a challenging new dataset for commonsense                                                   Where on a river can you hold a cup upright to catch water on a sunny day?
+                                      questionanswering. Tocapturecommonsense                                                     ✔‍‍‍‍ waterfall,   ✘ bridge,   ✘ valley,   ✘pebble, ✘mountain
+                                      beyond associations, we extract from CON-                                                   Where can I stand on a river to see water falling without getting wet? 
+                                      CEPTNET (Speer et al., 2017) multiple target                                                                ✔
+                                      concepts that have the same semantic relation                                               ✘waterfall,         bridge,   ✘ valley,    ✘stream, ✘bottom
+                                      to a single source concept.                        Crowd-workers                            I’m crossing the river, my feet are wet but my body is dry, where am I? 
+                                                                                                                                  ✘waterfall,   ✘ bridge,   ✔ valley, ✘ bank, ✘ island
+                                      are asked to author multiple-choice questions
+                                      that mention the source concept and discrim-                                                Figure 1: (a) A source concept (‘river’) and three tar-
+                                      inate in turn between each of the target con-                                               get concepts (dashed) are sampled from CONCEPT-
+                                      cepts. This encourages workers to create ques-                                              NET(b)Crowd-workersgeneratethreequestions, each
+                                      tions with complex semantics that often re-                                                 having one of the target concepts for its answer (3),
+                                      quirepriorknowledge. Wecreate12,247ques-                                                    while the other two targets are not (7). Then, for each
+                                      tions through this procedure and demonstrate                                                question, workers choose an additional distractor from
+                                      the difﬁculty of our task with a large number                                               CONCEPTNET (in italics), and author one themselves
+                                      of strong baselines. Our best baseline is based                                             (in bold).
+                                      on BERT-large (Devlin et al., 2018) and ob-
+                                      tains 56% accuracy, well below human perfor-
+                                      mance, which is 89%.
+                                                                                                                                      WorkonQuestion Answering (QA) has mostly
+                               1      Introduction                                                                                focusedonansweringfactoidquestions,wherethe
+                               When humans answer questions, they capitalize                                                      answer can be found in a given context with lit-
+                               on their common sense and background knowl-                                                        tle need for commonsense knowledge (Hermann
+                               edge about spatial relations, causes and effects,                                                  et al., 2015; Rajpurkar et al., 2016; Nguyen et al.,
+                               scientiﬁc facts and social conventions.                                       For in-              2016; Joshi et al., 2017). Small benchmarks such
+                               stance, given the question “Where was Simon                                                        as the Winograd Scheme Challenge (Levesque,
+                               when he heard the lawn mower?”, one can infer                                                      2011) and COPA (Roemmele et al., 2011), tar-
+                               that the lawn mower is close to Simon, and that                                                    geted common sense more directly, but have been
+                               it is probably outdoors and situated at street level.                                              difﬁcult to collect at scale.
+                               This type of knowledge seems trivial for humans,                                                       Recently, efforts have been invested in devel-
+                               but is still out of the reach of current natural lan-                                              oping large-scale datasets for commonsense rea-
+                               guage understanding (NLU) systems.                                                                 soning. In SWAG (Zellers et al., 2018b), given
+                                                                                                                                  a textual description of an event, a probable sub-
+                                      ∗ Theauthors contributed equally                                                            sequent event needs to be inferred. However, it
+                                                                                                                         4149
+                                                                                      Proceedings of NAACL-HLT 2019, pages 4149–4158
+                                                                                                                             c
+                                                   Minneapolis, Minnesota, June 2 - June 7, 2019. 2019 Association for Computational Linguistics
+                 has been quickly realized that models trained on        sion (RC) models that utilize web snippets ex-
+                 large amounts of unlabeled data (Devlin et al.,         tracted from Google search on top of the ques-
+                 2018) capture well this type of information and         tion itself. We ﬁnd that ﬁne-tuning BERT-LARGE
+                 performance on SWAG is already at human level.          (Devlin et al., 2018) on COMMONSENSEQA ob-
+                 VCR (Zellers et al., 2018a) is another very re-         tains the best performance, reaching an accuracy
+                 cent attempt that focuses on the visual aspects of      of 55.9%. This is substantially lower than human
+                 common sense. Such new attempts highlight the           performance, which is 88.9%.
+                 breadth of commonsense phenomena, and make it             Tosummarize, our contributions are:
+                 evident that research on common sense has only            1. A new QA dataset centered around common
+                 scratched the surface.    Thus, there is need for            sense, containing 12,247 examples.
+                 datasets and models that will further our under-          2. A new method for generating commonsense
+                 standing of what is captured by current NLU mod-             questions at scale from CONCEPTNET.
+                 els, and what are the main lacunae.                       3. An empirical evaluation of state-of-the-art
+                    In this work, we present COMMONSENSEQA,                   NLUmodelsonCOMMONSENSEQA,show-
+                 a new dataset focusing on commonsense ques-                  ingthathumanssubstantiallyoutperformcur-
+                 tion answering, based on knowledge encoded in                rent models.
+                  CONCEPTNET(Speeretal., 2017). We propose a             The dataset can be downloaded from www.
+                 method for generating commonsense questions at          tau-nlp.org/commonsenseqa. The code
+                 scale by asking crowd workers to author questions       for all our baselines is available at github.
+                 that describe the relation between concepts from        com/jonathanherzig/commonsenseqa.
+                  CONCEPTNET (Figure 1). A crowd worker ob-
+                 serves a source concept (‘River’ in Figure 1) and       2   Related Work
+                 three target concepts (‘Waterfall’, ‘Bridge’, ‘Val-     Machine common sense, or the knowledge of and
+                 ley’) that are all related by the same CONCEPT-         ability to reason about an open ended world, has
+                  NET relation (AtLocation). The worker then             long been acknowledged as a critical component
+                 authors three questions, one per target concept,        for natural language understanding. Early work
+                 such that only that particular target concept is the    sought programs that could reason about an envi-
+                 answer, while the other two distractor concepts are     ronment in natural language (McCarthy, 1959), or
+                 not. This primes the workers to add commonsense         leverage a world-model for deeper language un-
+                 knowledge to the question, that separates the tar-      derstanding (Winograd, 1972). Many common-
+                 get concept from the distractors. Finally, for each     sense representations and inference procedures
+                 question, the worker chooses one additional dis-        have been explored (McCarthy and Hayes, 1969;
+                 tractor from CONCEPTNET, and authors another            Kowalski and Sergot, 1986) and large-scale com-
+                 distractor manually. Thus, in total, ﬁve candidate      monsense knowledge-bases have been developed
+                 answers accompany each question.                        (Lenat, 1995; Speer et al., 2017). However, evalu-
+                    Because questions are generated freely by            ating the degree of common sense possessed by a
+                 workers, they often require background knowl-           machine remains difﬁcult.
+                 edge that is trivial to humans but is seldom explic-      One important benchmark,          the  Winograd
+                 itly reported on the webduetoreportingbias(Gor-         Schema Challenge (Levesque, 2011), asks mod-
+                 don and Van Durme, 2013). Thus, questions in            els to correctly solve paired instances of coref-
+                  COMMONSENSEQAhaveadifferent nature com-                erence resolution. While the Winograd Schema
+                 pared to prior QA benchmarks, where questions           Challenge remains a tough dataset, the difﬁculty
+                 are authored given an input text.                       of generating examples has led to only a small
+                    Using our method, we collected 12,247 com-           available collection of 150 examples. The Choice
+                 monsense questions. We present an analysis that         ofPlausibleAlternatives(COPA)isasimilarlyim-
+                 illustrates the uniqueness of the gathered ques-        portant but small dataset consisting of 500 devel-
+                 tions compared to prior work, and the types of          opment and 500 test questions (Roemmele et al.,
+                 commonsense skills that are required for tackling       2011). Each question asks which of two alterna-
+                 it. We extensively evaluate models on COMMON-           tives best reﬂects a cause or effect relation to the
+                  SENSEQA, experimenting with pre-trained mod-           premise. For both datasets, scalability is an issue
+                 els, ﬁne-tuned models, and reading comprehen-           whenevaluating modern modeling approaches.
+                                                                    4150
+                                           Withtherecentadoptionofcrowdsourcing,sev-                                                                                Crowdworkersauthor questions                              Crowdworkersadd distractors
+                                     eral larger datasets have emerged, focusing on pre-                                                                        Dust in house? (attic, yard, street)                     Dust in house? (attic, yard, street, bed, desert)
+                                                                                                                                                                Find glass outside? (bar, fork, car)                     Find glass outside? (bar, fork, car, sand, wine)
+                                     dicting relations between situations or events in                                                                          Makes you happy? (laugh, sad, fall)                      Makes you happy? (laugh, sad, fall, blue, feel)
+                                     natural language. JHU Ordinal Commonsense In-
+                                     ference requests a label from 1-5 for the plau-                                                                            Extract subgraphs from ConceptNet                             Crowdworkersfilter questions by quality
+                                     sibility that one situation entails another (Zhang                                                                          dust        attic      yard       street                 Dust in house? (attic, yard, …)         → 1.0
+                                     et al., 2017). The Story Cloze Test (also referred to                                                                       glass       bar        fork        car                   Find glass outside? (bar, fork, ...)    → 0.2  X
+                                                                                                                                                                                                                          Makes you happy? (laugh, sad, ...) → 0.8
+                                     as ROC Stories) pits ground-truth endings to sto-                                                                          happy       laugh       sad         fall
+                                     ries against implausible false ones (Mostafazadeh                                                                         Filter edges from ConceptNet with rules                       Collect relevant snippets via search engine
+                                     et al., 2016). Interpolating these approaches, Sit-
+                                     uations with Adversarial Generations (SWAG),                                                                                            X                                                     Dust in house? (attic, yard, …)
+                                     asks models to choose the correct description of                                                                                                 X                                            Makes you happy? (laugh, sad, ...)
+                                     what happens next after an initial event (Zellers                                                                       Figure 2:                 COMMONSENSEQA generation process.
+                                     et al., 2018b). LM-based techniques achieve very                                                                        The input is CONCEPTNET knowledge base, and the
+                                     high performance on the Story Cloze Test and                                                                            output is a set of multiple-choice questions with corre-
+                                     SWAGbyﬁne-tuningapre-trainedLMonthetar-                                                                                 sponding relevant context (snippets).
+                                     get task (Radford et al., 2018; Devlin et al., 2018).
+                                           Investigations of commonsense datasets, and of
+                                     natural language datasets more generally, have re-                                                                                  each with one source concept and three tar-
+                                     vealed the difﬁculty in creating benchmarks that                                                                                    get concepts.
+                                     measure the understanding of a program rather                                                                                2. We ask crowdsourcing workers to author
+                                     than its ability to take advantage of distributional                                                                                three questions per subgraph (one per target
+                                     biases, and to model the annotation process (Gu-                                                                                    concept),toaddtwoadditionaldistractorsper
+                                     rurangan et al., 2018; Poliak et al., 2018). Annota-                                                                                question, and to verify questions’ quality.
+                                     tion artifacts in the Story Cloze Test, for example,                                                                         3. We add textual context to each question by
+                                     allow models to achieve high performance while                                                                                      querying a search engine and retrieving web
+                                     only looking at the proposed endings and ignor-                                                                                     snippets.
+                                     ing the stories (Schwartz et al., 2017; Cai et al.,
+                                     2017). Thus, the development of benchmarks for                                                                          The entire data generation process is summarized
+                                     commonsenseremainsadifﬁcult challenge.                                                                                  inFigure2. Wenowelaborateoneachofthesteps:
+                                           Researchers have also investigated question an-                                                                   Extraction from CONCEPTNET CONCEPT-
+                                     sweringthatutilizescommonsense. Scienceques-                                                                             NETisagraphknowledge-base G ⊆ C ×R×C,
+                                     tions often require common sense, and have re-                                                                          wherethenodesC representnaturallanguagecon-
+                                     cently received attention (Clark et al., 2018; Mi-                                                                      cepts, and edges R represent commonsense re-
+                                     haylov et al., 2018; Ostermann et al., 2018); how-                                                                      lations.              Triplets (c ,r,c ) carry commonsense
+                                     ever, they also need specialized scientiﬁc knowl-                                                                                                                      1           2
+                                     edge. In contrast to these efforts, our work stud-                                                                      knowledge such as ‘(gambler, CapableOf, lose
+                                     ies common sense without requiring additional                                                                           money)’.                    CONCEPTNET contains 32 million
+                                     information.                      SQUABU created a small hand-                                                          triplets. To select a subset of triplets for crowd-
+                                     curated test of common sense and science ques-                                                                          sourcing we take the following steps:
+                                     tions (Davis, 2016), which are difﬁcult for current                                                                          1. We ﬁlter triplets with general relations (e.g.,
+                                     techniques to solve. In this work, we create simi-                                                                                  RelatedTo) or relations that are already
+                                     larly well-crafted questions but at a larger scale.                                                                                 well-explored in NLP (e.g., IsA). In total we
+                                                                                                                                                                         use 22 relations.
+                                     3        Dataset Generation                                                                                                  2. Weﬁlter triplets where one of the concepts is
+                                                                                                                                                                         morethanfour words or not in English.
+                                     Our goal is to develop a method for generating                                                                               3. We ﬁlter triplets where the edit distance be-
+                                     questions that can be easily answered by humans                                                                                     tween c1 and c2 is too low.
+                                     withoutcontext,andrequirecommonsenseknowl-                                                                              This results in a set of 236,208 triplets (q,r,a),
+                                     edge. We generate multiple-choice questions in a                                                                        where we call the ﬁrst concept the question con-
+                                     process that comprises the following steps.                                                                             cept and the second concept the answer concept.
+                                          1. We extract subgraphs from CONCEPTNET,                                                                                 We aim to generate questions that contain the
+                                                                                                                                                    4151
+                  question concept and where the answer is the an-             Measurement                            Value
+                  swer concept. To create multiple-choice questions            # CONCEPTNETdistinct question nodes    2,254
+                                                                               # CONCEPTNETdistinct answer nodes     12,094
+                  we need to choose distractors for each question.             # CONCEPTNETdistinct nodes            12,107
+                  Sampling distractors at random from CONCEPT-                 # CONCEPTNETdistinct relation lables    22
+                  NETisabadsolution, as such distractors are easy              average question length (tokens)       13.41
+                                                                               long questions (more than 20 tokens)  10.3%
+                  to eliminate using simple surface clues.                     average answer length (tokens)          1.5
+                     To remedy this, we propose to create ques-                # answers with more than 1 token       44%
+                  tion sets:    for each question concept q and                # of distinct words in questions      14,754
+                                                                               # of distinct words in answers         4,911
+                  relation  r we group three different triplets
+                  {(q,r,a1),(q,r,a2),(q,r,a3)} (see Figure 1).                 Table 1: Key statistics for COMMONSENSEQA
+                  This generates three answer concepts that are se-
+                  mantically similar and have a similar relation to        correct answer and four distractors.
+                  the question concept q. This primes crowd work-
+                  ers to formulate questions that require background       Verifying questions quality      Wetrain a disjoint
+                  knowledge about the concepts in order to answer          groupofworkerstoverifythegeneratedquestions.
+                  the question.                                            Veriﬁers annotate a question as unanswerable, or
+                     The above procedure generates approximately           choose the right answer. Each question is veri-
+                  130,000 triplets (43,000 question sets), for which       ﬁedby2workers,andonlyquestionsveriﬁedbyat
+                  wecanpotentially generate questions.                     least one worker that answered correctly are used.
+                  Crowdsourcing questions         We used Amazon           This processes ﬁlters out 15% of the questions.
+                  Mechanical Turk (AMT) workers to generate and            Adding textual context        To examine whether
+                  validate commonsense questions.                          web text is useful for answering commonsense
+                     AMTworkers saw, for every question set, the           questions, we add textual information to each
+                  question concept and three answer concepts. They         question in the following way: We issue a web
+                  were asked to formulate three questions, where           query to Google search for every question and
+                  all questions contain the question concept. Each         candidate answer, concatenating the answer to the
+                  question should have as an answer one of the an-         question, e.g., ‘What does a parent tell their child
+                  swer concepts, but not the other two. To discour-        to do after they’ve played with a lot of toys? +
+                  age workers from providing simple surface clues          “clean room”’. We take the ﬁrst 100 result snip-
+                  for the answer, they were instructed to avoid us-        pets for each of the ﬁve answer candidates, yield-
+                  ing words that have a strong relation to the answer      ing a context of 500 snippets per question. Using
+                  concept, for example, not to use the word ‘open’         this context, we can investigate the performance
+                  whentheansweris‘door’.                                   of reading comprehension (RC) models on COM-
+                     Formulating questions for our task is non-            MONSENSEQA.
+                  trivial. Thus, we only accept annotators for which          Overall, we generated 12,247 ﬁnal examples,
+                  at least 75% of the questions they formulate pass        from a total of 16,242 that were formulated. The
+                  the veriﬁcation process described below.                 total cost per question is $0.33. Table 1 describes
+                  Adding additional distractors         To make the        the key statistics of COMMONSENSEQA.
+                  task more difﬁcult, we ask crowd-workers to add          4   Dataset Analysis
+                  two additional incorrect answers to each formu-
+                  lated question. One distractor is selected from a        CONCEPTNET concepts and relations             COM-
+                  set of answer concepts with the same relation to         MONSENSEQA builds on CONCEPTNET, which
+                  the question concept in CONCEPTNET (Figure 1,            contains concepts such as dog, house, or row
+                  in red). The second distractor is formulated man-        boat, connected by relations such as Causes,
+                  ually by the workers themselves (Figure 1, in pur-       CapableOf, or Antonym.             The top-5 ques-
+                  ple). Workers were encouraged to formulate a dis-        tion concepts in COMMONSENSEQA are‘Person’
+                  tractor that would seem plausible or related to the      (3.1%),‘People’(2.0%),‘Human’(0.7%),‘Water’
+                  question but easy for humans to dismiss as incor-        (0.5%) and ‘Cat’ (0.5%). In addition, we present
+                  rect. In total, each formulated question is accom-       the main relations along with the percentage of
+                  panied with ﬁve candidate answers, including one         questions generated from them in Table 2. It’s
+                                                                      4152
+                              Relation                  Formulatedquestion example                                                                                                                 %
+                              AtLocation                WherewouldInotwantafox? A.henhouse,B.england,C.mountains,D....                                                                           47.3
+                              Causes                    Whatisthe hopeful result of going to see a play? A. being entertained, B. meet, C. sit, D. ...                                           17.3
+                              CapableOf                 Whywouldapersonputﬂowersinaroomwithdirtygymsocks? A.smellgood,B.manycolors,C.continuetogrow,D....                                         9.4
+                              Antonym                   Someonewhohadaverybadﬂightmightbegivenatripinthistomakeupforit? A.ﬁrstclass,B.reputable, C. propitious , D. ...                           8.5
+                              HasSubevent               Howdoesapersonbegintoattractanother person for reproducing? A. kiss, B. genetic mutation, C. have sex , D. ...                            3.6
+                              HasPrerequisite IfIamtiltingadrinktowardmyface,whatshouldIdobeforetheliquidspillsover? A.openmouth,B.eatﬁrst,C.useglass,D....                                       3.3
+                              CausesDesire              Whatdoparentsencouragekids to do when they experience boredom? A. read book, B. sleep, C. travel , D. ...                                 2.1
+                              Desires                   Whatdoallhumanswanttoexperienceintheir own home? A. feel comfortable, B. work hard, C. fall in love , D. ...                              1.7
+                              PartOf                    Whatwouldsomeoneweartoprotectthemselves from a cannon? A. body armor, B. tank, C. hat , D. ...                                            1.6
+                              HasProperty               Whatisareasontopayyourtelevision bill? A. legal, B. obsolete, C. entertaining , D. ...                                                    1.2
+                            Table 2: Top CONCEPTNET relations in COMMONSENSEQA,alongwiththeirfrequencyinthedataandanexam-
+                            ple question. The ﬁrst answer (A) is the correct answer
+                                                                                                                       Category           Deﬁnition                                                %
+                                                                                                                       Spatial            Concept A appears near Concept B                         41
+                                                                                                                       Cause & Effect     Concept A causes Concept B                               23
+                                                                                                                       Hasparts           Concept A contains Concept B as one of its parts         23
+                                                                                                                       Is member of       Concept A belongs to the larger class of Concept B       17
+                                                                                                                       Purpose            Concept A is the purpose of Concept B                    18
+                                                                                                                       Social             It is a social convention that Concept A                 15
+                                                                                                                                          correlates with Concept B
+                                                                                                                       Activity           Concept A is an activity performed in the context         8
+                                                                                                                                          of Concept B
+                                                                                                                       Deﬁnition          Concept A is a deﬁnition of Concept B                     6
+                                                                                                                       Preconditions      Concept A must hold true in order for Concept B to        3
+                                                                                                                                          take place
+                                                                                                                     Table 3: Skills and their frequency in the sampled data.
+                                                                                                                     Aseachexamplecanbeannotatedwithmultipleskills,
+                            Figure 3: Examples of manually-annotated questions,                                      the total frequency does not sum to 100%.
+                            with the required skills needed to arrive at the answers
+                            (red circles). Skills are labeled edges, and concepts are
+                            nodes.                                                                                   swer questions in COMMONSENSEQA, we ran-
+                                                                                                                     domly sampled 100 examples from the develop-
+                                                                                                                     ment set and performed the following analysis.
+                            worth noting that since question formulators were                                            For each question, we explicitly annotated the
+                            not shown the CONCEPTNET relation, they often                                            types of commonsense skills that a human uses
+                            asked questions that probe other relationships be-                                       to answer the question. We allow multiple com-
+                            tween the concepts. For example, the question                                            monsense skills per questions, with an average of
+                            “What do audiences clap for?” was generated                                              1.75 skills per question. Figure 3 provides three
+                            from the AtLocation relation, but focuses on                                             example annotations. Each annotation contains a
+                            social conventions instead.                                                              node for the answer concept, and other nodes for
+                                                                                                                     concepts that appear in the question or latent con-
+                            Question formulation                        Question           formulators               cepts. Labeled edges describe the commonsense
+                            were instructed to create questions with high                                            skill that relates the two nodes. We deﬁned com-
+                            language variation. 122 formulators contributed                                          monsense skills based on the analysis of LoBue
+                            to question generation.                      However, 10 workers                         and Yates (2011), with slight modiﬁcations to ac-
+                            formulated more than 85% of the questions.                                               commodate the phenomena in our data. Table 3
+                                Weanalyzedthedistribution of ﬁrst and second                                         presents the skill categories we used, their deﬁni-
+                            words in the formulated questions along with ex-                                         tion and their frequency in the analyzed examples.
+                            amplequestions. Figure4presentsthebreakdown.
+                            Interestingly, only 44% of the ﬁrst words are WH-                                        5     Baseline Models
+                            words. In about 5% of the questions, formulators                                         Our goal is to collect a dataset of commonsense
+                            used ﬁrst names to create a context story, and in                                        questions that are easy for humans, but hard for
+                            7%theyusedtheword“if”topresentahypothet-                                                 current NLU models. To evaluate this, we experi-
+                            ical question. This suggests high variability in the                                     mentwithmultiple baselines. Table 4 summarizes
+                            question language.                                                                       the various baseline types and characterizes them
+                            Commonsense Skills                       To analyze the types of                         based on (a) whether training is done on COM-
+                            commonsense knowledge needed to correctly an-                                            MONSENSEQA or the model is fully pre-trained,
+                                                                                                             4153
+                                                                                                    heI
+                                                                                                      f
+                                                                                                       
+                                                                                                      t
+                                                                                                    d h
+                                                                                                    o e
+                                                                                                    i r
+                                                                                                    nge
+                                                                                                       
+                                                                                                    ? a
+                                                                                                      r
+                                                                                                      e
+                                                                                                       
+                                                                                                      p
+                                                                                                      e
+                                                                                                      o
+                                                                                                      p
+                                                                                                      l
+                                                                                                      e
+                                                                                                       
+                                                                                                      w
+                                                                                                      a
+                                                                                                      t
+                                                                                                      c
+                                                                                                      h
+                                                                                                      i
+                                                                                                      n
+                                                                                                      g
+                                                                                                       
+                                                                                                      a
+                                                                                                       
+                                                                                                      p
+                                                                                                      r
+                                                                                                      i
+                                                                                                      e
+                                                                                                      st
+                                                                                                      ,
+                                                                                                       
+                                                                                                      w
+                                                                                                      h
+                                                                                                      a
+                                                                                                      t
+                                                                                                       
+                                                                                                      i
+                                                                                                      s 
+                                                                                The		13%
+                         Figure 4: Distribution of the ﬁrst and second words in questions. The inner part displays words and their frequency
+                         and the outer part provides example questions.
+                                              Model           Training   Context                          rephrase“Whatisusuallynexttoadoor?”andthe
+                                              VECSIM             7          7                             candidate answer “wall” to “Wall is usually next
+                                              LM1B               7          7
+                                              QABILINEAR         3          7                             to a door”. For questions that do not start with
+                                              QACOMPARE          3          7
+                                              ESIM               3          7                             the above preﬁxes, we concatenate the answer as
+                                              GPT                3          7                             in LM1B-CONCAT. In both variations we return
+                                              BERT               3          7
+                                              BIDAF++            3         3                              the answer with highest LM probability.
+                         Table 4: Baseline models along with their character-                             c QABILINEARThismodel,propsedbyYuetal.
+                         istics. Training states whether the model was trained                            (2014) for QA, scores an answer a with a bilinear
+                                                                                                                                                             i
+                         on COMMONSENSEQA, or was only trained a differ-                                                     >
+                                                                                                          model: qWa , where the question q and answers
+                         entdataset. Context states whetherthemodelusesextra                                                 i
+                                                                                                          a are the average pre-trained word embeddings
+                         context as input.                                                                  i
+                                                                                                          and W is a learned parameter matrix. A softmax
+                                                                                                          layer over the candidate answers is used to train
+                         and (b) whether context (web snippets) is used.                                  the model with cross-entropy loss.
+                         Wenowelaborateonthedifferent baselines.                                          d QACOMPAREThismodelissimilartoanNLI
+                         a VECSIMAmodelthatchoosestheanswerwith                                           model from Liu et al. (2016). The model repre-
+                         highestcosinesimilaritytothequestion,wherethe                                    sents the interaction between the question q and a
+                                                                                                          candidate answer a as: h = relu([q;a ;qa ;q−
+                         question and answers are represented by an aver-                                                             i                            i         i
+                                                                                                          a ]W +b ), where ’;’ denotes concatenation and
+                         age of pre-trained word embeddings.                                                i     1      1
+                         b LM1B Inspired by Trinh and Le (2018), we                                       is element-wise product. Then, the model pre-
+                         employ a large language model (LM) from Joze-                                    dicts an answer score using a feed forward layer:
+                                                                                                          hW +b . Average pre-trained embeddings and
+                         fowicz et al. (2016), which was pre-trained on                                         2       2
+                         the One Billion Words Benchmark (Chelba et al.,                                  softmax are used to train the model.
+                         2013). We use this model in two variations. In                                   e ESIM We use ESIM, a strong NLI model
+                         the ﬁrst (LM1B-CONCAT), we simply concate-                                       (Chen et al., 2016).                Similar to Zellers et al.
+                         nate each answer to the question. In the second                                  (2018b), we change the output layer size to the
+                         (LM1B-REP),weﬁrstclusterquestionsaccording                                       number of candidate answers, and apply softmax
+                         to their ﬁrst two words. Then, we recognize ﬁve                                  to train with cross-entropy loss.
+                         high-frequency preﬁxes that cover 35% of the de-                                 f BIDAF++ A state-of-the-art RC model, that
+                         velopmentset(e.g.,“whatis”). Werephraseques-                                     usestheretrievedGooglewebsnippets(Section3)
+                         tions that ﬁt into one of these preﬁxes as a declar-                             as context. We augment BIDAF (Seo et al., 2016)
+                         ative sentence that contains the answer. E.g., we                                with a self-attention layer and ELMo representa-
+                                                                                                   4154
+                   tions (Peters et al., 2018; Huang et al., 2018). To          networks that memorize might fail in such a sce-
+                   adapttothemultiple-choicesetting, wechoosethe                nario. Since the random split is harder, we con-
+                   answer with highest model probability.                       sider it the primary split of COMMONSENSEQA.
+                   g GENERATIVE            PRE-TRAINED            TRANS-           Weevaluate all models on the test set using ac-
+                   FORMER (GPT) Radford et al. (2018) proposed                  curacy (proportion of examples for which predic-
+                   a method for adapting pre-trained LMs to perform             tion is correct), and tune hyper-parameters for all
+                   a wide range of tasks. We applied their model to             trained models on the development set. To under-
+                   COMMONSENSEQA by encoding each question                      stand the difﬁculty of the task, we add a SANITY
+                   and its candidate answers as a series of delimiter-          mode, where we replace the hard distractors (that
+                   separated sequences. For example, the question               share a relation with the question concept and one
+                   “If you needed a lamp to do your work, where                 formulated by a worker) with random CONCEPT-
+                   would you put it?”, and the candidate answer                 NET distractors. We expect a reasonable baseline
+                   “bedroom” would become “[start] If ... ?                     to perform much better in this mode.
+                   [sep] bedroom [end]”.              The hidden repre-            For pre-trained word embeddings we consider
+                   sentations over each [end] token are converted               300dGloVeembeddings(Penningtonetal.,2014)
+                   to logits by a linear transformation and passed              and 300d Numberbatch CONCEPTNET node em-
+                   through a softmax to produce ﬁnal probabilities              beddings (Speer et al., 2017), which are kept ﬁxed
+                   for the answers. We used the same pre-trained LM             at training time.    We also combine ESIM with
+                   and hyper-parameters for ﬁne-tuning as Radford               1024d ELMo contextual representations, which
+                   et al. (2018) on ROC Stories, except with a batch            are also ﬁxed during training.
+                   size of 10.                                                  HumanEvaluation Totesthumanaccuracy,we
+                   h BERTSimilarly to the GPT, BERT ﬁne-tunes                   created a separate task for which we did not use a
+                   a language model and currently holds state-of-the-           qualiﬁcation test, nor used AMT master workers.
+                   art across a broad range of tasks (Devlin et al.,            We sampled 100 random questions and for each
+                   2018).     BERT uses a masked language mod-                  question gathered answers from ﬁve workers that
+                   eling objective, which predicts missing words                werenotinvolvedinquestiongeneration. Humans
+                   masked from unlabeled text. To apply BERT to                 obtain 88.9% accuracy, taking a majority vote for
+                   COMMONSENSEQA, we linearize each question-                   each question.
+                   answer pair into a delimiter-separated sequence
+                   (i.e., “[CLS] If ... ? [SEP] bedroom [SEP]”)                 Results     Table 5 presents test set results for all
+                   then ﬁne-tune the pre-trained weights from un-               models and setups.
+                                            1
+                   cased BERT-LARGE. Similarly to the GPT, the                     The best baselines are BERT-LARGE and GPT
+                   hiddenrepresentationsovereach[CLS]tokenare                   with an accuracy of 55.9% and 45.5%, respec-
+                   run through a softmax layer to create the predic-            tively, on the random split (63.6% and 55.5%, re-
+                   tions. We used the same hyper-parameters as De-              spectively, on the question concept split). This is
+                   vlin et al. (2018) for SWAG.                                 well below human accuracy, demonstrating that
+                   6    Experiments                                             the benchmark is much easier for humans. Nev-
+                                                                                ertheless, this result is much higher than random
+                   Experimental Setup          We split the data into a         (20%), showing the ability of language models to
+                   training/development/test set with an 80/10/10               store large amounts of information related to com-
+                   split.  We perform two types of splits: (a) ran-             monsense knowledge.
+                   dom split – where questions are split uniformly                 The top part of Table 5 describes untrained
+                   at random, and (b) question concept split – where            models. We observe that performance is higher
+                   each of the three sets have disjoint question con-           than random, but still quite low. The middle part
+                   cepts. We empirically ﬁnd (see below) that a ran-            describes models that were trained on COMMON-
+                   dom split is harder for models that learn from               SENSEQA,whereBERT-LARGEobtainsbestper-
+                   COMMONSENSEQA, because the same question                     formance, as mentioned above.           ESIM models
+                   concept appears in the training set and develop-             follow BERT-LARGE and GPT, and obtain much
+                   ment/test set with different answer concepts, and            lower performance. We note that ELMo represen-
+                      1The original weights and code released by Google may     tations did not improve performance compared to
+                   be found here: https://github.com/google-research/bert       GloVeembeddings,possiblybecausewewereun-
+                                                                           4155
+                                                                                                  Randomsplit          Question concept split
+                                                        Model                                 Accuracy     SANITY Accuracy           SANITY
+                                                         VECSIM+NUMBERBATCH                      29.1        54.0         30.3         54.9
+                                                         LM1B-REP                                26.1        39.6         26.0         39.1
+                                                         LM1B-CONCAT                             25.3        37.4         25.3         35.2
+                                                         VECSIM+GLOVE                            22.3        26.8         20.8         27.1
+                                                         BERT-LARGE                              55.9        92.3         63.6         93.2
+                                                         GPT                                     45.5        87.2         55.5         88.9
+                                                         ESIM+ELMO                               34.1        76.9         37.9         77.8
+                                                         ESIM+GLOVE                              32.8        79.1         40.4         78.2
+                                                         QABILINEAR+GLOVE                        31.5        74.8         34.2         71.8
+                                                         ESIM+NUMBERBATCH                        30.1        74.6         31.2         75.1
+                                                         QABILINEAR+NUMBERBATCH                  28.8        73.3         32.0         71.6
+                                                         QACOMPARE+GLOVE                         25.7        69.2         34.1         71.3
+                                                         QACOMPARE+NUMBERBATCH                   20.4        60.6         25.2         66.8
+                                                         BIDAF++                                 32.0        71.0         38.4         72.0
+                                                         HUMAN                                   88.9
+                                                                        Table 5: Test set accuracy for all models.
+                          Category       Formulatedquestion example                                                Correct answer     Distractor            Accuracy     %
+                          Surface        If someone laughs after surprising them they have a good sense of what?   humor              laughter              77.7         35%
+                          clues          Howmightaautomobilegetoffafreeway?                                        exit ramp          driveway
+                          Negation /     Wherewouldyoustoreapillowcasethat is not in use?                          drawer             bedroom               42.8         7%
+                          Antonym        Wheremightthestapler be if I cannot ﬁnd it?                               desk drawer        desktop
+                          Factoid        Howmanyhoursareinaday?                                                    twenty four        week                  38.4         13%
+                          knowledge      Whatgeographic area is a lizard likely to be?                             west texas         ball stopped
+                          Bad            Whereis a well used toy car likely to be found?                           child’s room       ownhome               35.4         31%
+                          granularity    Wheremayyoubeifyou’rebuyingporkchopsatacornershop?                        iowa               town
+                          Conjunction    Whatcanyouusetostoreabookwhiletraveling?                                  suitcase           library of congress   23.8         23%
+                                         Onahotdaywhatcanyoudotoenjoysomethingcoolandsweet?                        eat ice cream      fresh cake
+                        Table 6: BERT-LARGE baseline analysis. For each category we provide two examples, the correct answer, one
+                        distractor, model accuracy and frequency in the dataset. The predicted answer is in bold.
+                        able to improve performance by back-propagating                               erage accuracy of the model for each category.
+                        into the representations themselves (as we do in                                  Wefound that the model does well (77.7% ac-
+                        BERT-LARGE and GPT). The bottom part shows                                    curacy) on examples where surface clues hint to
+                        results for BIDAF++ that uses web snippets as                                 the correct answer. Examples that involve nega-
+                        context. We observe that using snippets does not                              tion or understanding antonyms have lower accu-
+                        lead to high performance, hinting that they do not                            racy (42.8%), similarly to examples that require
+                        carry a lot of useful information.                                            factoid knowledge (38.4%). Accuracy is partic-
+                            Performance on the random split is ﬁve points                             ularly low in questions where the correct answer
+                        lower than the question concept split on average                              has ﬁner granularity compared to one of the dis-
+                        across all trained models.                We hypothesize that                 tractors (35.4%), and in cases where the correct
+                        this is because having questions in the develop-                              answer needs to meet a conjunction of conditions,
+                        ment/test set that share a question concept with the                          andthedistractormeetsonlyoneofthem(23.8%).
+                        training set, but have a different answer, creates
+                        difﬁculty for networks that memorize the relation                             Learning Curves                To extrapolate how current
+                        between a question concept and an answer.                                     models might perform with more data, we evalu-
+                            Lastly, all SANITY models that were trained                               ated BERT-large on the development set, training
+                        on COMMONSENSEQAachieveveryhighperfor-                                        with varying amounts of data. The resulting learn-
+                        mance(92%for BERT-LARGE),showingthat se-                                      ingcurvesareplottedinﬁgure5. Foreachtraining
+                        lecting difﬁcult distractors is crucial.                                      set size, hyper-parameters were identical to sec-
+                                                                                                      tion 5, except the number of epochs was varied to
+                        Baseline analysis              To understand the perfor-                      keep the number of mini-batches during training
+                        mance of BERT-LARGE, we analyzed 100 ex-                                      constant. To deal with learning instabilities, each
+                        amples from the development set (Table 6). We                                 data point is the best of 3 runs. We observe that
+                        labeled examples with categories (possibly more                               the accuracy of BERT-LARGE is expected to be
+                        than one per example) and then computed the av-                               roughly 75% assuming 100k examples, still sub-
+                                                                                                4156
+                                                                            benchmark for measuring progress in statistical lan-
+                                                                            guage modeling. arXiv preprint arXiv:1312.3005.
+                                                                         Qian Chen, Xiaodan Zhu, Zhenhua Ling, Si Wei,
+                                                                            Hui Jiang, and Diana Inkpen. 2016.      Enhanced
+                                                                            lstm for natural language inference. arXiv preprint
+                                                                            arXiv:1609.06038.
+                                                                         Peter Clark, Isaac Cowhey, Oren Etzioni, Tushar Khot,
+                                                                            Ashish Sabharwal, Carissa Schoenick, and Oyvind
+                                                                            Tafjord. 2018. Think you have solved question an-
+                                                                            swering? try arc, the ai2 reasoning challenge.
+                                                                         Ernest Davis. 2016. How to write science questions
+                  Figure 5: Development accuracy for BERT-LARGE             that are easy for people and hard for computers. AI
+                                                                            magazine, 37(1):13–22.
+                  trained with varying amounts of data.
+                                                                         J. Devlin, M. Chang, K. Lee, and K. Toutanova. 2018.
+                                                                            Bert: Pre-training of deep bidirectional transformers
+                                                                            for language understanding. arXiv.
+                  stantially lower than human performance.
+                                                                         JonathanGordonandBenjaminVanDurme.2013. Re-
+                  7   Conclusion                                            porting bias and knowledgeacquisition. In Proceed-
+                                                                            ingsofthe2013WorkshoponAutomatedKnowledge
+                  We present COMMONSENSEQA, a new QA                        Base Construction, AKBC ’13, pages 25–30, New
+                  dataset that contains 12,247 examples and aims to         York, NY, USA. ACM.
+                  test commonsense knowledge. We describe a pro-         Suchin Gururangan, Swabha Swayamdipta, Omer
+                  cess for generating difﬁcult questions at scale us-       Levy, Roy Schwartz, Samuel R Bowman, and
+                  ing CONCEPTNET, perform a detailed analysis of            Noah A Smith. 2018.       Annotation artifacts in
+                  the dataset, which elucidates the unique properties       natural language inference data.   arXiv preprint
+                  ofourdataset,andextensivelyevaluateonastrong              arXiv:1803.02324.
+                  suite of baselines. We ﬁnd that the best model is      Karl Moritz Hermann, Tomas Kocisky, Edward
+                  a pre-trained LM tuned for our task and obtains           Grefenstette, Lasse Espeholt, Will Kay, Mustafa Su-
+                  55.9% accuracy, dozens of points lower than hu-           leyman, and Phil Blunsom. 2015.     Teaching ma-
+                                                                            chinestoreadandcomprehend. InAdvancesinNeu-
+                  man accuracy. We hope that this dataset facili-           ral Information Processing Systems, pages 1693–
+                  tates future work in incorporating commonsense            1701.
+                  knowledge into NLU systems.                            Hsin-Yuan Huang, Eunsol Choi, and Wen-tau Yih.
+                  Acknowledgments                                           2018. Flowqa: Grasping ﬂow in history for con-
+                                                                            versational machine comprehension. arXiv preprint
+                  Wethank the anonymous reviewers for their con-            arXiv:1810.06683.
+                  structive feedback. This work was completed in         M.Joshi, E. Choi, D. Weld, and L. Zettlemoyer. 2017.
+                  partial fulﬁllment for the PhD degree of Jonathan         TriviaQA: A large scale distantly supervised chal-
+                  Herzig, which was also supported by a Google              lenge dataset for reading comprehension. In Associ-
+                  PhD fellowship. This research was partially sup-          ation for Computational Linguistics (ACL).
+                  ported by The Israel Science Foundation grant          Rafal Jozefowicz, Oriol Vinyals, Mike Schuster, Noam
+                  942/16, The Blavatnik Computer Science Re-                Shazeer, and Yonghui Wu. 2016.          Exploring
+                  search Fund and The Yandex Initiative for Ma-             the limits of language modeling.   arXiv preprint
+                  chine Learning.                                           arXiv:1602.02410.
+                                                                         RKowalski and M Sergot. 1986. A logic-based calcu-
+                                                                            lus of events. New Gen. Comput., 4(1):67–95.
+                  References                                             Douglas B. Lenat. 1995. Cyc: A large-scale invest-
+                  Zheng Cai, Lifu Tu, and Kevin Gimpel. 2017. Pay at-       ment in knowledge infrastructure. Commun. ACM,
+                    tention to the ending: Strong neural baselines for the  38:32–38.
+                    roc story cloze task. In ACL.
+                                                                         Hector J. Levesque. 2011. The winograd schema chal-
+                  C. Chelba, T. Mikolov, M. Schuster, Q. Ge, T. Brants,     lenge. In AAAI Spring Symposium: Logical Formal-
+                    P. Koehn, and T. Robinson. 2013. One billion word       izations of Commonsense Reasoning.
+                                                                     4157
+                    Yang Liu, Chengjie Sun, Lei Lin, and Xiaolong Wang.            P. Rajpurkar, J. Zhang, K. Lopyrev, and P. Liang. 2016.
+                       2016.   Learning natural language inference using              Squad: 100,000+questionsformachinecomprehen-
+                       bidirectional lstm model and inner-attention. arXiv            sion of text. In Empirical Methods in Natural Lan-
+                       preprint arXiv:1605.09090.                                     guage Processing (EMNLP).
+                    Peter LoBue and Alexander Yates. 2011.           Types of      M.Roemmele,C.Bejan,andA.Gordon.2011. Choice
+                       common-sense knowledge needed for recognizing                  of plausible alternatives: An evaluation of common-
+                       textual entailment. In Proceedings of the 49th An-             sense causal reasoning. In AAAI Spring Symposium
+                       nual Meeting of the Association for Computational              on Logical Formalizations of Commonsense Rea-
+                       Linguistics: Human Language Technologies: short                soning.
+                       papers-Volume 2, pages 329–334. Association for             Roy Schwartz, Maarten Sap, Ioannis Konstas, Leila
+                       Computational Linguistics.                                     Zilles, Yejin Choi, and Noah A. Smith. 2017. The
+                    J. McCarthy. 1959. Programs with common sense. In                 effect of different writing tasks on linguistic style:
+                       Proceedings of the Teddington Conference on the                Acasestudyoftherocstory cloze task. In CoNLL.
+                       Mechanization of Thought Processes.                         M. Seo, A. Kembhavi, A. Farhadi, and H. Hajishirzi.
+                    John McCarthy and Patrick J. Hayes. 1969.           Some          2016. Bidirectional attention ﬂow for machine com-
+                       philosophical problems from the standpoint of ar-              prehension. arXiv.
+                       tiﬁcial intelligence.  In B. Meltzer and D. Michie,         Robert Speer, Joshua Chin, and Catherine Havasi.
+                       editors, Machine Intelligence 4, pages 463–502. Ed-            2017. Conceptnet 5.5: An open multilingual graph
+                       inburgh University Press. Reprinted in McC90.                  of general knowledge. In AAAI, pages 4444–4451.
+                    Todor Mihaylov, Peter Clark, Tushar Khot, and Ashish           O. Tange. 2011.         Gnu parallel - the command-
+                       Sabharwal. 2018. Can a suit of armor conduct elec-             line power tool.    ;login: The USENIX Magazine,
+                       tricity? a new dataset for open book question an-              36(1):42–47.
+                       swering.
+                    N. Mostafazadeh, N. Chambers, X. He, D. Parikh,                Trieu H Trinh and Quoc V Le. 2018.              A simple
+                       D. Batra, L. Vanderwende, P. Kohli, and J. Allen.              method for commonsense reasoning. arXiv preprint
+                       2016.   A corpus and cloze evaluation for deeper               arXiv:1806.02847.
+                       understanding of commonsense stories.         In North      T. Winograd. 1972. Understanding Natural Language.
+                       American Association for Computational Linguis-                AcademicPress.
+                       tics (NAACL).
+                                                                                   Lei Yu, Karl Moritz Hermann, Phil Blunsom, and
+                    T. Nguyen, M. Rosenberg, X. Song, J. Gao, S. Tiwary,              Stephen Pulman. 2014. Deep learning for answer
+                       R. Majumder, and L. Deng. 2016. MS MARCO:                      sentence selection. arXiv preprint arXiv:1412.1632.
+                       Ahumangeneratedmachinereadingcomprehension
+                       dataset.  In Workshop on Cognitive Computing at             Rowan Zellers, Yonatan Bisk, Ali Farhadi, and Yejin
+                       NIPS.                                                          Choi. 2018a.       From recognition to cognition:
+                                                                                      Visual commonsense reasoning.           arXiv preprint
+                    SimonOstermann,AshutoshModi,MichaelRoth,Ste-                      arXiv:1811.10830.
+                       fan Thater, and Manfred Pinkal. 2018. Mcscript: A
+                       novel dataset for assessing machine comprehension           RowanZellers,YonatanBisk,RoySchwartz,andYejin
+                       using script knowledge. CoRR, abs/1803.05223.                  Choi. 2018b.      Swag: A large-scale adversarial
+                                                                                      dataset for grounded commonsenseinference. arXiv
+                    J. Pennington, R. Socher, and C. D. Manning. 2014.                preprint arXiv:1808.05326.
+                       Glove: Global vectors for word representation. In           Sheng Zhang, Rachel Rudinger, Kevin Duh, and Ben-
+                       Empirical MethodsinNaturalLanguageProcessing                   jamin Van Durme. 2017. Ordinal common-sense in-
+                       (EMNLP).                                                       ference. TACL, 5:379–395.
+                    Matthew E. Peters, Mark Neumann, Mohit Iyyer, Matt
+                       Gardner, Christopher Clark, Kenton Lee, and Luke
+                       Zettlemoyer. 2018. Deep contextualized word rep-
+                       resentations. In Proc. of NAACL.
+                    Adam Poliak, Jason Naradowsky, Aparajita Haldar,
+                       Rachel Rudinger, and Benjamin Van Durme. 2018.
+                       Hypothesis only baselines in natural language infer-
+                       ence. In Proc. of *SEM.
+                    A. Radford, K. Narasimhan, T. Salimans, and
+                       I. Sutskever. 2018. Improving language understand-
+                       ing by generative pre-training.     Technical Report,
+                       OpenAI.
+                                                                              4158

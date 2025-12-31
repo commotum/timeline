@@ -1,0 +1,49 @@
+                  A DistantSupervision                                                  Top-1 Top-5 Top-20 Top-100
+                  Whentraining our ﬁnal DPR model using Natural            Gold          44.9     66.8     78.1       85.0
+                  Questions, we use the passages in our collection         Dist. Sup.    43.9     65.3     77.1       84.4
+                  that best match the gold context as the positive
+                  passages. As some QA datasets contain only the          Table 5: Retrieval accuracy on the development set of
+                  question and answer pairs, it is thus interesting       Natural Questions, trained on passages that match the
+                  to see when using the passages that contain the         gold context (Gold) or the top BM25 passage that con-
+                  answers as positives (i.e., the distant supervision     tains the answer (Dist. Sup.).
+                  setting), whether there is a signiﬁcant performance      Sim Loss              Retrieval Accuracy
+                  degradation. Using the question and answer to-                          Top-1 Top-5 Top-20 Top-100
+                  gether as the query, we run Lucene-BM25 and pick
+                  the top passage that contains the answer as the pos-     DP NLL          44.9    66.8     78.1      85.0
+                  itive passage. Table 5 shows the performance of                Triplet   41.6    65.0     77.2      84.5
+                  DPRwhentrained using the original setting and                  NLL       43.5    64.7     76.1      83.1
+                  the distant supervision setting.                         L2    Triplet   42.2    66.0     78.1      84.9
+                  B Alternative Similarity Functions &                    Table 6: Retrieval Top-k accuracy on the development
+                      Triplet Loss                                        set of Natural Questions using different similarity and
+                  In addition to dot product (DP) and negative log-       loss functions.
+                  likelihood based on softmax (NLL), we also exper-
+                  iment with Euclidean distance (L2) and the triplet      the correct answer, presumably by matching “body
+                  loss. We negate L2 similarity scores before ap-         of water” with semantic neighbors such as sea and
+                  plying softmax and change signs of question-to-         channel, even though no lexical overlap exists. The
+                  positive and question-to-negative similarities when     second example is one where BM25 does better.
+                  applying the triplet loss on dot product scores. The    Thesalient phrase “Thoros of Myr” is critical, and
+                  margin value of the triplet loss is set to 1. Ta-       DPRisunabletocaptureit.
+                  ble 6 summarizes the results. All these additional
+                  experiments are conducted using the same hyper-         D JointTrainingofRetrieverand
+                  parameters tuned for the baseline (DP, NLL).                 Reader
+                    Notethattheretrievalaccuracyforour“baseline”          We ﬁx the passage encoder in our joint-training
+                  settings reported in Table 5 (Gold) and Table 6         schemewhileallowing only the question encoder
+                  (DP, NLL) is slightly better than those reported in     to receive backpropagation signal from the com-
+                  Table 3. This is due to a better hyper-parameter        bined(retriever + reader) loss function. This allows
+                  setting used in these analysis experiments, which       us to leverage the HNSW-based FAISS index for
+                  is documented in our code release.                      efﬁcient low-latency retrieving, without reindexing
+                  C Qualitative Analysis                                  the passages during model updates. Our loss func-
+                                                                          tion largely follows ORQA’s approach, which uses
+                  Although DPRperforms better than BM25 in gen-           log probabilities of positive passages selected from
+                  eral, the retrieved passages of these two retrievers    the retriever model, and correct spans and passages
+                  actually differ qualitatively. Methods like BM25        selected from the reader model. Since the passage
+                  are sensitive to highly selective keywords and          encoder is ﬁxed, we could use larger amount of
+                  phrases, but cannot capture lexical variations or se-   retrieved passages when calculating the retriever
+                  mantic relationships well. In contrast, DPR excels      loss. Speciﬁcally, we get top 100 passages for each
+                  at semantic representation, but might lack sufﬁcient    question in a mini-batch and use the method similar
+                  capacity to represent salient phrases which appear      to in-batch negative training: all retrieved passages’
+                  rarely. Table 7 illustrates this phenomenon with        vectors participate in the loss calculation for all
+                  two examples. In the ﬁrst example, the top scor-        questions in a batch. Our training batch size is set
+                  ing passage from BM25 is irrelevant, even though        to 16, which effectively gives 1,600 passages per
+                  keywords such as England and Ireland appear mul-        question to calculate retriever loss. The reader still
+                  tiple times. In comparison, DPR is able to return       uses 24 passages per question, which are selected

@@ -1,0 +1,83 @@
+                                                  Stabilizing Equilibrium Models by Jacobian Regularization
+               ward/backward pass dynamics of DEQs motivate us to ap-              computation graph of this vector-Jacobian product. But at
+                                                                    ?
+               pend a soft and auxiliary Jacobian term ρ(J       (z )) to the      the same time, our hidden memory cost due to the solver
+                                                               f
+                                                                θ
+               training objective in order to regularize the model’s con-          choice is smaller (e.g., Broyden’s method; see Section 3.4)
+               ditioning. One way of doing this is by spectral normaliza-          as we can lower the number of iterations. As a result, em-
+               tion, essentially constraining σ(J   ) = max          kJ vk .       pirically we notice a roughly 30% net growth in memory
+                                                  f           kvk≤1    f     2
+                                                   θ                    θ
+               However, explicitly writing out the huge Jacobian and then          consumption compared to the unregularized DEQs at train-
+               decomposing it (e.g., by SVD) can be computationally pro-           ing (and thus saving about 50% memory compared to ex-
+               hibitive, and Miyato et al. (2018) proposes to use the power        plicit deep networks). The regularized DEQ still consumes
+               method (von Mises & Pollaczek-Geiringer, 1929) to speed             O(1) memory relative to the “depth” of the model, as the
+                                                                                                                         ?
+               up this estimation on GANs. But in the context of DEQs,             backpropagation depends only on z .
+               even power iterations are too expensive due to the succes-
+               sive vector-Jacobian product computations needed. Instead,          5. Experiments
+               weproposetoregularize the Jacobian through its Frobenius
+               normsince                                                           We validate the proposed regularization of DEQ models
+                       ρ(J ) ≤ σ(J ) ≤ qtr(J J>) = kJ k .                          on multiple fronts. First, we visualize the effect of the
+                           f          f            f             f  F              proposed Jacobian regularization on a tiny DEQ trained on
+                            θ          θ            θ f           θ
+                                                        θ
+                                                                                   a synthetic 1D dataset. Second, importantly, we focus on
+               Importantly, kJ k      can be approximated via various un-
+                                f   F                                              howourmethodalleviates some of the core problems with
+                                 θ
+               biased estimators (Hutchinson, 1989; Ubaru et al., 2017;            DEQsoutlined in Section 3. Then we show that our method
+               Meyer et al., 2021). We adopt the classical Hutchinson              scales to challenging high-dimensional tasks: word-level
+               estimator (Hutchinson, 1989); formally, for J       ∈Rd×d,
+                                                                f                  language modeling with the WikiText-103 dataset (Merity
+                                                                 θ
+                                   >                     >      2                  et al., 2017) and image classiﬁcation with CIFAR-10 and
+                           tr(J   J )=E               [k J k ],           (3)
+                               fθ f         ∈N(0,Id)       fθ 2
+                                    θ                                              ImageNet (Deng et al., 2009). We speciﬁcally compare
+               which we can approximate by Monte-Carlo estimation (i.e.,           our model with both prior DEQ networks and competitive
+               sampling M i.i.d.        ∈ N(0,I )). Speciﬁcally, prior            explicit models (e.g., ResNet-101, Transformers), in terms
+                                       i            d                              of both efﬁciency (in space and time) and performance. We
+               works (Avron & Toledo, 2011; Roosta-Khorasani & As-
+               cher, 2015) have established that the relative error of this        also explore how Jacobian regularization helps stabilize
+                                                 −1                                DEQsoverawiderrangeofarchitectural choices. Lastly,
+               estimation diminishes with M 2; and if we compute the
+               meanestimation over a mini-batch size B, the overall rel-           weperformsomeablative studies.
+                                                                   >      2
+               ative error with respect to E                    [k J k ] is
+                                              x∼p(x),∈N(0,Id)        fθ 2         The set of tasks used in our experiment is built directly
+                                                                −1
+               expectedtofurtherdiminishedbyafactorofB 2 (Hoffman                  on top of Bai et al. (2019; 2020). As we found the Ja-
+               et al., 2019).                                                      coabian regularization could sometimes hurt performance
+               Indeed, empirically, we ﬁnd that M = 1 already works                (see Sec. 5.3), we only apply the proposed loss stochastically
+               well since we use relatively large batch sizes. Since our           with a probability p, and gradually increase this p or the reg-
+               backward iterations already involved computing multiple             ularization strength γ (see Eq. (4)) over training steps. We
+                                             >                                     also use cosine learning rate schedule (Loshchilov & Hutter,
+               vector-Jacobian products u J        (see Eq. (2)), computing
+                                                fθ                                 2017) for all tasks, including the synthetic one. The mem-
+               Eq. (3) only adds a cost equivalent to that of M = 1 back-          ory and speeds reported are benchmarked across different
+               ward steps. The eventual training objective is thus                 models on the same setting (e.g., same batch size, sequence
+                                            k>J (z?)k2                            length, number of steps, etc.) with the same GPU. We
+                        ?            ?           fθ     2
+                 L (z )=L (z )+γ                         ,   ∈ N(0,I ) (4)
+                   total        orig              d                    d           provide more details regarding the tasks, hyperparameters,
+               AsweobservedinFigure1a,withoutregularization, a DEQ                 datasets, and hardware in Appendix A, and extra experimen-
+               model that stops after a ﬁxed number T of solver iterations         tal results in Appendix B. Our code and pretrained models
+               exhibits increasingly poor convergence, accompanied by a            are provided here.
+               growing kJ k at these ﬁxed points that empirically sig-
+                            f  F
+                             θ                                                     5.1. Visualization with Synthetic Data
+               nals the growing instability. Therefore, by constraining the
+               Jacobian’s Frobenius norm, we encourage DEQs to opti-               We start by empirically verifying the validity of the ap-
+               mize for stabler and simpler dynamics whose ﬁxed points             proach and visualizing its effect on a synthetic dataset.
+               are easier to solve for.                                            Wegenerated 5096 scalar data pairs (x,y) using function
+                                                                                   y = h(x) = 3x3 + x2 − 5x + 2sin(x) − 3 + δ (where
+               4.3. Memory Considerations                                                         2
+                                                                                   δ ∈ N(0,0.05)), and split them into 4096 and 1000 training
+               Although the loss objective (4) only adds minimal computa-          and validation samples, respectively. We then train a tiny
+                                                               >     2
+               tion cost, the need to backpropate through k J      k means
+                                                                  f  2
+                                                                   θ
+               we also spend more memory during training to store the

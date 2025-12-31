@@ -1,0 +1,66 @@
+                    Atrun-time, DPRappliesadifferentencoderEQ(·)                    larity) than the irrelevant ones, by learning a better
+                    that maps the input question to a d-dimensional                 embedding function.
+                                                                                                            + −             −     m
+                    vector, and retrieves k passages of which vectors                  Let D = {hqi,p ,p ,··· ,p i}i=1 be the
+                                                                                                            i    i,1        i,n
+                    are the closest to the question vector. We deﬁne                training data that consists of m instances. Each
+                    the similarity between the question and the passage             instance contains one question q and one relevant
+                                                                                                                          i
+                                                                                                          +
+                    using the dot product of their vectors:                         (positive) passage p , along with n irrelevant (neg-
+                                                                                                       − i
+                                                                                    ative) passages p     . We optimize the loss function
+                                                        |                                              i,j
+                                 sim(q,p) = EQ(q) EP(p).                    (1)     as the negative log likelihood of the positive pas-
+                    Although more expressive model forms for measur-                sage:
+                    ing the similarity between a question and a passage                                + −             −
+                                                                                               L(q ,p ,p ,··· ,p          )                (2)
+                                                                                                   i   i    i,1        i,n
+                    do exist, such as networks consisting of multiple                                                       +
+                                                                                                                    sim(qi,p )
+                    layers of cross attentions, the similarity function                                           e         i
+                                                                                          = −log               +      P                − .
+                                                                                                       sim(qi,p )        n     sim(qi,p  )
+                    needs to be decomposable so that the represen-                                    e        i   + j=1e              i,j
+                    tations of the collection of passages can be pre-               Positive and negative passages             For retrieval
+                    computed. Mostdecomposablesimilarityfunctions                   problems, it is often the case that positive examples
+                    are some transformations of Euclidean distance                  are available explicitly, while negative examples
+                    (L2). For instance, cosine is equivalent to inner               need to be selected from an extremely large pool.
+                    product for unit vectors and the Mahalanobis dis-               For instance, passages relevant to a question may
+                    tance is equivalent to L2 distance in a transformed             be given in a QA dataset, or can be found using the
+                    space. Inner product search has been widely used                answer. All other passages in the collection, while
+                    and studied, as well as its connection to cosine                not speciﬁed explicitly, can be viewed as irrelevant
+                    similarity and L2 distance (Mussmann and Ermon,                 by default. In practice, how to select negative ex-
+                    2016; Ram and Gray, 2012). As our ablation study                amples is often overlooked but could be decisive
+                    ﬁnds other similarity functions perform compara-                for learning a high-quality encoder. We consider
+                    bly (Section 5.2; Appendix B), we thus choose                   three different types of negatives: (1) Random: any
+                    the simpler inner product function and improve the              random passage from the corpus; (2) BM25: top
+                    dense passage retriever by learning better encoders.            passages returned by BM25 which don’t contain
+                    Encoders       Althoughinprinciple the question and             the answer but match most question tokens; (3)
+                    passage encoders can be implemented by any neu-                 Gold: positive passages paired with other questions
+                    ral networks, in this work we use two independent               whichappearinthetrainingset. Wewilldiscussthe
+                    BERT (Devlin et al., 2019) networks (base, un-                  impact of different types of negative passages and
+                    cased) and take the representation at the [CLS]                 training schemes in Section 5.2. Our best model
+                    token as the output, so d = 768.                                uses gold passages from the same mini-batch and
+                    Inference      During inference time, we apply the              one BM25negative passage. In particular, re-using
+                    passage encoder E        to all the passages and index          gold passages from the same batch as negatives
+                                          P                                         can make the computation efﬁcient while achiev-
+                    them using FAISS (Johnson et al., 2017) ofﬂine.                 ing great performance. We discuss this approach
+                    FAISS is an extremely efﬁcient, open-source li-                 below.
+                    brary for similarity search and clustering of dense
+                    vectors, which can easily be applied to billions of             In-batch negatives         Assume that we have B
+                    vectors. Given a question q at run-time, we derive              questions in a mini-batch and each one is asso-
+                    its embedding vq = E (q) and retrieve the top k                 ciated with a relevant passage. Let Q and P be the
+                                               Q
+                    passages with embeddings closest to vq.                        (B×d)matrixofquestionandpassageembeddings
+                                                                                                                        T
+                    3.2    Training                                                 in a batch of size B. S = QP is a (B × B) ma-
+                                                                                    trix of similarity scores, where each row of which
+                    Training the encoders so that the dot-product sim-              corresponds to a question, paired with B passages.
+                    ilarity (Eq. (1)) becomes a good ranking function               In this way, we reuse computation and effectively
+                    for retrieval is essentially a metric learning prob-            train on B2 (q , p ) question/passage pairs in each
+                                                                                                    i   j
+                    lem (Kulis, 2013). The goal is to create a vector               batch. Any (q , p ) pair is a positive example when
+                                                                                                    i  j
+                    space such that relevant pairs of questions and pas-            i = j, and negative otherwise. This creates B train-
+                    sages will have smaller distance (i.e., higher simi-            ing instances in each batch, where there are B − 1

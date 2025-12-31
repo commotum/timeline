@@ -1,0 +1,463 @@
+                                Relational recurrent neural networks
+                                     α              α             α        αβ                α
+                        AdamSantoro* ,RyanFaulkner* ,DavidRaposo* ,JackRae ,MikeChrzanowski ,
+                                     α            α            α              α                αβ
+                      ThéophaneWeber ,DaanWierstra ,OriolVinyals ,RazvanPascanu ,TimothyLillicrap
+                                                    *Equal Contribution
+                                                       αDeepMind
+                                                  London, United Kingdom
+                                    βCoMPLEX,ComputerScience,UniversityCollege London
+                                                  London, United Kingdom
+                                 {adamsantoro; rfaulk; draposo; jwrae; chrzanowskim;
+                              theophane; weirstra; vinyals; razp; countzero}@google.com
+                                                      Abstract
+                            Memory-basedneural networks model temporal data by leveraging an ability to
+                            rememberinformation for long periods. It is unclear, however, whether they also
+                            have an ability to perform complex relational reasoning with the information they
+                            remember. Here, we ﬁrst conﬁrm our intuitions that standard memory architectures
+                            maystruggle at tasks that heavily involve an understanding of the ways in which
+                            entities are connected – i.e., tasks involving relational reasoning. We then improve
+                            uponthese deﬁcits by using a new memory module – a Relational Memory Core
+                           (RMC)–whichemploysmulti-headdot product attention to allow memories to
+                            interact. Finally, we test the RMC on a suite of tasks that may proﬁt from more
+                            capable relational reasoning across sequential information, and show large gains
+                            in RL domains (e.g. Mini PacMan), program evaluation, and language modeling,
+                            achieving state-of-the-art results on the WikiText-103, Project Gutenberg, and
+                            GigaWorddatasets.
+                     1  Introduction
+       arXiv:1806.01822v2  [cs.LG]  28 Jun 2018Humansusesophisticated memory systems to access and reason about important information regard-
+                     less of when it was initially perceived [1, 2]. In neural network research many successful approaches
+                     to modeling sequential data also use memory systems, such as LSTMs [3] and memory-augmented
+                     neural networks generally [4–7]. Bolstered by augmented memory capacities, bounded computational
+                     costs over time, and an ability to deal with vanishing gradients, these networks learn to correlate
+                     events across time to be proﬁcient at storing and retrieving information.
+                     Here we propose that it is fruitful to consider memory interactions along with storage and retrieval.
+                     Although current models can learn to compartmentalize and relate distributed, vectorized memories,
+                     they are not biased towards doing so explicitly. We hypothesize that such a bias may allow a model
+                     to better understand how memories are related, and hence may give it a better capacity for relational
+                     reasoning over time. We begin by demonstrating that current models do indeed struggle in this
+                     domain by developing a toy task to stress relational reasoning of sequential information. Using a new
+                     Relational Memory Core (RMC), which uses multi-head dot product attention to allow memories to
+                     interact with each other, we solve and analyze this toy problem. We then apply the RMC to a suite
+                     of tasks that may proﬁt from more explicit memory-memory interactions, and hence, a potentially
+                     Preprint. Work in progress.
+                                  increased capacity for relational reasoning across time: partially observed reinforcement learning
+                                  tasks, program evaluation, and language modeling on the Wikitext-103, Project Gutenberg, and
+                                  GigaWorddatasets.
+                                  2    Relational reasoning
+                                  We take relational reasoning to be the process of understanding the ways in which entities are
+                                  connected and using this understanding to accomplish some higher order goal [8]. For example,
+                                  consider sorting the distances of various trees to a park bench: the relations (distances) between the
+                                  entities (trees and bench) are compared and contrasted to produce the solution, which could not be
+                                  reached if one reasoned about the properties (positions) of each individual entity in isolation.
+                                  Since we can often quite ﬂuidly deﬁne what constitutes an “entity” or a “relation”, one can imagine a
+                                  spectrum of neural network inductive biases that can be cast in the language of relational reasoning
+                                  1.  For example, a convolutional kernel can be said to compute a relation (linear combination)
+                                  of the entities (pixels) within a receptive ﬁeld. Some previous approaches make the relational
+                                  inductive bias more explicit: in message passing neural networks [e.g. 9–12], the nodes comprise
+                                  the entities and relations are computed using learnable functions applied to nodes connected with
+                                  an edge, or sometimes reducing the relational function to a weighted sum of the source entities [e.g.
+                                 13, 14]. In Relation Networks [15–17] entities are obtained by exploiting spatial locality in the input
+                                  image, and the model focuses on computing binary relations between each entity pair. Even further,
+                                  some approaches emphasize that more capable reasoning may be possible by employing simple
+                                  computational principles; by recognizing that relations might not always be tied to proximity in space,
+                                  non-local computations may be better able to capture the relations between entities located far away
+                                  from each other [18, 19].
+                                  In the temporal domain relational reasoning could comprise a capacity to compare and contrast
+                                  information seen at different points in time [20]. Here, attention mechanisms [e.g. 21, 22] implicitly
+                                  perform some form of relational reasoning; if previous hidden states are interpreted as entities, then
+                                  computing a weighted sum of entities using attention helps to remove the locality bias present in
+                                  vanilla RNNs, allowing embeddings to be better related using content rather than proximity.
+                                  Since our current architectures solve complicated temporal tasks they must have some capacity for
+                                  temporal relational reasoning. However, it is unclear whether their inductive biases are limiting, and
+                                  whether these limitations can be exposed with tasks demanding particular types of temporal relational
+                                  reasoning. For example, memory-augmented neural networks [4–7] solve a compartmentalization
+                                  problem with a slot-based memory matrix, but may have a harder time allowing memories to interact,
+                                  or relate, with one another once they are encoded. LSTMs [3, 23], on the other hand, pack all
+                                  information into a common hidden memory vector, potentially making compartmentalization and
+                                  relational reasoning more difﬁcult.
+                                  3    Model
+                                  Ourguiding design principle is to provide an architectural backbone upon which a model can learn
+                                  to compartmentalize information, and learn to compute interactions between compartmentalized
+                                  information. To accomplish this we assemble building blocks from LSTMs, memory-augmented
+                                  neural networks, and non-local networks (in particular, the Transformer seq2seq model [22]). Similar
+                                  to memory-augmented architectures we consider a ﬁxed set of memory slots; however, we allow for
+                                  interactions between memory slots using an attention mechanism. As we will describe, in contrast to
+                                  previous work we apply attention between memories at a single time step, and not across all previous
+                                  representations computed from all previous observations.
+                                  3.1    Allowing memories to interact using multi-head dot product attention
+                                  Wewill ﬁrst assume that we do not need to consider memory encoding; that is, that we already
+                                  have some stored memories in matrix M, with row-wise compartmentalized memories m . To allow
+                                                                                                                                              i
+                                  memories to interact we employ multi-head dot product attention (MHDPA) [22], also known as
+                                      1Indeed, in the broadest sense any multivariable function must be considered “relational.”
+                                                                                              2
+                           3.2   Encodingnewmemories
+                           WeassumedthatwealreadyhadamatrixofmemoriesM. Ofcourse,memoriesinsteadneedtobe
+                           encoded as new inputs are received. Suppose then that M is some randomly initialised memory. We
+                           can efﬁciently incorporate new information x into M with a simple modiﬁcation to equation 1:
+                                                   f             MWq([M;x]Wk)T                   v
+                                                   M=softmax               √dk            [M;x]W ,                        (2)
+                           where we use [M;x] to denote the row-wise concatenation of M and x. Since we use [M;x] when
+                                                                                                     f
+                           computing the keys and values, and only M when computing the queries, M is a matrix with same
+                           dimensionality as M. Thus, equation 2 is a memory-size preserving attention operation that includes
+                           attention over the memories and the new observations. Notably, we use the same attention operation
+                           to efﬁciently compute memory interactions and to incorporate new information.
+                           Wealsonotethepossible utility of this operation when the memory consists of a single vector rather
+                           than a matrix. In this case the model may learn to pick and choose which information from the input
+                           should be written into the vector memory state by learning how to attend to the input, conditioned
+                           on what is contained in the memory already. This is possible in LSTMs via the gates, though at a
+                           different granularity. We return to this idea, and the possible compartmentalization that can occur via
+                           the heads even in the single-memory-slot case, in the discussion.
+                           3.3   Introducing recurrence and embedding into an LSTM
+                                                                                                                           f
+                           Suppose we have a temporal dimension with new observations at each timestep, xt. Since M and M
+                           are the same dimensionality, we can naively introduce recurrence by ﬁrst randomly initialising M,
+                                                     f
+                           and then updating it with M at each timestep. We chose to do this by embedding this update into an
+                           LSTM.SupposememorymatrixM canbeinterpretedasamatrixofcellstates,usuallydenotedasC,
+                           for a 2-dimensional LSTM. We can make the operations of individual memories m nearly identical
+                                                                                                            i
+                           to those in a normal LSTM cell state as follows (subscripts are overloaded to denote the row from a
+                           matrix, and timestep; e.g., m  is the ith row from M at time t).
+                                                        i,t
+                                                     s   =(h       , m     )                                              (3)
+                                                      i,t     i,t−1   i,t−1
+                                                     f   =Wfx +Ufh             +bf                                        (4)
+                                                      i,t        t       i,t−1
+                                                     i   =Wix +Uih            +bi                                         (5)
+                                                      i,t     o t      o i,t−1    o
+                                                     oi,t = W xt +U hi,t−1 +b                                             (6)
+                                                                     f
+                                                                    ˜
+                                                    m =σ(f +b )◦m                +σ(i )◦g (me )                           (7)
+                                                      i,t      i,t          i,t−1      i,t    ψ   i,t
+                                                     h =σ(o )◦tanh(m )                       |  {z  }                     (8)
+                                                      i,t      i,t          i,t
+                                                   s     =(m ,h )                                                         (9)
+                                                    i,t+1      i,t i,t
+                           Theunderbrace denotes the modiﬁcation to a standard LSTM. In practice we did not ﬁnd output gates
+                           necessary – please see the url in the footnote for our Tensorﬂow implementation of this model in the
+                           Sonnet library 2, and for the exact formulation we used, including our choice for the g  function
+                                                                                                                  ψ
+                           (brieﬂy, we found a row/memory-wise MLP with layer normalisation to work best). There is also an
+                           interesting opportunity to introduce a different kind of gating, which we call ‘memory’ gating, which
+                           resembles previous gating ideas [24, 3]. Instead of producing scalar gates for each individual unit
+                           (‘unit’ gating), we can produce scalar gates for each memory row by converting Wf, Wi, Wo, Uf,
+                           Ui, and Uo from weight matrices into weight vectors, and by replacing the element-wise product in
+                           the gating equations with scalar-vector multiplication.
+                           Since parameters Wf, Wi, Wo, Uf, Ui, Uo, and ψ are shared for each mi, we can modify the
+                           number of memories without affecting the number of parameters. Thus, tuning the number of
+                           memories and the size of each memory can be used to balance the overall storage capacity (equal
+                           to the total number of units, or elements, in M) and the number of parameters (proportional to the
+                           dimensionality of m ). We ﬁnd in our experiments that some tasks require more, but not necessarily
+                                               i
+                           larger, memories, and others such as language modeling require fewer, larger memories.
+                              2https://github.com/deepmind/sonnet/blob/master/sonnet/python/modules/
+                           relational_memory.py
+                                                                           4
+                           picked up. We also point the reader to the appendix for a description and results of another RL task
+                           called BoxWorld, which demands relational reasoning in memory space.
+                           4.3  LanguageModeling
+                           Finally, we investigate the task of word-based language modeling. We model the conditional prob-
+                           ability p(wt|w<t) of a word wt given a sequence of observed words w<t = (wt−1,wt−2,...,w1).
+                           Language models can be directly applied to predictive keyboard and search-phrase completion,
+                           or they can be used as components within larger systems, e.g. machine translation [27], speech
+                           recognition [28], and information retrieval [29]. RNNs, and most notably LSTMs, have proven to be
+                           state-of-the-art on many competitive language modeling benchmarks such as Penn Treebank [30, 31],
+                           WikiText-103 [32, 33], and the One Billion Word Benchmark [34, 35]. As a sequential reasoning
+                           task, language modeling allows us to assess the RMC’s ability to process information over time on a
+                           large quantity of natural data, and compare it to well-tuned models.
+                           Wefocusondatasetswithcontiguoussentencesandamoderatelylargeamountofdata. WikiText-103
+                           satisﬁes this set of requirements as it consists of Wikipedia articles shufﬂed at the article level with
+                           roughly 100M training tokens, as do two stylistically different sources of text data: books from
+                                            3
+                           Project Gutenberg and news articles from GigaWord v5 [36]. Using the same processing from [32]
+                           these datasets consist of 180M training tokens and 4B training tokens respectively, thus they cover
+                           a range of styles and corpus sizes. We choose a similar vocabulary size for all three datasets of
+                           approximately 250,000, which is large enough to include rare words and numeric values.
+                           5   Results
+                           5.1  Nth Farthest
+                           This task revealed a stark difference between our LSTM and DNC baselines and RMC when training
+                           on 16-dimensional vector inputs. Both LSTM and DNC models failing to surpass 30% best batch
+                           accuracy and the RMC consistently achieving 91% at the end of training (see ﬁgure 5 in the appendix
+                           for training curves). The RMC achieved similar performance when the difﬁculty of the task was
+                           increased by using 32-dimensional vectors, placing a greater demand on high-ﬁdelity memory storage.
+                           However, this performance was less robust with only a small number of seeds/model conﬁgurations
+                           demonstrating this performance, in contrast to the 16-dimensional vector case where most model
+                           conﬁgurations succeeded.
+                           Anattention analysis revealed some notable features of the RMC’s internal functions. Figure 3 shows
+                           attention weights in the RMC’s memory throughout a sequence: the ﬁrst row contains a sequence
+                           where the reference vector m was observed last; in the second row it was observed ﬁrst; and in the
+                           last row it was observed in the middle of the sequence. Before m is seen the model seems to shuttle
+                           input information into one or two memory slots, as shown by the high attention weights from these
+                           slots’ queries to the input key. After m is seen, most evident in row three of the ﬁgure, the model
+                           tends to change its attention behaviour, with all the memory slots preferentially focusing attention
+                           on those particular memories to which the m was written. Although this attention analysis provides
+                           some useful insights, the conclusions we can make are limited since even after a single round of
+                           attention the memory can become highly distributed, making any interpretations about information
+                           compartmentalisation potentially inaccurate.
+                           5.2  ProgramEvaluation
+                           Program evaluation performance was assessed via the Learning to Execute tasks [25]. We evaluated
+                           a number of baselines alongside the RMC including an LSTM [3, 37], DNC [5], and a bank of
+                           LSTMsresemblingRecurrent Entity Networks [38] (EntNet) - the conﬁgurations for each of these is
+                           described in the appendix. Best test batch accuracy results are shown in Table 1. The RMC performs
+                           at least as well as all of the baselines on each task. It is marginally surpassed by a small fraction of
+                           performance on the double memorization task, but both models effectively solve this task. Further,
+                           the results of the RMC outperform all equivalent tasks from [25] which use teacher forcing even when
+                           evaluating model performance. It’s worth noting that we observed better results when we trained in a
+                              3Project Gutenberg. (n.d.). Retrieved January 2, 2018, from www.gutenberg.org
+                                                                          6
+                           5.3  Mini-Pacman
+                           In Mini Pacman with viewport the RMC achieved approximately 100 points more than an LSTM
+                           (677 vs. 550), and when trained with the full observation the RMC nearly doubled the performance
+                           of an LSTM (1159 vs. 598, ﬁgure 10).
+                           5.4  LanguageModeling
+                           For all three language modeling tasks we observe lower perplexity when using the relational memory
+                           core, with a drop of 1.4 − 5.4 perplexity over the best published results. Although small, this
+                           constitutes a 5 − 12% relative improvement and appears to be consistent across tasks of varying
+                           size and style. For WikiText-103, we see this can be compared to LSTM architectures [5, 32],
+                           convolutional models [42] and hybrid recurrent-convolutional models [43].
+                           Themodellearns with a slightly better data efﬁciency than an LSTM (appendix ﬁgure 11). The RMC
+                           scored highly when the number of context words provided during evaluation were relatively few,
+                           comparedtoanLSTMwhichproﬁtedmuchmorefromalargercontext(supplementaryﬁgure12).
+                           This could be because RMC better captures short-term relations, and hence only needs a relatively
+                           small context for accurate modeling. Inspecting the perplexity broken down by word frequency in
+                           supplementary table 3, we see the RMC improved the modeling of frequent words, and this is where
+                           the drop in overall perplexity is obtained.
+                           6   Discussion
+                           Anumberofotherapproacheshaveshownsuccessinmodelingsequentialinformation by using a
+                           growing buffer of previous states [21, 22]. These models better capture long-distance interactions,
+                           since their computations are not biased by temporally local proximity. However, there are serious
+                           scaling issues for these models when the number of timesteps is large, or even unbounded, such as
+                           in online reinforcement learning (e.g., in the real world). Thus, some decisions need to be made
+                           regarding the size of the past-embedding buffer that should be stored, whether it should be a rolling
+                           window, how computations should be cached and propagated across time, etc. These considerations
+                           make it difﬁcult to directly compare these approaches in these online settings. Nonetheless, we
+                           believe that a blend of purely recurrent approaches with those that scale with time could be a fruitful
+                           pursuit: perhaps the model accumulates memories losslessly for some chunk of time, then learns to
+                           compress it in a recurrent core before moving onto processing a subsequent chunk.
+                           Weproposed intuitions for the mechanisms that may better equip a model for complex relational
+                           reasoning. Namely, by explicitly allowing memories to interact either with each other, with the
+                           input, or both via MHDPA, we demonstrated improved performance on tasks demanding relational
+                           reasoning across time. We would like to emphasize, however, that while these intuitions guided our
+                           design of the model, and while the analysis of the model in the Nth farthest task aligned with our
+                           intuitions, we cannot necessarily make any concrete claims as to the causal inﬂuence of our design
+                           choices on the model’s capacity for relational reasoning, or as to the computations taking place within
+                           the model and how they may map to traditional approaches for thinking about relational reasoning.
+                           Thus, we consider our results primarily as evidence of improved function – if a model can better
+                           solve tasks that require relational reasoning, then it must have an increased capacity for relational
+                           reasoning, even if we do not precisely know why it may have this increased capacity. In this light the
+                           RMCmaybeusefullyviewedfrommultiplevantages,andthese vantages may offer ideas for further
+                           improvements.
+                           Our model has multiple mechanisms for forming and allowing for interactions between memory
+                           vectors: slicing the memory matrix row-wise into slots, and column-wise into heads. Each has its
+                           own advantages (computations on slots share parameters, while having more heads and a larger
+                           memorysize takes advantage of more parameters). We don’t yet understand the interplay, but we
+                           note some empirical ﬁndings. First, in the the Nth farthest task a model with a single memory slot
+                           performed better when it had more attention heads, though in all cases it performed worse than a
+                           model with many memory slots. Second, in language modeling, our model used a single memory
+                           slot. The reasons for choosing a single memory here were mainly due to the need for a large number
+                           of parameters for LM in general (hence the large size for the single memory slot), and the inability to
+                           quickly run a model with both a large number of parameters and multiple memory slots. Thus, we do
+                                                                          8
+           not necessarily claim that a single memory slot is best for language modeling, rather, we emphasize
+           an interesting trade-off between number of memories and individual memory size, which may be
+           a task speciﬁc ratio that can be tuned. Moreover, in program evaluation, an intermediate solution
+           workedwellacross subtasks (4 slots and heads), though some performed best with 1 memory, and
+           others with 8.
+           Altogether, our results show that explicit modeling of memory interactions improves performance in
+           a reinforcement learning task, alongside program evaluation, comparative reasoning, and language
+           modeling, demonstrating the value of instilling a capacity for relational reasoning in recurrent neural
+           networks.
+           Acknowledgements
+           WethankCaglarGulcehre,MattBotvinick,ViniciusZambaldi,CharlesBlundell,SébastienRacaniere,
+           Chloe Hillier, Victoria Langston, and many others on the DeepMind team for critical feedback,
+           discussions, and support.
+                               9
+             References
+             [1] Daniel L Schacter and Endel Tulving. Memory systems 1994. Mit Press, 1994.
+             [2] Barbara J Knowlton, Robert G Morrison, John E Hummel, and Keith J Holyoak. A neurocomputational
+               system for relational reasoning. Trends in cognitive sciences, 16(7):373–381, 2012.
+             [3] Sepp Hochreiter and Jurgen Schmidhuber. Long short term memory. Neural Computation, Volume 9, Issue
+               8November15,1997,p.1735-1780, 1997.
+             [4] Alex Graves, Greg Wayne, and Ivo Danihelka. Neural turing machines. arXiv preprint arXiv:1410.5401,
+               2014.
+                                                       ´
+             [5] Alex Graves, Greg Wayne, Malcolm Reynolds, Tim Harley, Ivo Danihelka, Agnieszka Grabska-Barwinska,
+               Sergio Gómez Colmenarejo, Edward Grefenstette, Tiago Ramalho, John Agapiou, et al. Hybrid computing
+               using a neural network with dynamic external memory. Nature, 538(7626):471, 2016.
+             [6] Adam Santoro, Sergey Bartunov, Matthew Botvinick, Daan Wierstra, and Timothy Lillicrap. Meta-
+               learning with memory-augmented neural networks. In International conference on machine learning,
+               pages 1842–1850, 2016.
+             [7] Sainbayar Sukhbaatar, Jason Weston, Rob Fergus, et al. End-to-end memory networks. In Advances in
+               neural information processing systems, pages 2440–2448, 2015.
+             [8] James A Waltz, Barbara J Knowlton, Keith J Holyoak, Kyle B Boone, Fred S Mishkin, Marcia
+               de Menezes Santos, Carmen R Thomas, and Bruce L Miller. A system for relational reasoning in
+               humanprefrontal cortex. Psychological science, 10(2):119–125, 1999.
+             [9] Justin Gilmer, Samuel S Schoenholz, Patrick F Riley, Oriol Vinyals, and George E Dahl. Neural message
+               passing for quantum chemistry. arXiv preprint arXiv:1704.01212, 2017.
+             [10] Franco Scarselli, Marco Gori, Ah Chung Tsoi, Markus Hagenbuchner, and Gabriele Monfardini. The
+               graph neural network model. IEEE Transactions on Neural Networks, 20(1):61–80, 2009.
+             [11] Yujia Li, Daniel Tarlow, Marc Brockschmidt, and Richard S. Zemel. Gated graph sequence neural networks.
+               ICLR, 2016.
+             [12] Peter Battaglia, Razvan Pascanu, Matthew Lai, Danilo Jimenez Rezende, et al. Interaction networks for
+               learning about objects, relations and physics. In Advances in neural information processing systems, pages
+               4502–4510, 2016.
+             [13] Thomas N Kipf and Max Welling. Semi-supervised classiﬁcation with graph convolutional networks.
+               arXiv preprint arXiv:1609.02907, 2016.
+                   ˇ ´
+             [14] Petar Velickovic, Guillem Cucurull, Arantxa Casanova, Adriana Romero, Pietro Liò, and Yoshua Bengio.
+               Graph attention networks. In International Conference on Learning Representations, 2018.
+             [15] AdamSantoro, David Raposo, David G Barrett, Mateusz Malinowski, Razvan Pascanu, Peter Battaglia,
+               and Tim Lillicrap. A simple neural network module for relational reasoning. In Advances in neural
+               information processing systems, pages 4974–4983, 2017.
+             [16] David Raposo, Adam Santoro, David Barrett, Razvan Pascanu, Timothy Lillicrap, and Peter Battaglia. Dis-
+               covering objects and their relations from entangled scene representations. arXiv preprint arXiv:1702.05068,
+               2017.
+             [17] Han Hu, Jiayuan Gu, Zheng Zhang, Jifeng Dai, and Yichen Wei. Relation networks for object detection.
+               arXiv preprint arXiv:1711.11575, 2017.
+             [18] Xiaolong Wang, Ross Girshick, Abhinav Gupta, and Kaiming He. Non-local neural networks. arXiv
+               preprint arXiv:1711.07971, 2017.
+             [19] Ding Liu, Bihan Wen, Yuchen Fan, Chen Change Loy, and Thomas S Huang. Non-local recurrent network
+               for image restoration. arXiv preprint arXiv:1806.02919, 2018.
+             [20] Juan Pavez, Héctor Allende, and Héctor Allende-Cid. Working memory networks: Augmenting memory
+               networks with a relational reasoning module. arXiv preprint arXiv:1805.09354, 2018.
+             [21] Dzmitry Bahdanau, Kyunghyun Cho, and Yoshua Bengio. Neural machine translation by jointly learning
+               to align and translate. ICLR, abs/1409.0473, 2015.
+                                  10
+             [22] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz
+               Kaiser, and Illia Polosukhin. Attention is all you need. In Advances in Neural Information Processing
+               Systems, pages 6000–6010, 2017.
+             [23] Alex Graves. Generating sequences with recurrent neural networks. CoRR, abs/1308.0850, 2013.
+             [24] Felix A Gers, Jürgen Schmidhuber, and Fred Cummins. Learning to forget: Continual prediction with lstm.
+               1999.
+             [25] Wojciech Zaremba and Ilya Sutskever. Learning to execute. arXiv preprint arXiv:1410.4615v3, 2014.
+             [26] Théophane Weber, Sébastien Racanière, David P Reichert, Lars Buesing, Arthur Guez, Danilo Jimenez
+               Rezende,AdriaPuigdomènechBadia,OriolVinyals,NicolasHeess,YujiaLi,etal. Imagination-augmented
+               agents for deep reinforcement learning. arXiv preprint arXiv:1707.06203, 2017.
+             [27] Kyunghyun Cho, Bart Van Merriënboer, Caglar Gulcehre, Dzmitry Bahdanau, Fethi Bougares, Holger
+               Schwenk, and Yoshua Bengio. Learning phrase representations using rnn encoder-decoder for statistical
+               machine translation. arXiv preprint arXiv:1406.1078, 2014.
+             [28] Dzmitry Bahdanau, Jan Chorowski, Dmitriy Serdyuk, Philemon Brakel, and Yoshua Bengio. End-to-end
+               attention-based large vocabulary speech recognition. In Acoustics, Speech and Signal Processing (ICASSP),
+               2016 IEEE International Conference on, pages 4945–4949. IEEE, 2016.
+             [29] Djoerd Hiemstra. Using language models for information retrieval. 2001.
+             [30] Zhilin Yang, Zihang Dai, Ruslan Salakhutdinov, and William W Cohen. Breaking the softmax bottleneck:
+               a high-rank rnn language model. arXiv preprint arXiv:1711.03953, 2017.
+             [31] Mitchell P Marcus, Mary Ann Marcinkiewicz, and Beatrice Santorini. Building a large annotated corpus
+               of english: The penn treebank. Computational linguistics, 19(2):313–330, 1993.
+             [32] Jack W Rae, Chris Dyer, Peter Dayan, and Timothy P Lillicrap. Fast parametric learning with activation
+               memorization. arXiv preprint arXiv:1803.10049, 2018.
+             [33] Stephen Merity, Caiming Xiong, James Bradbury, and Richard Socher. Pointer sentinel mixture models.
+               arXiv preprint arXiv:1609.07843, 2016.
+             [34] Rafal Jozefowicz, Oriol Vinyals, Mike Schuster, Noam Shazeer, and Yonghui Wu. Exploring the limits of
+               language modeling. arXiv preprint arXiv:1602.02410, 2016.
+             [35] Ciprian Chelba, Tomas Mikolov, Mike Schuster, Qi Ge, Thorsten Brants, Phillipp Koehn, and Tony
+               Robinson. One billion word benchmark for measuring progress in statistical language modeling. arXiv
+               preprint arXiv:1312.3005, 2013.
+             [36] Robert Parker, David Graff, Junbo Kong, Ke Chen, and Kazuaki Maeda. English gigaword ﬁfth edition
+               ldc2011t07. dvd. Philadelphia: Linguistic Data Consortium, 2011.
+             [37] Razvan Pascanu, Caglar Gulcehre, Kyunghyun Cho, and Yoshua Bengio. How to construct deep recurrent
+               neural networks. arXiv preprint arXiv:1312.6026, 2013.
+             [38] Mikael Henaff, Jason Weston, Arthur Szlam, Antoine Bordes, and Yann LeCun. Tracking the world state
+               with recurrent entity networks. In Fifth International Conference on Learning Representations, 2017.
+             [39] Navdeep Jaitly Noam Shazeer Samy Bengio, Oriol Vinyals. Scheduled sampling for sequence prediction
+               with recurrent neural networks. In Advances in Neural Information Processing Systems 28, 2015.
+             [40] EdouardGrave,ArmandJoulin,andNicolasUsunier. Improvingneurallanguagemodelswithacontinuous
+               cache. arXiv preprint arXiv:1612.04426, 2016.
+             [41] Shaojie Bai, J Zico Kolter, and Vladlen Koltun. Convolutional sequence modeling revisited. 2018.
+             [42] Yann N Dauphin, Angela Fan, Michael Auli, and David Grangier. Language modeling with gated
+               convolutional networks. arXiv preprint arXiv:1612.08083, 2016.
+             [43] Stephen Merity, Nitish Shirish Keskar, James Bradbury, and Richard Socher. Scalable language modeling:
+               Wikitext-103 on a single gpu in 12 hours. 2018.
+             [44] Diederik P Kingma and Jimmy Ba. Adam: A method for stochastic optimization. arXiv preprint
+               arXiv:1412.6980, 2014.
+                                  11
+             [45] Ilya Sutskever, Oriol Vinyals, and Quoc V. Le. Sequence to sequence learning with neural networks. In
+               Advances in neural information processing systems 27, 2014.
+             [46] Vinicius Zambaldi, David Raposo, Adam Santoro, Victor Bapst, Yujia Li, Igor Babuschkin, Karl Tuyls,
+               David Reichert, Timothy Lillicrap, Edward Lockhart, Murray Shanahan, Victoria Langston, Razvan
+               Pascanu, Matthew Botvinick, Oriol Vinyals, and Peter Battaglia. Relational deep reinforcement learning.
+               arXiv preprint, 2018.
+             [47] Lasse Espeholt, Hubert Soyer, Remi Munos, Karen Simonyan, Volodymir Mnih, Tom Ward, Yotam Doron,
+               Vlad Firoiu, Tim Harley, Iain Dunning, et al. Importance weighted actor-learner architectures: Scalable
+               distributed deep-rl with importance weighted actor-learner architectures. arXiv preprint arXiv:1802.01561,
+               2018.
+                                  12
+                             A Furthertaskdetails, analyses, and model conﬁgurations
+                             In the following sections we provide further details on the experiments and the model conﬁgurations. We will
+                             sometimes refer to the following terms when describing the model:
+                                    • “total units”: The total number of elements in the memory matrix M. Equivalent to the size of each
+                                       memorymultiplied by the number of memories.
+                                    • “numheads”: The number of attention heads; i.e., the number of unique sets of queries, keys, and
+                                       values produced for the memories.
+                                    • “memoryslots” or “number of memories”: Equivalent to the number of rows in matrix M.
+                                    • “numblocks”: The number of iterations of attention performed at each time-step.
+                                    • “gate style”: Gating per unit or per memory slot
+                             A.1    Nth Farthest
+                             Inputs consisted of sequences of eight randomly sampled, 16-dimensional vectors from a uniform distribution
+                             xt ∼ U(−1,1), and vector labels lt ∼ {1,2,...,8}, encoded as a one-hot vectors and sampled without
+                             replacement. Labels were sampled and hence did not correspond to the time-points at which the vectors were
+                             presented to the model. Appended to each vector-label input was the task speciﬁcation (i.e., the values of n and
+                             mforthat sequence), also encoded as one-hot vectors. Thus, an input for time-step t was a 40-dimensional
+                             vector (xt;lt;n;m).
+                             For all models (RMC, LSTM, DNC) we used the Adam optimiser [44] with a batch size of 1600, learning rates
+                             tuned between 1e−5 and 1e−3, and trained using a softmax cross entropy loss function. All the models had
+                             an equivalent 4-layer MLP (256 units per layer with ReLu non-linearities) to process their outputs to produce
+                             logits for the softmax. Learning rate did not seem to inﬂuence performance, so we settled on 1e−4 for the ﬁnal
+                             experiments.
+                             For the LSTM and DNC, architecture parameters seemingly made no difference to model performance. For the
+                             LSTMwetriedhiddensizesrangingfrom64upto4096units,andfortheDNCwetried1,8,or16memories,
+                             128, 512, or 1024 memory sizes (which we tied to the controller LSTM size), and 1, 2, or 4 memory reads &
+                             writes. The DNC used a 2-layer LSTM controller.
+                             For the RMC we used 1, 8, or 16 memories with 2048 total units (so, the size of each memory was   2048  ),
+                                                                                                                             num_mems
+                             1, 8, or 16 heads, 1 block of attention, and both the ‘unit’ and ‘memory’ gating methods. Figure 4 shows the
+                             results of a hyperparameter sweep scaled according to wall-clock time (models with more but smaller memories
+                             are faster to run than those with fewer but larger memories, and we chose to compare models with equivalent
+                             numberoftotal units in the memory matrix M).
+                             A.2    ProgramEvaluation
+                             Tofurther study the effect of relational structure on working memory and symbolic representation we turned
+                             to a set of problems that provided insights into the RMC’s ﬁtness as a generalized computational model. The
+                             Learning to Execute (LTE) dataset [25] provided a good starting point for assessing the power of our model
+                             over this class of problems. Sample problems are of the form of linear time, constant memory, mini-programs.
+                             Training samples were generated in batches of 128 on-the-ﬂy. Each model was trained for 200K iterations using
+                             an Adamoptimiser and learning rate of 1e−3. The samples were parameterized by literal length and nesting
+                             depth which deﬁne the length of terminal values in the program snippets and the level of program operation
+                             nesting. Within each batch the literal length and nesting value was sampled uniformly up to the maximum value
+                             for each - this is consistent with the Mix curriculum strategy from [25]. We evaluated the model against a batch
+                             of 12800 samples using the maximum nesting and literal length values for all samples and report the top score.
+                             Examples of samples for each task can be found in ﬁgure 6 and ﬁgure 7. It also worth noting that the modulus
+                             operation was applied to addition, control, and full program samples so as to bound the output to the maximum
+                             literal length in case of longer for-loops.
+                             The sequential model consists of an encoder and a decoder which each take the form of a recurrent neural
+                             network [45, 25]. Once the encoder has processed the input sequence the state of the encoder is used to initialize
+                             the decoder state and subsequently to generate the target sequence (program output). The output from all
+                             models is passed through a 4-layer MLP - all layers have size 256 with an output ReLU - to generate an output
+                             embedding at each step of the output sequence.
+                             In [25] teacher forcing is used for both training and testing in the decode phase. For our experiments, we began
+                             byexploring teacher forcing during training but used model predictions from the previous step as input to the
+                             the decoder at the next step when evaluating the model [45]. We also considered the potential effect of limiting
+                                                                                13
+                       Figure 6: Samples of programmatic tasks. Note that training samples will sample literal length up to
+                       including the maximum length.
+                              Figure 7: Memorization tasks. Each sub-task takes the form of a list permutation.
+                       Asseeninﬁgure8theRMCtendstoquicklyachievehighperformancerelativetothebaselines,thisdemonstrates
+                       gooddata efﬁciency for these tasks especially when compared to the LSTM. From the same ﬁgure and table 1
+                       (the results in the table depict converged accuracy scores for nesting 2 and literal length 5) it is also clear that the
+                       RMCscoreswellamongthefullsetofprogramevaluation tasks where the DNC faltered on the control task
+                       and the EntNet on copy and double tasks. It should ﬁnally be noted that due to the RMC model size scaling
+                       with respect to total memory size over number of memories and consequently the top performing LSTM models
+                       contained many more parameters than the top performing RMC models.
+                       A.3  Viewport BoxWorld
+                       WestudyavariantofBoxWorld,whichisapixel-based,highlycombinatorialreinforcementlearningenvironment
+                       that demands relational reasoning-based planning, initially developed in [46]. It consists of a grid of 14 × 14
+                       pixels: grey pixels denote the background, lone colored pixels are keys that can be picked up, and duples of
+                       colored pixels are locks and keys, where the right pixel of the duple denotes the color of the lock (and hence
+                       the color of the key that is needed to open the lock), and the left pixel denotes the color of the key that would
+                       be obtained should the agent open the lock. The agent is denoted by a dark grey pixel, and has four actions:
+                       up, down, left, right. To make this task demand relational reasoning in a memory space, the agent only has
+                       perceptual access to a 5 × 5 RGB window, or viewport, appended with an extra frame denoting the color of the
+                                                              15

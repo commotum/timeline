@@ -1,0 +1,66 @@
+                 3   Proposed Position and Segment                      adding the position embeddings per-head removes
+                     Encodings                                          this constraint and results in better performance.
+                 In the previous section, we learned about the limi-       With the decoupled positional embedding, we
+                                                                        can increase d to any width k to break the low-
+                 tations of input additive positional embeddings and                   p
+                 existing works. Based on these observations, we        rank bottleneck shown in Theorem 1. We call such
+                 propose two minimal/efﬁcient ways to incorporate       model DIET-ABS-Rank-k. We also address the ef-
+                 (absolute/relative) positional encodings along with    ﬁciency issue introduced by one additional matrix
+                                                                                              >
+                                                                        multiplication (P P ). As the positional embed-
+                 a novel absolute segment encoding approach. By                           Q K
+                 decoupling position and segment from token em-         dings are independent of the input, we only need
+                 beddings we match the SoTA performance while           to compute the matrix multiplication once for each
+                 improving training/inference time (see §3.3).          training batch, and we can cache the computed
+                                                                        matrix before running inference. As a result, we
+                 3.1   DecoupledAbsolutePositional Attention            observe neglectable training and inference cost in-
+                 Weproposethefollowing simple absolute position         crease in this model variant.
+                 encoding method that adds position information to      3.2   DecoupledRelative Positional Attention
+                 the token attention matrix directly in each attention  Toincorporate relative position inductive bias, we
+                 head. We further also add segment information to       consider a simpliﬁed version of the position encod-
+                 the token attention instead of the input embeddings.   ing proposed in T5 (Raffel et al., 2020) without
+                 This way we can set the rank of position encodings     log-binning and per-layer parameter sharing. We
+                 independently resulting in higher rank attention       further also incorporate our per-head segment en-
+                 matrix, addressing the limitations discussed earlier.  coding as in DIET-ABS. The model can be written
+                 DIET-ABS                                               as:
+                       ABS                         > √                  DIET-REL
+                     A     =(Xi:W )(Xj:W ) / d
+                       i,j            Q         K                (1)                                            √
+                                     >                                           REL                         >
+                                                                               A =(Xi:W )(Xj:W ) / d
+                           +(P P ) +E (S(i),S(j)),                               i,j            Q          K
+                                 Q K i,j       S                                                                        (3)
+                                                                                      +Ri−j +E (S(i),S(j)).
+                                     n×d                                                           S
+                 whereP ,P ∈R            p are low-rank position em-
+                          Q   K                                         Weshowanexampleofthismodelwithtwoseg-
+                 bedding matrices and ES is the absolute segment
+                 attention to model interactions between segments       ments in Figure 3.
+                 deﬁned as                                              3.3   Training and Inference Costs
+                             E (S(i),S(j)) = S
+                               S                  ˆˆ                    We next show the proposed models introduce
+                                                  i,j            (2)
+                                   ˆ                         ˆ          little computational overhead compared to the
+                    where S(i) = i if index i is in segment i.
+                                                                        baseline model, making our model more practi-
+                    Please note that we use the following notation      cal than alternatives. We consider two different
+                 in the above equation. Ai,j denotes the (i,j) entry    models - BERTBASE model and a smaller model,
+                 of matrix A. Xi: and X:j denote the ith row and        BERTSMALL,thathashiddensize512,4layersand
+                 jth column of X respectively. We will follow this      8 attention heads.
+                 notation in the remainder of the paper.                   In Table 1 we compare the training and inference
+                    Bydefault, we set d same as d . This already        costs of position encoding methods of Shaw et al.
+                                        p           h
+                 results in potentially a rank dp+d attention matrix    (2018), Ke et al. (2020), DIET-ABS and DIET-REL.
+                                                   h
+                 as shown in Theorem 1. To illustrate this, we com-     Wenotice that the simplicity of the proposed meth-
+                 pare the rank of the attention matrices in the ﬁrst    odsindeedtranslatestosavingsinbothtrainingand
+                 layer of a baseline BERT model and a DIET-ABS          inference times compared to other position encod-
+                 modelfor a sampled batch in Figure 2. The ﬁgure        ing approaches. The savings in step times are even
+                 shows that attention matrices of DIET-ABS have         moresigniﬁcant for smaller models (BERT           )
+                                                                                                                    SMALL
+                 higher ranks than the baseline BERT. Our detailed      and during inference.
+                 experiment results in § 4 also show that DIET-ABS         Note that the discrepancy between training and
+                 performs noticeably better. This conﬁrms our ear-      inference speed is likely because gradient updates
+                 lier observation in Theorem 1 that additive position   dominatethecostattrainingtime(Lanetal.,2020).
+                 embeddings at input can constrain the model and        At inference time, we only measure the time of a
+                                                                    2977

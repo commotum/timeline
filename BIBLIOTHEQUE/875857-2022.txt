@@ -1,0 +1,557 @@
+                                                  TheThirty-SixthAAAIConferenceonArtificialIntelligence(AAAI-22)
+                                 JFB:Jacobian-Free Backpropagation for Implicit Networks
+                                       *1                        *2               3                         4                     4                3
+                 SamyWuFung, HowardHeaton, QiuweiLi, DanielMcKenzie, StanleyOsher, WotaoYin
+                                        1 Department of Applied Mathematics and Statistics, Colorado School of Mines
+                                                                  2 Typal Research, Typal LLC
+                                                             3 Alibaba Group (US), Damo Academy
+                                              4 Department of Mathematics, University of California, Los Angeles
+                              swufung@mines.edu, research@typal.llc, li.qiuwei@alibaba-inc.com, mckenzie@math.ucla.edu
+                                          Abstract                                          input data    latent variable   output inference
+                  Apromising trend in deep learning replaces traditional feed-                          QΘ               SΘ        y
+                  forward networks with implicit networks. Unlike traditional                    d                u
+                  networks, implicit networks solve a ﬁxed point equation to
+                  compute inferences. Solving for the ﬁxed point varies in                         QΘ                 S
+                  complexity, depending on provided data and an error tol-                                              Θ
+                  erance. Importantly, implicit networks may be trained with                           RΘ
+                  ﬁxedmemorycostsinstarkcontrasttofeedforwardnetworks,                             uk            u?      latent variable
+                  whosememoryrequirementsscalelinearly with depth. How-                                            d
+                  ever, there is no free lunch — backpropagation through im-                                             feedforward network
+                  plicit networks often requires solving a costly Jacobian-based                loop until               implicit network
+                  equation arising from the implicit function theorem. We pro-                convergence
+                  pose Jacobian-Free Backpropagation (JFB), a ﬁxed-memory
+                  approach that circumvents the need to solve Jacobian-based          Figure 1: Feedforward networks act by computing SΘ◦QΘ.
+                  equations. JFB makes implicit networks faster to train and          Implicit networks add a ﬁxed point condition using RΘ.
+                  signiﬁcantly easier to implement, without sacriﬁcing test ac-       WhenRΘiscontractive (more generally: averaged) repeat-
+                  curacy. Our experiments show implicit networks trained with         edly applying R     to update a latent variable uk converges
+                  JFBarecompetitivewithfeedforwardnetworksandpriorim-                                  Θ
+                                                                                      to a ﬁxed point u? = RΘ(u?;QΘ(d)).
+                  plicit networks given the same number of parameters.
+                                      Introduction                                    which is illustrated by the red arrows in Figure 1. One can
+                                                                                      allow for computation in the latent space U by introducing a
+               Anewdirection has emerged from explicit to implicit neu-               self-map RΘ(·;QΘ(d)) and the iteration
+               ral networks (Winston and Kolter 2020; Bai, Kolter, and                                  uk+1 = R (uk;Q (d)).                      (2)
+               Koltun2019;Bai,Koltun,andKolter2020;Chenetal.2018;                                                  Θ        Θ
+               Ghaoui et al. 2019; Dupont, Doucet, and Teh 2019; Jeon,                Iterating k times may be viewed as a weight-tied, input-
+               Lee,andChoi2021;Zhangetal.2020;Lawrenceetal.2020;                      injected network, where each feedforward step applies RΘ
+               RevayandManchester2020;Looketal.2020;Gould,Hart-                       (Bai, Kolter, and Koltun 2019). As k → ∞, i.e. the la-
+               ley, and Campbell 2019). In the standard feedforward set-              tent space portion becomes deeper, the limit of (2) yields a
+               ting, a network prescribes a series of computations that map           ﬁxed point equation. Implicit networks capture this “inﬁnite
+               input data d to an inference y. Networks can also explic-              depth” behaviour by using RΘ(· ;QΘ(d)) to deﬁne a ﬁxed
+               itly leverage the assumption that high dimensional signals             point condition rather than an explicit computation:
+               typically admit low dimensional representations in some la-
+               tent space (Van der Maaten and Hinton 2008; Osher, Shi,                   N (d) , S (u?) where u? = R (u?,Q (d)),                  (3)
+                                                                                           Θ          Θ d               d      Θ d Θ
+                                    ´
+               and Zhu 2017; Peyre 2009; Elad, Figueiredo, and Ma 2010;               as shown by blue in Figure 1. Special cases of the network
+               Udell and Townsend 2019). This may be done by designing                in (3) recover architectures introduced in prior works:
+               the network to ﬁrst map data to a latent space via a mapping
+               QΘandthenapply a second mapping SΘ to map the latent                   B Taking SΘ to be the identity recovers the well-known
+               variable to the inference. Thus, a traditional feedforward EΘ             DeepEquilibriumModel(DEQ)(Bai,Kolter,andKoltun
+               maytakethecompositional form                                              2019; Bai, Koltun, and Kolter 2020).
+                                                                                      B ChoosingS astheidentity, Q tobeanafﬁnemapand
+                                   E (d) = S (Q (d)),                      (1)                       Θ                    Θ
+                                    Θ          Θ   Θ                                     R (u,Q (d)) = σ(Wu+Q (d))yieldsMonotoneOp-
+                                                                                           Θ       Θ                    Θ
+                  *These authors contributed equally.                                    erator Networks(WinstonandKolter2020)aslongasW
+               Copyright © 2022, Association for the Advancement of Artiﬁcial            and σ satisfy additional conditions. Allowing S        to be
+                                                                                                                                             Θ
+               Intelligence (www.aaai.org). All rights reserved.                         linear yields the model proposed in (Ghaoui et al. 2019).
+                                                                               6648
+              Three immediate questions arise from (3):                         network. However, implicit networks do not need to store
+              I Is the deﬁnition in (3) well-posed?                             intermediate quantities of the forward pass for backpropaga-
+              I HowisN (d)evaluated?                                            tion. Consequently, implicit networks are trained using con-
+                           Θ                                                    stant memory costs with respect to depth – relieving a major
+              I HowaretheweightsΘofNΘ updatedduringtraining?                    bottleneck of training deep networks.
+              Since the ﬁrst two points are well-established (Winston and       Noloss of expressiveness    Implicit networks as deﬁned in
+              Kolter 2020; Bai, Kolter, and Koltun 2019), we brieﬂy re-         (3) are at least as expressive as feedforward networks. This
+              view these in Section and focus on the third point. Us-           can easily be observed by setting R   to simply return Q ;
+              ing gradient-based methods for training requires comput-                                              Θ                    Θ
+              ing dNΘdΘ, and in particular, du?dΘ. Hitherto, previ-           in this case, the implicit NΘ reduces to the feedforward EΘ
+                                                 d                             in (1). More interestingly, the class of implicit networks
+              ous works computed du? dΘ by solving a Jacobian-based
+                                      d                                         in which SΘ and QΘ are constrained to be afﬁne maps
+              equation (see Section ). Solving this linear system is com-       contains all feedforward networks, and is thus at least as
+              putationally expensive and prone to instability, particularly     expressive (Ghaoui et al. 2019), (Bai, Kolter, and Koltun
+              when the dimension of the latent space is large and/or in-        2019, Theorem 3). Universal approximation properties
+              cludes certain structures (e.g. batch normalization and/or        of implicit networks then follow immediately from such
+              dropout) (Bai, Kolter, and Koltun 2019; Bai, Koltun, and          properties of conventional deep neural models (e.g. see
+              Kolter 2020).                                                        ´
+                Our primary contribution is a new and simple Jacobian-          (Csaji et al. 2001; Lu et al. 2017; Kidger and Lyons 2020)).
+              Free Backpropagation (JFB) technique for training im-             Wealsomentionacouplelimitations of implicit networks.
+              plicit networks that avoids any linear system solves. Instead,
+              our scheme backpropagates by omitting the Jacobian term,          Architectural limitations    As discussed above, in theory
+              resulting in a form of preconditioned gradient descent. JFB       given any feedforward network one may write down an im-
+              yields much faster training of implicit networks and allows       plicit network yielding the same output (for all inputs). In
+                                              1
+              for a wider array of architectures .                              practice, evaluating the implicit network requires ﬁnding a
+                                                                                ﬁxed point of RΘ. The ﬁxed point ﬁnding algorithm then
+                            WhyImplicitNetworks?                                places constraints on RΘ (e.g. Assumption 0.1). Guaran-
+              Below, we discuss several advantages of implicit networks         teeing the existence and computability of dNΘdΘ places
+              over explicit, feedforward networks.                              further constraints on RΘ. For example, if Jacobian-based
+              Implicit networks for implicitly deﬁned outputs          In       backpropagation is used, RΘ cannot contain batch normal-
+                                                                                ization (Bai, Kolter, and Koltun 2019).
+              some applications, the desired network output is most aptly       Slowerinference     Oncetrained, inference with an implicit
+              described implicitly as a ﬁxed point, not via an explicit
+              function. As a toy example, consider predicting the variable      network requires solving for a ﬁxed point of RΘ. Finding
+              y ∈ Rgivend ∈ [−1/2,1/2]when(d,y)isknowntosatisfy                 this ﬁxed point using an iterative algorithm requires evaluat-
+                                                5                     (4)       ing RΘ repeatedly and, thus, is often slower than inference
+                                      y = d+y .                                 with a feedforward network.
+              Using y1 = 0 and the iteration                                              Implicit Network Formulation
+                      y     =T(y ;d),d+y5, forallk ∈N,                (5)
+                       k+1        k             k                               All terms presented in this section are provided in a general
+              oneobtains yk → y. In this setting, y is exactly (and implic-     context, which is later made concrete for each application.
+              itly) characterized by y = T(y,d). On the other hand, an          Weincludeasubscript Θ on various terms to emphasize the
+              explicit solution to (4) requires an inﬁnite series representa-   indicated mapping will ultimately be parameterized in terms
+                                                               5                                  2
+              tion, unlike the simple formula T(y,d) = d + y . See ap-          oftunableweights Θ.Atthehighestlevel,weareinterested
+              pendix for further details. Thus, it can be simpler and more      in constructing a neural network NΘ : D → Y that maps
+                                                                                                 3
+              appropriate to model a relationship implicitly. For example,      from a data space D to an inference space Y. The implicit
+              in areas as diverse as game theory and inverse problems, the      portion of the network uses a latent space U, and data is
+              output of interest may naturally be characterized as the ﬁxed     mapped to this latent space by QΘ: D → U. We deﬁne the
+              point to an operator parameterized by the input data d. Since     network operator TΘ : U × D → U by
+              implicit networks ﬁnd ﬁxed points by design, they are well-                       T (u;d) , R (u,Q (d)).                  (6)
+              suited to such problems as shown by recent works (Heaton                           Θ            Θ      Θ
+              et al. 2021a,b; Gilton, Ongie, and Willett 2021).                 Provided input data d, our aim is to ﬁnd the unique ﬁxed
+              “Inﬁnite depth” with constant memory training           As        point u? of TΘ(· ;d) and then map u? to the inference space
+              mentioned, solving for the ﬁxed point of R (· ;Q (d)) is                 d                            d
+                                                          Θ      Θ                 2
+              analogous to a forward pass through an “inﬁnite depth” (in            Weusethe same subscript for all terms, noting each operator
+              practice, very deep) weight-tied, input injected feedforward      typically depends on a portion of the weights.
+                                                                                   3Each space is assumed to be a real-valued ﬁnite dimensional
+                 1All codes can be found on Github:                             Hilbert space (e.g. Rn) endowedwithaproducth·,·iandnormk·k.
+              github.com/howardheaton/jacobian free backprop                    It will be clear from context which space is being used.
+                                                                          6649
+              Y via a ﬁnal mapping SΘ : U → Y. This enables us to               schemewhencomputingu˜(i.e.Algorithm1).Inthecontem-
+              deﬁne an implicit network NΘ by                                   poraneous (Gilton, Ongie, and Willett 2021), it is reported
+                     N (d) , S (u?) where u? = T (u?;d).              (7)       that using ﬁxed point iteration in conjunction with Anderson
+                       Θ         Θ d              d     Θ d                     acceleration ﬁnds u˜ faster than both vanilla ﬁxed point itera-
+                                                                                tion and Broyden’s method. Combining JFB with Anderson
+              Algorithm 1: Implicit Network with Fixed Point Iteration          accelerated ﬁxed point iteration is a promising research di-
+                                                                                rection we leave for future work.
+               1: NΘ(d):                         CInputdatais d
+               2:   u1 ←uˆ                       CAssignlatent term             Other Implicit Formulations      Arelated implicit learning
+               3:   while kuk −T (uk;d)k > εCLooptilconverge                    formulation is the well-known neural ODE model (Chen
+                                   Θ                                            et al. 2018; Dupont, Doucet, and Teh 2019; Ruthotto and
+               4:    uk+1 ←TΘ(uk;d)              CReﬁnelatentterm               Haber2021).NeuralODEsleverageknownconnectionsbe-
+               5:    k ←k+1                      CIncrementcounter              tween deep residual models and discretizations of differ-
+               6: return SΘ(uk)                  COutputestimate                ential equations (Haber and Ruthotto 2017; Weinan 2017;
+                                                                                Ruthotto and Haber 2019; Chang et al. 2018; Finlay et al.
+                Implementation considerations for TΘ are discussed be-          2020; Lu et al. 2018), and replace these discretizations by
+              low. We also introduce assumptions on TΘ that yield sufﬁ-         black-box ODE solvers in forward and backward passes.
+              cient conditions to use the simple procedure in Algorithm         The implicit property of these models arise from their
+              1 to approximate NΘ(d). In this algorithm, the latent vari-       method for computing gradients. Rather than backpropa-
+              able initialization uˆ can be any ﬁxed quantity (e.g. the zero    gate through each layer, backpropagation is instead done by
+              vector). The inequality in Step 3 gives a ﬁxed point residual     solving the adjoint equation (Jameson 1988) using a black-
+              condition that measures convergence. Step 4 implements a          box ODE solver as well. This is analogous to solving the
+              ﬁxed point update. The estimate of the inference NΘ(d) is         Jacobian-based equation when performing backpropagation
+              computedbyapplyingSΘ tothelatentvariableuk inStep6.               for implicit networks (see (13)) and allows the user to al-
+              ThebluepathinFigure1visually summarizes Algorithm 1.              leviate the memory costs of backpropagation through deep
+              Convergence     Finitely many loops in Steps 3 and 4 of Al-       neural models by solving the adjoint equation at additional
+              gorithm 1 is guaranteed by a classic functional analysis re-      computationalcosts. A drawbackis that the adjoint equation
+              sult (Banach1922).Thisapproachisusedbyseveralimplicit             mustbesolvedtohigh-accuracy;otherwise,adescentdirec-
+              networks (Ghaoui et al. 2019; Winston and Kolter 2020;            tion is not necessarily guaranteed (Gholami, Keutzer, and
+              Jeon, Lee, and Choi 2021). Below we present a variation           Biros 2019; Onken and Ruthotto 2020; Onken et al. 2021).
+              of Banach’s result for our setting.                                                  Backpropagation
+              Assumption 0.1. The mapping TΘ is L-Lipschitz with re-
+              spect to its inputs (u,d), i.e. ,                                 We present a simple way to backpropagate with implicit
+                                                                                networks, called Jacobian-free backprop (JFB). Traditional
+                  kTΘ(u; d)−TΘ(v; w)k ≤ Lk(u,d)−(v,w)k,               (8)       backpropagation will not work effectively for implicit net-
+              for all (u,d),(v,w) ∈ U ×D. Holding d ﬁxed, the operator          workssinceforwardpropagationduringtrainingcouldentail
+              T (·;d)isacontraction,i.e.thereexists γ ∈ [0,1) such that         hundreds or thousands of iterations, requiring ever growing
+               Θ                                                                memory to store computational graphs. On the other hand,
+               kTΘ(u;d)−TΘ(v;d)k ≤ γku−vk, forallu,v ∈ U. (9)                   implicit models maintain ﬁxed memory costs by backprop-
+              Remark0.1. TheL-LipschitzconditiononT isusedsince                 agating “through the ﬁxed point” and solving a Jacobian-
+                                                           Θ                    based equation (at potentially substantial added computa-
+              recentworksshowLipschitzcontinuitywithrespecttoinputs             tional costs). The key step to circumvent this Jacobian-based
+              improves generalization (Sokolic et al. 2017; Gouk et al.
+                                              ´                                 equation with JFB is to tune weights by using a precondi-
+              2021; Finlay et al. 2018) and adversarial robustness (Cisse       tioned gradient. Let ` : Y × Y → R be a smooth loss func-
+              et al. 2017; Anil, Lucas, and Grosse 2019).                       tion, denoted by `(x,y), and consider the training problem
+              Theorem 0.1. (BANACH) For any u1 ∈ U, if the sequence
+              {uk}is generated via the update relation                                          minEd∼D`(yd,NΘ(d)),                  (11)
+                          uk+1 = T (uk; d), for all k ∈ N,           (10)                        Θ
+                                    Θ                                           where we abusively write D to also mean a distribution. For
+              and if Assumption 0.1 holds, then {uk} converges linearly         clarity of presentation, in the remainder of this section we
+              to the unique ﬁxed point u? of TΘ(·;d).
+                                        d                                       notationally suppress the dependencies on weights Θ by let-
+              Alternative Approaches      In (Bai, Kolter, and Koltun           ting u? denote the ﬁxed point in (7). Unless noted otherwise,
+                                                                                      d
+              2019; Bai, Koltun, and Kolter 2020) Broyden’s method is           mapping arguments are implicit in this section; in each im-
+              used for ﬁnding u?. Broyden’s method is a quasi-Newton            plicit case, this will correspond to entries in (7). We begin
+                                 d                                              with standard assumptions enabling us to differentiate N .
+              scheme and so at each iteration it updates a stored approxi-                                                              Θ
+              mation to the Jacobian Jk and then solves a linear system in      Assumption 0.2. The mappings S        and T    are continu-
+              J . Since in this work our goal is to explore truly Jacobian-                                        Θ        Θ
+               k                                                                ously differentiable with respect to u and Θ.
+              free approaches, we stick to the simpler ﬁxed point iteration
+                                                                          6650
+                                               Q (d)
+                                                 Q (d)
+                                                  ⇥
+                                                   ⇥
+                                                                                 data output to latent space is independent of u
+                   d                                  ···                  
+                                                                                                             ···                           T⇥(u;d)
+                  u                                   ···                  
+                                                                              T⇥(u;d)
+                                                                          T⇥(u;d)              `-Lipschitz a ne map        1-Lipschitz a ne map
+               Figure 2: Diagram of a possible architecture for network operator TΘ (in large rectangle). Data d and latent u variables are
+               processed in two streams by nonlinearities (denoted by σ) and afﬁne mappings (denoted by rectangles). These streams merge
+               into a ﬁnal stream that may also contain transformations. Light gray and blue afﬁne maps are `-Lipschitz and 1-Lipschitz,
+               respectively. The mapping QΘ from data space to latent space is enclosed by the red rectangle.
+               Assumption 0.3. The weights Θ may be written as a tuple                   The omission of J−1 admits two straightforward inter-
+                                                                                                              Θ              ?
+               Θ=(θS,θT)suchthatweightparamaterization of SΘ and                      pretations. Note NΘ(d) = SΘ(TΘ(ud;d)), and so pΘ is pre-
+               T dependonlyonθ andθ ,respectively.4                                   cisely the gradient of the expression `(y ,S (T (u?;d))),
+                 Θ                   S       T                                                                                    d   Θ Θ d
+                  Let J   be deﬁned as the identity operator, denoted by I,           treating u? as a constant independent of Θ. The distinction is
+                        Θ                                                                       d           ?
+                                   5                                                  that using SΘ(TΘ(u ;d)) assumes, perhaps by chance, the
+               minus the Jacobian of TΘ at (u,d), i.e.                                                      d        1
+                                                  dT                                  user chose the ﬁrst iterate u    in their ﬁxed point iteration
+                                J (u;d) , I−         Θ(u;d).              (12)        (see Algorithm 1) to be precisely the ﬁxed point u?. This
+                                  Θ                du                                                                                         d
+               Following (Winston and Kolter 2020; Bai, Kolter, and                   makestheiteration trivial, “converging” in one iteration. We
+               Koltun 2019), we differentiate both sides of the ﬁxed point            can simulate this behavior by using the ﬁxed point iteration
+                                                                                      to ﬁnd u? and only backpropagating through the ﬁnal step
+               relation in (7) to obtain, by the implicit function theorem,                     d
+                                                                                      of the ﬁxed point iteration, as shown in Figure 4.
+                 du?     ∂TΘdu? ∂TΘ                 du?            ∂TΘ                   Since the weights Θ typically lie in a space of much
+                    d =           d +        =⇒        d = J−1·         , (13)
+                 dΘ       ∂u dΘ        ∂Θ            dΘ       Θ     ∂Θ                higher dimension than the latent space U, the Jacobians
+               whereJ−1 exists whenever JΘ exists (see Lemma ??). Us-                 ∂SΘ/∂Θand∂TΘ/∂Θeffectivelyalways have full column
+                        Θ                                                             rank. We leverage this fact via the following assumption.
+               ing the chain rule gives the loss gradient
+                    d [`(yd,NΘ(d))] = d h`(yd,SΘ(TΘ(u?,d))i                           Assumption0.4. UnderAssumption0.3,givenanyweights
+                   dΘ                      dΘ                   d                     Θ=(θS,θT)anddatad,thematrix
+                                        = ∂` dSΘJ−1∂TΘ + ∂SΘ.                                                  " ∂SΘ       0   #
+                                                       Θ                                                            ∂θ
+                                           ∂y    du        ∂Θ       ∂Θ                                    M,          S    ∂T                     (17)
+                                                                          (14)                                       0        Θ
+                                                                                                                           ∂θT
+               Thematrix JΘ satisﬁes the inequality (see Lemma ??)                    has full column rank and is sufﬁciently well conditioned to
+                    
+      −1        1−γ         2                                                         6
+                      u,J     u ≥             kuk , for all u ∈ U.        (15)        satisfy the inequality
+                          Θ         (1+γ)2
+               Intuitively, this coercivity property makes it seem possible                         κ(M>M)= λmax(M>M) ≤ 1.                        (18)
+               to remove J−1 from (14) and backpropagate using                                                     λmin(M>M)          γ
+                            Θ          h                     i
+                          p ,− d `(y ,S (T (u,d))                                     Remark 0.2. The conditioning portion of the above as-
+                           Θ       dΘ       d   Θ Θ                ?
+                                                            u=ud        (16)        sumption is useful for bounding the worst-case behavior in
+                                   ∂` dSΘ∂TΘ           ∂SΘ                            our analysis. However, we found it unnecessary to enforce
+                              =−∂y du ∂Θ + ∂Θ .                                       this in our experiments for effective training (e.g. see Figure
+                                                                                      5), which we hypothesize is justiﬁed because worst case be-
+                  4This assumption is easy to ensure in practice. For notational      havior rarely occurs in practice and we train using averages
+               brevity, we use the subscript Θ throughout.                            of pΘ for samples drawn from large data sets.
+                  5Under Assumption 0.1, the Jacobian J     exists almost every-
+                                                         Θ                                6
+               where. However, presentation is cleaner by assuming smoothness.            Thetermγ here refers to the contraction factor in (9).
+                                                                                6651
+                  Assumption 0.4 gives rise to a second interpretation of             within a torch.no_grad()block.Withthisﬁxedpoint,
+               JFB. Namely, the full column rank of M enables us to                   explicit_model evaluates and returns S (T (u?,d))
+                                                                                                                                       Θ Θ d
+               rewrite pΘ as a preconditioned gradient, i.e.                          to y in train mode (to create the computational graph).
+                                     I        0  + d`                             Thus, our scheme coincides with standard backpropagation
+                            pΘ = M                   M           ,        (19)        throughanexplicitmodelwithonelatentspacelayer.Onthe
+                                           0   JΘ            dΘ                       other hand, standard implicit models backpropagate by solv-
+                                   |          {z           }                          ing a linear system to apply J−1 as in (14). That approach
+                                    preconditioning term                                                              Θ
+                                                                                      requires users to manually update the parameters, use more
+               where M+ is the Moore-Penrose pseudo inverse (Moore                    computationalresources,andmakeconsiderations(e.g.con-
+                                                                                      ditioning of J−1) for each architecture used.
+               1920; Penrose 1955). These insights lead to our main result.                          Θ
+               Theorem0.2. If Assumptions 0.1, 0.2, 0.3, and 0.4 hold for              Implicit Forward + Proposed Backprop
+               given weights Θ and data d, then
+                          p ,− d h`(y ,S (T (u,d))i                       (20)         u_fxd_pt = find_fixed_point(d)
+                           Θ               d   Θ Θ                                     y = explicit_model(u_fxd_pt, d)
+                                   dΘ                         u=u?
+                                                                  d                    loss = criterion(y, labels)
+               is a descent direction for `(yd,NΘ(d)) with respect to Θ.               loss.backward()
+                  Theorem 0.2 shows we can avoid difﬁcult computations                 optimizer.step()
+               associated with J−1 in (14) (i.e. solving an associated lin-
+                                  Θ
+               ear system/adjoint equation) in implicit network literature                Figure 3: Sample PyTorch code for backpropagation
+               (Chen et al. 2018; Dupont, Doucet, and Teh 2019; Bai,
+               Kolter, and Koltun 2019; Winston and Kolter 2020). Thus,               NeumannBackpropagation The inverse of the Jacobian
+               our scheme more naturally applies to general multilayered              in (12) can be expanded using a Neumann series, i.e.
+               TΘandissubstantiallysimplertocode.Ourschemeisjuxta-                                                                  
+                                                                                                                     −1     ∞            k
+               posed in Figure 4 with classic and Jacobian-based schemes.                      J−1 = I− dTΘ              =X dTΘ .                (22)
+                  Twoadditional considerations must be made when deter-                          Θ             du                  du
+               miningtheefﬁcacyoftrainingamodelusing(20)ratherthan                                                          k=0
+               Jacobian-based gradients (14).                                         Thus, JFB is a zeroth-order approximation to the Neumann
+                  I DoesuseofpΘin(20)degradetraining/testingperfor-                   series. In particular, JFB resembles the Neumann-RBP ap-
+                     mancerelative to (14)?                                           proach for recurrent networks (Liao et al. 2018). However,
+                  I Is the term p     in (20) resilient to errors in estimates        Neumann-RBP does not guarantee a descent direction or
+                                   Θ                                                  guidelines on how to truncate the Neumann series. This is
+                     of the ﬁxed point u??
+                                         d                                            generally difﬁcult to achieve in theory and practice (Aicher,
+                  The ﬁrst answer is our training scheme takes a different            Foti, and Fox 2020). Our work differs from (Liao et al.
+               path to minimizers than using gradients with the implicit              2018) in that we focus purely on implicit networks, prove
+               model. Thus, for nonconvex problems, one should not ex-                descent guarantees for JFB, and provide simple PyTorch
+               pect the results to be the same. In our experiments in Section         implementations. Similar approaches exist in hyperparam-
+               , using (20) is competitive (14) for all tests (when applied to        eter optimization, where truncated Neumann series are is
+               nearly identical models). The second inquiry is partly an-             used to approximate second-order updates during train-
+               swered by the corollary below, which states JFB yields de-             ing (Luketina et al. 2016; Lorraine, Vicol, and Duvenaud
+               scent even for approximate ﬁxed points.                                2020). Finally, similar zeroth-order truncations of the Neu-
+               Corollary 0.1. Given weights Θ and data d, there exists                mann series have been employed, albeit without proof, in
+               ε > 0 such that if uε ∈ U satisﬁes kuε − u?k ≤ ε and                   Meta-learning (Finn, Abbeel, and Levine 2017; Rajeswaran
+                                      d                    d     d                    et al. 2019) and in training transformers (Geng et al. 2021).
+               the assumptions of Theorem 0.2 hold, then
+                          pε , − d h`(yd,SΘ(TΘ(u,d))i                     (21)                               Experiments
+                           Θ       dΘ                         u=uε                    This section shows the effectiveness of JFB using PyTorch
+                                                                  d
+               is a descent direction of `(y ,N (d)) with respect to Θ.               (Paszke et al. 2017). All networks are ResNet-based such
+                                            d    Θ                                                                7
+                                                                                      that Assumption 0.3 holds. One can ensure Assumption 0.1
+                  Wearenotawareofanyanalogousresults for error toler-                 holds (e.g. via spectral normalization). Yet, in our experi-
+               ances in the implicit depth literature.                                ments we found this unnecessary since tuning the weights
+                                                                                                                                        8
+               CodingBackpropagation AkeyfeatureofJFBisitssim-                        automatically encouraged contractive behavior. All exper-
+               plicity of implementation. In particular, the backpropagation          iments are run on a single NVIDIA TITAN X GPU with
+               of our scheme is similar to that of a standard backpropa-              12GBRAM.Furtherdetailsareintheappendix.
+               gation. We illustrate this in the sample of PyTorch (Paszke               7AweakerversionofAssumption0.2alsoholdsinpractice,i.e.
+               et al. 2017) code in Figure 3. Here explicit_modelrep-                 differentiability almost everywhere.
+               resents S (T (u;d)). The ﬁxed point u? = u_fxd_pt is                      8We found (9) held for batches of data during training, even
+                         Θ Θ                              d
+               computed by successively applying TΘ (see Algorithm 1)                 whenusingbatchnormalization. See appendix for more details.
+                                                                               6652
+                                                                      · · ·                     Traditional Backprop
+                                   1      TΘ(·,d)       2   TΘ(·,d)           TΘ(·,d)    K−1     TΘ(·,d)       K
+                                  u                    u              · · ·            u                     u
+                                               Forward Prop                     Proposed Backprop
+                                   d                      Jacobian-based Backprop
+              Figure 4: Diagram of backpropagation schemes for recurrent implicit depth models. Forward propagation is tracked via solid
+              arrows point to the right (n.b. each forward step uses d). Backpropagation is shown via dashed arrows pointing to the left.
+              Traditional backpropagation requires memory capacity proportional to depth (which is implausible for large K). Jacobian-
+              based backpropagation solves an associated equation dependent upon the data d and operator TΘ. JFB uses a single backward
+              step, which avoids both large memory capacity requirements and solving a Jacobian-type equation.
+                                        MNIST                                 DEQs(Bai, Koltun, and Kolter 2020), and MONs (Winston
+               Method                               Network size    Acc.      and Kolter 2020). We also compare with corresponding ex-
+               Explicit                                     54K    99.4%      plicit versions of our ResNet-based networks given in (1) as
+               Neural ODE†                                  84K    96.4%      well as with state-of-the-art ResNet results (He et al. 2016)
+               Aug. Neural ODE†                             84K    98.2%      on the augmented CIFAR10 dataset. The explicit networks
+               MON‡                                         84K    99.2%      aretrainedwiththesamesetupastheirimplicitcounterparts.
+               JFB-trained Implicit ResNet (ours)           54K    99.4%      Table 1 shows JFBs are an effective way to train implicit
+                                                                              networks, substantially outperform all the ODE-based net-
+                                         SVHN                                 works as well as MONs using similar or fewer parameters.
+               Method                               Network size    Acc.      Moreover, JFB is competitive with Multiscale DEQs (Bai,
+                                                                              Koltun, and Kolter 2020) despite having less than a tenth as
+               Explicit                                   164K     93.7%      manyparameters. See appendix for additional results.
+               Neural ODE†                                172K     81.0%
+               Aug. Neural ODE†                           172K     83.5%      ComparisontoJacobian-basedBackpropagation
+                                 ‡
+               MON(Multi-tier lg)                         170K     92.3%
+               JFB-trained Implicit ResNet (ours)         164K    94.1%       Table 2 compares performance between using the standard
+                                       CIFAR-10                               Jacobian-based backpropagation and JFB. The experiments
+               Method                               Network size    Acc.      are performed on all the datasets described in Section . To
+                                                                              apply the Jacobian-based backpropagation in (13), we use
+               Explicit (ResNet-56)∗                      0.85M    93.0%      the conjugate gradient (CG) method on an associated set of
+                                 ‡∗                                           normal equations similarly to (Liao et al. 2018). To main-
+               MON(Multi-tier lg)                         1.01M    89.7%
+               JFB-trained Implicit ResNet (ours)∗        0.84M   93.7%       tain similar costs, we set the maximum number of CG iter-
+               Multiscale DEQ∗                             10M     93.8%      ations to be the same as the maximum depth of the forward
+                                                                              propagation. The remaining experimental settings are kept
+              Table 1: Test accuracy of JFB-trained Implicit ResNet com-      the same in our proposed approach. Note the network ar-
+              paredtoNeuralODEs,AugmentedNODEs,andMONs;†as                    chitectures trained with JFB contain batch normalization in
+              reported in (Dupont, Doucet, and Teh 2019); ‡as reported in     the latent space whereas those trained with Jacobian-based
+              (Winston and Kolter 2020); *with data augmentation              backpropagationdonot.Removalofbatchnormalizationfor
+                                                                              the Jacobian-based method was necessary due to a lack of
+                                                                              convergence when solving (13), thereby increasing training
+              Classiﬁcation                                                   loss (see appendix for further details). This phenomena is
+                                                                              also observed in previous works (Bai, Koltun, and Kolter
+              Wetrainimplicitnetworksonthreebenchmarkimageclassi-             2020; Bai, Kolter, and Koltun 2019). Thus, we ﬁnd JFB to
+              ﬁcation datasets licensed under CC-BY-SA: SVHN (Netzer          be (empirically) effective on a wider class of network archi-
+              et al. 2011), MNIST (LeCun, Cortes, and Burges 2010), and       tectures (e.g. including batch normalization). The purpose
+              CIFAR-10(KrizhevskyandHinton2009).Table1compares                of the Jacobian-based results in Figure 5 and Table 2 is to
+              ourresults with state-of-the-art results for implicit networks, show speedups in training time while maintaining a com-
+              including Neural ODEs (Chen et al. 2018), Augmented             petitive accuracy with previous state-of-the-art implicit net-
+              Neural ODEs (Dupont, Doucet, and Teh 2019), Multiscale          works. More plots are given in the appendix.
+                                                                        6653
+                                             Dataset    Avgtimeperepoch(s)      # of J mat-vec products   Accuracy %
+                                                                                                6
+                              Jacobian       MNIST               28.4                   6.0 ×107              99.2
+                               based         SVHN                92.8                   1.4 ×10               90.1
+                                                                                                8
+                                            CIFAR10             530.9                   9.7 ×10               87.9
+                                             MNIST               17.6                       0                 99.4
+                                JFB          SVHN                36.9                       0                 94.1
+                                            CIFAR10             146.6                       0                 93.67
+             Table 2: Comparison of Jacobian-based backpropagation (ﬁrst three rows) and our proposed JFB approach. “Mat-vecs” denotes
+             matrix-vector products.
+                  % 95   Proposed Backprop (JFB)                                 %
+                                                                                   99
+                    90
+                    85                      Jacobian-based                              Proposed Backprop (JFB)
+                  Accuracy                                                       Accuracy98
+                  est80                        Backprop                          est    Neumann: k = 5
+                  T                                                              T      Neumann: k = 10
+                    75                                                             97
+                       0        250      500       750      1,000                     0        25        50        75       100
+                                        Epoch                                                          Epoch
+                    % 95    Proposed Backprop (JFB)                               %
+                                                                                    99
+                      90
+                      85                     Jacobian-based                             Proposed Backprop (JFB)
+                    Accuracy                                                      Accuracy98
+                    est80                       Backprop                          est   Neumann: k = 5
+                    T                                                             T     Neumann: k = 10
+                      75                                                            97
+                        0    20 40 60 80 100 120 140                                   0      10      20     30      40      50
+                                       Time (hr)                                                    Time (min)
+             Figure 5: CIFAR10 results using comparable networks/-          Figure 6: MNIST training using different truncations k of
+             conﬁgurations, but with two backpropagation schemes: our       theNeumannseries(22)toapproximatetheinverseJacobian
+             proposed JFB method (blue) and standard Jacobian-based         J−1. Plots show faster training with fewer terms (fastest
+                                                                             Θ
+             backpropagation in (14) (green), with ﬁxed point tolerance     with JFB, i.e. k = 0) and competitive test accuracy.
+              = 10−4. JFB is faster and gives better test accuracy.
+                                                                                                 Conclusion
+             HigherOrderNeumannApproximation                                This work presents a new and simple Jacobian-free back-
+                                                                            propagation (JFB) scheme. JFB enables training of implicit
+                                                                            networks with ﬁxed memory costs (regardless of depth), is
+             As explained in Section , JFB can be interpreted as an ap-     easy to code (see Figure 3), and yields efﬁcient backpropa-
+             proximation to the Jacobian-based approach using a zeroth      gation. Use of JFB is theoretically justiﬁed (even when ﬁxed
+             order (i.e. k = 0) truncation to the Neumann series expan-     pointsareapproximatelycomputed).ExperimentsshowJFB
+             sion (22) of the Jacobian inverse J−1. Figure 6 compares       yields competitive results for implicit networks. Extensions
+                                               Θ
+             JFB with training using more Neumann series terms in the       will enable satisfaction of additional constraints for imag-
+             approximation of the Jacobian inverse J−1. Figure 6 shows      ing (Klibanov 1986; Fienup 1982; Heaton et al. 2020; Fung
+                                                   Θ
+             JFB is competitive at reduced time cost. Signiﬁcantly, JFB     and Wendy 2020; Kan, Fung, and Ruthotto 2020), geo-
+             is also much easier to implement (see Figure 3). See ap-       physics (Haber 2014; Fung and Ruthotto 2019a,b), and
+             pendix for more experiments with SVHN and discussion           games (Von Neumann 1959; Lin et al. 2021; Ruthotto et al.
+             about code.                                                    2020).
+                                                                      6654
+                                   Acknowledgements                                       Finn, C.; Abbeel, P.; and Levine, S. 2017. Model-agnostic meta-
+                HH, DM, SO, SWF and QL were supported by AFOSR                            learningforfastadaptationofdeepnetworks. InInternationalCon-
+                MURI FA9550-18-1-0502 and ONR grants: N00014-18-                          ference on Machine Learning, 1126–1135. PMLR.
+                1-2527, N00014-20-1-2093, and N00014-20-1-2787. HH’s                      Fung, S. W.; and Ruthotto, L. 2019a. A multiscale method for
+                work was also supported by the National Science Founda-                   model order reduction in PDE parameter estimation. Journal of
+                tion (NSF) Graduate Research Fellowship under Grant No.                   Computational and Applied Mathematics, 350: 19–34.
+                DGE-1650604. Any opinion, ﬁndings, and conclusions or                     Fung, S. W.; and Ruthotto, L. 2019b. An uncertainty-weighted
+                recommendations expressed in this material are those of the               asynchronous ADMM method for parallel PDE parameter estima-
+                authors and do not necessarily reﬂect the views of the NSF.               tion. SIAM Journal on Scientiﬁc Computing, 41(5): S129–S148.
+                We thank Zaccharie Ramzi for the fruitful discussions and                 Fung,S.W.;andWendy,Z.2020. Multigridoptimizationforlarge-
+                the anonymous referees for helping us improve the quality                 scale ptychographic phase retrieval. SIAM Journal on Imaging Sci-
+                of our paper.                                                             ences, 13(1): 214–233.
+                                                                                          Geng,Z.;Guo,M.-H.;Chen,H.;Li,X.;Wei,K.;andLin,Z.2021.
+                                         References                                       Is Attention Better Than Matrix Decomposition? In International
+                                                                                          Conference on Learning Representations.
+                Aicher, C.; Foti, N. J.; and Fox, E. B. 2020. Adaptively truncating       Ghaoui, L. E.; Gu, F.; Travacca, B.; Askari, A.; and Tsai, A. Y.
+                backpropagation through time to control gradient bias. In Uncer-          2019. Implicit Deep Learning. arXiv preprint arXiv:1908.06315.
+                tainty in Artiﬁcial Intelligence, 799–808. PMLR.                          Gholami, A.; Keutzer, K.; and Biros, G. 2019. ANODE: Uncon-
+                Anil, C.; Lucas, J.; and Grosse, R. 2019. Sorting out Lipschitz           ditionally accurate memory-efﬁcient gradients for neural ODEs.
+                function approximation. In International Conference on Machine            arXiv preprint arXiv:1902.10298.
+                Learning, 291–301. PMLR.                                                  Gilton, D.; Ongie, G.; and Willett, R. 2021.     Deep Equilibrium
+                Bai, S.; Kolter, J. Z.; and Koltun, V. 2019. Deep equilibrium mod-        Architectures for Inverse Problems in Imaging.      arXiv preprint
+                els. In Advances in Neural Information Processing Systems, 690–           arXiv:2102.07944.
+                701.                                                                      Gouk, H.; Frank, E.; Pfahringer, B.; and Cree, M. J. 2021. Reg-
+                Bai,S.;Koltun,V.;andKolter,J.Z.2020. MultiscaleDeepEquilib-               ularisation of neural networks by enforcing Lipschitz continuity.
+                riumModels. AdvancesinNeuralInformationProcessingSystems,                 Machine Learning, 110(2): 393–416.
+                33.                                                                       Gould, S.; Hartley, R.; and Campbell, D. 2019. Deep declarative
+                                            ´                                             networks: A new hope. arXiv preprint arXiv:1909.04866.
+                Banach, S. 1922. Sur les operations dans les ensembles abstraits et       Haber, E. 2014. Computational methods in geophysical electro-
+                                     ´            ´
+                leur application aux equations integrales. Fund. math, 3(1): 133–         magnetics. SIAM.
+                181.
+                Chang, B.; Meng, L.; Haber, E.; Ruthotto, L.; Begert, D.; and             Haber, E.; and Ruthotto, L. 2017. Stable architectures for deep
+                Holtham, E. 2018. Reversible architectures for arbitrarily deep           neural networks. Inverse Problems, 34(1): 014004.
+                residual neural networks. In Proceedings of the AAAI Conference           He, K.; Zhang, X.; Ren, S.; and Sun, J. 2016. Deep residual learn-
+                onArtiﬁcial Intelligence, volume 32.                                      ing for image recognition. In Proceedings of the IEEE conference
+                Chen, R. T.; Rubanova, Y.; Bettencourt, J.; and Duvenaud, D. K.           oncomputervision and pattern recognition, 770–778.
+                2018. Neuralordinarydifferentialequations. InAdvancesinneural             Heaton,H.;Fung,S.W.;Gibali,A.;andYin,W.2021a. Feasibility-
+                information processing systems, 6571–6583.                                based Fixed Point Networks. arXiv preprint arXiv:2104.14090.
+                Cisse, M.; Bojanowski, P.; Grave, E.; Dauphin, Y.; and Usunier,           Heaton, H.; Fung, S. W.; Lin, A. T.; Osher, S.; and Yin, W. 2020.
+                N. 2017. Parseval networks: Improving robustness to adversarial           Projecting to Manifolds via Unsupervised Learning. arXiv preprint
+                examples. InInternationalConferenceonMachineLearning,854–                 arXiv:2008.02200.
+                863. PMLR.                                                                Heaton, H.; McKenzie, D.; Li, Q.; Fung, S. W.; Osher, S.; and Yin,
+                  ´                                                                       W. 2021b. Learn to Predict Equilibria via Fixed Point Networks.
+                Csaji, B. C.; et al. 2001. Approximation with artiﬁcial neural net-       arXiv preprint arXiv:2106.00906.
+                works. Faculty of Sciences, Eotvos Lorand University, Hungary,
+                                               ¨  ¨      `                                Jameson,A.1988. Aerodynamicdesignviacontroltheory. Journal
+                24(48): 7.                                                                of scientiﬁc computing, 3(3): 233–260.
+                Dupont, E.; Doucet, A.; and Teh, Y. W. 2019. Augmented Neural             Jeon, Y.; Lee, M.; and Choi, J. Y. 2021. Differentiable Forward and
+                                                                                 ´
+                ODEs. In Wallach, H.; Larochelle, H.; Beygelzimer, A.; d'Alche-           BackwardFixed-Point Iteration Layers. IEEE Access.
+                Buc, F.; Fox, E.; and Garnett, R., eds., Advances in Neural Infor-        Kan, K.; Fung, S. W.; and Ruthotto, L. 2020. PNKH-B: A pro-
+                mation Processing Systems, volume 32. Curran Associates, Inc.             jected Newton-Krylov method for large-scale bound-constrained
+                Elad,M.;Figueiredo,M.A.;andMa,Y.2010. Ontheroleofsparse                   optimization. arXiv preprint arXiv:2005.13639.
+                andredundantrepresentationsinimageprocessing. Proceedingsof               Kidger, P.; and Lyons, T. 2020. Universal approximation with deep
+                the IEEE, 98(6): 972–982.                                                 narrow networks. In Conference on Learning Theory, 2306–2327.
+                Fienup, J. R. 1982. Phase retrieval algorithms: A comparison. Ap-         PMLR.
+                plied optics, 21(15): 2758–2769.                                          Klibanov, M. V. 1986. Determination of a compactly supported
+                Finlay, C.; Calder, J.; Abbasi, B.; and Oberman, A. 2018. Lipschitz       function from the argument of its Fourier transform. In Doklady
+                regularized deep neural networks generalize and are adversarially         Akademii Nauk, volume 289, 539–540. Russian Academy of Sci-
+                robust. arXiv preprint arXiv:1808.09540.                                  ences.
+                Finlay, C.; Jacobsen, J.-H.; Nurbekyan, L.; and Oberman, A. M.            Krizhevsky, A.; and Hinton, G. 2009. Learning Multiple Layers
+                2020.     How to train your neural ODE.            arXiv preprint         of Features from Tiny Images.      Technical report, University of
+                arXiv:2002.02798.                                                         Toronto.
+                                                                                    6655
+               Lawrence, N.; Loewen, P.; Forbes, M.; Backstrom, J.; and                 Advances in Neural Information Processing Systems, volume 32.
+               Gopaluni, B. 2020. Almost Surely Stable Deep Dynamics. In                Curran Associates, Inc.
+               Larochelle, H.; Ranzato, M.; Hadsell, R.; Balcan, M. F.; and Lin,        Revay, M.; and Manchester, I. 2020. Contracting implicit recur-
+               H., eds., Advances in Neural Information Processing Systems, vol-        rent neural networks: Stable models with improved trainability. In
+               ume33,18942–18953.CurranAssociates, Inc.                                 Learning for Dynamics and Control, 393–403. PMLR.
+               LeCun, Y.; Cortes, C.; and Burges, C. 2010.               MNIST          Ruthotto, L.; and Haber, E. 2019. Deep neural networks motivated
+               handwritten digit database.      ATT Labs [Online]. Available:           bypartial differential equations. Journal of Mathematical Imaging
+               http://yann.lecun.com/exdb/mnist, 2.                                     and Vision, 1–13.
+               Liao, R.; Xiong, Y.; Fetaya, E.; Zhang, L.; Yoon, K.; Pitkow, X.;        Ruthotto, L.; and Haber, E. 2021. An Introduction to Deep Gener-
+               Urtasun, R.; and Zemel, R. 2018. Reviving and improving recur-           ative Modeling. arXiv preprint arXiv:2103.05180.
+               rent back-propagation. In International Conference on Machine            Ruthotto, L.; Osher, S. J.; Li, W.; Nurbekyan, L.; and Fung, S. W.
+               Learning, 3082–3091. PMLR.                                               2020. Amachinelearningframeworkforsolvinghigh-dimensional
+               Lin, A. T.; Fung, S. W.; Li, W.; Nurbekyan, L.; and Osher, S. J.         meanﬁeld game and mean ﬁeld control problems. Proceedings of
+               2021. Alternating the population and control neural networks to          the National Academy of Sciences, 117(17): 9183–9193.
+               solve high-dimensional stochastic mean-ﬁeld games. Proceedings                 ´
+               of the National Academy of Sciences, 118(31).                            Sokolic, J.; Giryes, R.; Sapiro, G.; and Rodrigues, M. R. 2017. Ro-
+               Look, A.; Doneva, S.; Kandemir, M.; Gemulla, R.; and Pe-                 bust large margin deep neural networks. IEEE Transactions on
+               ters, J. 2020.   Differentiable Implicit Layers.   arXiv preprint        Signal Processing, 65(16): 4265–4280.
+               arXiv:2010.07078.                                                        Udell, M.; and Townsend, A. 2019. Why are big data matrices
+               Lorraine, J.; Vicol, P.; and Duvenaud, D. 2020. Optimizing mil-          approximately low rank? SIAM Journal on Mathematics of Data
+               lions of hyperparameters by implicit differentiation. In Interna-        Science, 1(1): 144–160.
+               tional Conference on Artiﬁcial Intelligence and Statistics, 1540–        Van der Maaten, L.; and Hinton, G. 2008. Visualizing data using
+               1552. PMLR.                                                              t-SNE. Journal of machine learning research, 9(11).
+               Lu, Y.; Zhong, A.; Li, Q.; and Dong, B. 2018. Beyond ﬁnite layer         Von Neumann, J. 1959. On the theory of games of strategy. Con-
+               neural networks: Bridging deep architectures and numerical differ-       tributions to the Theory of Games, 4: 13–42.
+               ential equations. In International Conference on Machine Learn-          Weinan, E. 2017. A proposal on machine learning via dynamical
+               ing, 3276–3285. PMLR.                                                    systems. Communications in Mathematics and Statistics, 5(1): 1–
+               Lu,Z.;Pu,H.;Wang,F.;Hu,Z.;andWang,L.2017.Theexpressive                   11.
+               power of neural networks: A view from the width. arXiv preprint          Winston,E.;andKolter,J.Z.2020. Monotoneoperatorequilibrium
+               arXiv:1709.02540.                                                        networks. In Larochelle, H.; Ranzato, M.; Hadsell, R.; Balcan,
+               Luketina, J.; Berglund, M.; Greff, K.; and Raiko, T. 2016. Scalable      M.F.; and Lin, H., eds., Advances in Neural Information Process-
+               gradient-based tuning of continuous regularization hyperparame-          ing Systems, volume 33, 10718–10728. Curran Associates, Inc.
+               ters. In International conference on machine learning, 2952–2960.        Zhang, Q.; Gu, Y.; Mateusz, M.; Baktashmotlagh, M.; and Eriks-
+               PMLR.                                                                    son, A. 2020. Implicitly deﬁned layers in neural networks. arXiv
+               Moore, E. H. 1920. On the reciprocal of the general algebraic ma-        preprint arXiv:2003.01822.
+               trix. Bulletin of the American Mathematical Society, 26: 394–395.
+               Netzer, Y.; Wang, T.; Coates, A.; Bissacco, A.; Wu, B.; and Ng,
+               A. Y. 2011. Reading digits in natural images with unsupervised
+               feature learning. In NIPS Workshop on Deep Learning and Unsu-
+               pervised Feature Learning.
+               Onken, D.; and Ruthotto, L. 2020.        Discretize-Optimize vs.
+               Optimize-Discretize for Time-Series Regression and Continuous
+               Normalizing Flows. arXiv preprint arXiv:2005.13420.
+               Onken, D.; Wu Fung, S.; Li, X.; and Ruthotto, L. 2021.        OT-
+               Flow: Fast and Accurate Continuous Normalizing Flows via Op-
+               timal Transport. Proceedings of the AAAI Conference on Artiﬁcial
+               Intelligence, 35(10): 9223–9232.
+               Osher, S.; Shi, Z.; and Zhu, W. 2017. Low dimensional manifold
+               model for image processing. SIAM Journal on Imaging Sciences,
+               10(4): 1669–1690.
+               Paszke, A.; Gross, S.; Chintala, S.; Chanan, G.; Yang, E.; DeVito,
+               Z.; Lin, Z.; Desmaison, A.; Antiga, L.; and Lerer, A. 2017. Auto-
+               matic differentiation in PyTorch.
+               Penrose, R. 1955. A generalized inverse for matrices. In Mathe-
+               matical Proceedings of the Cambridge Philosophical Society, vol-
+               ume51,406–413.CambridgeUniversity Press.
+                    ´
+               Peyre, G. 2009. Manifold models for signals and images. Com-
+               puter vision and image understanding, 113(2): 249–260.
+               Rajeswaran, A.; Finn, C.; Kakade, S. M.; and Levine, S. 2019.
+               Meta-LearningwithImplicitGradients. InWallach,H.;Larochelle,
+                                          ´
+               H.;Beygelzimer,A.;d'Alche-Buc,F.;Fox,E.;andGarnett,R.,eds.,
+                                                                                 6656

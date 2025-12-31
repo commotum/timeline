@@ -1,0 +1,53 @@
+                                                                      ANEURALPROBABILISTIC LANGUAGEMODEL
+                               feature units). In this example the fraction of the overall computation required for computing the
+                               weighted sums of the output units is therefore approximately                                                |V|(1+(n−1)m+h)                       =
+                                                                                                                             |V|(1+(n−1)m+h)+h(1+(n−1)m)+(n−1)m
+                               99.7%. This calculation is approximate because the actual CPU time associated with different
+                               operations differ, but it shows that it is generally advantageous to parallelize the output units com-
+                               putation. The fact that all CPUs will duplicate a very small fraction of the computations is not going
+                               to hurt the total computation time for the level of parallelization sought here, i.e. of a few dozen
+                               processors. If the number of hidden units was large, parallelizing their computation would also
+                               become proﬁtable, but we did not investigate that approach in our experiments.
+                                     The implementation of this strategy was done on a cluster of 1.2 GHz clock-speed Athlon pro-
+                               cessors (32x2CPUs)connected through a Myrinet network (a low-latency Gigabit local area net-
+                               work), using the MPI (Message Passing Interface) library (Dongarra et al., 1995) for the paralleliza-
+                               tion routines. The parallelization algorithm is sketched below, for a single example (w                                                ,···,w ),
+                                                                                                                                                              t−n+1             t
+                               executed in parallel by CPU i in a cluster of M processors. CPU i (i ranging from 0 to M−1) is
+                               responsible of a block of output units starting at number starti = i×d|V|/Me, the block being of
+                               length min(d|V|/Me,|V|−starti).
+                                         COMPUTATIONFORPROCESSORi,examplet
+                                    1. FORWARDPHASE
+                                           (a) Perform forward computation for the word features layer:
+                                                 x(k) ←C(w             ),
+                                                                   t−k
+                                                 x =(x(1),x(2),···,x(n−1))
+                                           (b) Perform forward computation for the hidden layer:
+                                                 o←d+Hx
+                                                 a←tanh(o)
+                                           (c) Perform forward computation for output units in the i-th block:
+                                                 s ←0
+                                                  i
+                                                 Loop over j in the i-th block
+                                                    i. yj ← bj +a.Uj
+                                                   ii. If (direct connections) yj ← yj +x.Wj
+                                                                   yj
+                                                  iii.  pj ←e
+                                                   iv. s ←s +p
+                                                         i       i       j
+                                           (d) Compute and share S=∑ s among the processors. This can easily be achieved with an
+                                                                                        i  i
+                                                 MPIAllreduce operation, which can efﬁciently compute and share this sum.
+                                           (e) Normalize the probabilities:
+                                                 Loop over j in the i-th block, pj ← pj/S.
+                                           (f) Update the log-likelihood. If w falls in the block of CPU i > 0, then CPU i sends p                                               to
+                                                                                               t                                                                             w
+                                                 CPU0. CPU0computesL=logp andkeepstrackofthetotal log-likelihood.                                                              t
+                                                                                                     w
+                                                                                                       t
+                                    2. BACKWARD/UPDATEPHASE,withlearningrateε.
+                                           (a) Perform backward gradient computation for output units in the i-th block:
+                                                 clear gradient vectors ∂L and ∂L.
+                                                                                   ∂a         ∂x
+                                                 Loop over j in the i-th block
+                                                                                                      1145

@@ -1,0 +1,48 @@
+                   A DetailsofCommonCrawlFiltering
+                   AsmentionedinSection2.2, we employed two techniques to improve the quality of the Common Crawl dataset: (1)
+                   ﬁltering Common Crawl and (2) fuzzy deduplication:
+                         1. In order to improve the quality of Common Crawl, we developed an automatic ﬁltering method to remove low
+                            quality documents. Using the original WebText as a proxy for high-quality documents, we trained a classiﬁer
+                            to distinguish these from raw Common Crawl. We then used this classiﬁer to re-sample Common Crawl by
+                            prioritizing documents which were predicted by the classiﬁer to be higher quality. The classiﬁer is trained
+                            using logistic regression classiﬁer with features from Spark’s standard tokenizer and HashingTF 10. For the
+                            positive examples, we used a collection of curated datasets such as WebText, Wikiedia, and our web books
+                            corpus as the positive examples, and for the negative examples, we used unﬁltered Common Crawl. We used
+                            this classiﬁer to score Common Crawl documents. We kept each document in our dataset iff
+                                                          np.random.pareto(α) > 1−document_score
+                            Wechoseα=9inordertotakemostlydocumentstheclassiﬁerscoredhighly,butstillincludesomedocuments
+                            that were out of distribution. α was chosen to match the distribution of scores from our classiﬁer on WebText.
+                            Wefoundthisre-weighting increased quality as measured by loss on a range of out-of-distribution generative
+                            text samples.
+                         2. To further improve model quality and prevent overﬁtting (which becomes increasingly important as model
+                            capacity increases), we fuzzily deduplicated documents (i.e. removed documents with high overlap with
+                            other documents) within each dataset using Spark’s MinHashLSH implementation with 10 hashes, using the
+                            samefeatures as were used for classiﬁcation above. We also fuzzily removed WebText from Common Crawl.
+                            Overall this decreased dataset size by an average of 10%.
+                   After ﬁltering for duplicates and quality, we also partially removed text occurring in benchmark datasets, described in
+                   Appendix C.
+                   B DetailsofModelTraining
+                                                                                                        −8
+                   Totrain all versions of GPT-3, we use Adam with β1 = 0.9, β2 = 0.95, and  = 10         , we clip the global norm of the
+                   gradient at 1.0, and we use cosine decay for learning rate down to 10% of its value, over 260 billion tokens (after 260
+                   billion tokens, training continues at 10% of the original learning rate). There is a linear LR warmup over the ﬁrst 375
+                   million tokens. We also gradually increase the batch size linearly from a small value (32k tokens) to the full value over
+                   the ﬁrst 4-12 billion tokens of training, depending on the model size. Data are sampled without replacement during
+                   training (until an epoch boundary is reached) to minimize overﬁtting. All models use weight decay of 0.1 to provide a
+                   small amount of regularization [LH17].
+                   During training we always train on sequences of the full nctx = 2048 token context window, packing multiple
+                   documents into a single sequence when documents are shorter than 2048, in order to increase computational efﬁciency.
+                   Sequences with multiple documents are not masked in any special way but instead documents within a sequence
+                   are delimited with a special end of text token, giving the language model the information necessary to infer that
+                   context separated by the end of text token is unrelated. This allows for efﬁcient training without need for any special
+                   sequence-speciﬁc masking.
+                   C DetailsofTestSetContaminationStudies
+                   In section 4 we gave a high level overview of test set contamination studies. In this section we provide details on
+                   methodology and results.
+                   Initial training set ﬁltering   Weattemptedtoremovetextoccurring in benchmarks from training data by searching
+                   for 13−gram overlaps between all test/development sets used in this work and our training data, and we removed
+                   the colliding 13−gram as well as a 200 character window around it, splitting the original document into pieces. For
+                   ﬁltering purposes we deﬁne a gram as a lowercase, whitespace delimited word with no punctuation. Pieces less than
+                   200 characters long were discarded. Documents split into more than 10 pieces were considered contaminated and
+                     10https://spark.apache.org/docs/latest/api/python/pyspark.ml.html#pyspark.ml.feature.HashingTF
+                                                                              43

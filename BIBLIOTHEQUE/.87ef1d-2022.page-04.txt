@@ -1,0 +1,54 @@
+                           Published as a conference paper at ICLR 2022
+                                                               subsequence 
+                                            batch       Document A          Document C        Document F ...
+                                          dimension   Document B    Document D     Document E   Document G ...
+                           Figure 3: Our data pipeline splits documents into subsequences and packs subsequences into batches.
+                           WealsouseaTransformer-XLstylecache,whichholdsthekeysandvaluesfromtheprevioustraining
+                           step. When doing self-attention, the cached keys and values are prepended to the current keys and
+                           values, and we use a sliding-window causal mask (Beltagy et al., 2020) so that each token has a local
+                           context that includes the previous 512 tokens.
+                            3.1  kNN-AUGMENTEDATTENTIONLAYER
+                           Oneofthetransformer layers near the top of the stack is a kNN-augmented attention layer, which
+                           combines two forms of attention. Like all of the other layers, it uses standard dense self-attention on
+                           the local context, which is the input subsequence for the current training step. Unlike the other layers,
+                           however, it also does an approximate k-nearest-neighbor search into the external memory.
+                           The same queries are used for both the local context, and for the external memory. The keys and
+                           values also belong to the same distribution; after each training step, the (key, value) pairs in the local
+                           context are appended to the end of the external memory. If the document is very long, old (key, value)
+                           pairs will be dropped from the memory to make room for new ones. Thus, for each head, the external
+                           memorykeepsacacheofthepriorM (key,value)pairs, where M is the memory size.
+                           ThekNNlookupwillreturnasetofretrieved memories, which consist of the top-k (key, value) pairs
+                           that kNN search returns for each query (i.e. each token) in the input subsequence. As with standard
+                           dense attention, we ﬁrst construct an attention matrix by computing the dot product of each query
+                           against the retrieved keys, then apply softmax, and ﬁnally return a weighted sum of the retrieved
+                           values. Unlike standard dense attention, the retrieved memories contain a different set of (key, value)
+                           pairs for each query.
+                           Attention over the local context is performed in the usual way. The results of kNN-attention and local
+                           attention are then combined using a learned gate:
+                                                               g = σ(b )                                                    (1)
+                                                                        g
+                                                              V =V g+V (1−g)                                              (2)
+                                                               a      m          c
+                           where σ is the sigmoid function, and  is element-wise multiplication. Va is the combined result of
+                           attention, V   is the result of attending to external memory, and V is the result of attending to the
+                                       m                                                      c
+                           local context. The bias b is a learned per-head scalar parameter, which allows each head to choose
+                                                    g
+                           between local and long-range attention. In our experiments, the value of the gate g does not depend
+                           onthe content of the token at each position, although that would be a trivial extension to implement.
+                           Wedidobservethat over time, most heads learned to attend almost exclusively to external memory.
+                           Positionbias. Fordenseattentionwithinthelocalcontext, weusetheT5relativepositionbias(Raffel
+                           et al., 2020). As noted by Dai et al. (2019), adding a global position encoding to each token does not
+                           workwell when processing long documents. We don’t use a position bias for the retrieved memories.
+                           Experiments on the PG19 dataset (Sun et al., 2021) have shown that relative position does not appear
+                           to matter at long range, and the T5 relative bias puts all long-range tokens in the same bucket anyway.
+                           Batching. Figure 3 illustrates how multiple long documents of different lengths are packed into a
+                           batch, and split into subsequences. Each subsequence in the batch comes from a different document,
+                           and thus requires a separate external memory, which is cleared at the start of each new document.
+                            3.2   DISTRIBUTIONAL SHIFT
+                           Because each long document is processed over multiple training steps, there is a distributional shift
+                           in the keys and values that are stored in external memory. The model parameters that produce the
+                           queries change over time, and will thus have shifted since the keys and values were stored. For
+                           very large memories, older records may become “stale.” Similar observations have been made for
+                           CrossBatch memory (Wang et al., 2020c) in the vision domain.
+                                                                            4

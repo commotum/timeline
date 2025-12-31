@@ -1,0 +1,52 @@
+                                                  Large-scale few-shot program induction and synthesis 
+               sidestep the major diffculty of program induction, as using       2.  20 pairs of input-outputs examples, 10 for training and 
+               a line-by-line description of the program in English reduces         10 for test, 
+               the inference to a translation problem. Codeforces has also       3.  a C++ function that solves these pairs, optionally with 
+               been used to build program repair tools. Tan et al. (2017)           variable names already standardized, 
+               build a dataset of small fxes by leveraging consecutive sub-
+               missions from users fxing their mistakes and  Kulal et al.        4.  a natural text describing the overall program the task 
+               (2019) learn to fx compile errors by synthetically perturbing        has been extracted from, 
+               correct programs and observing the compiler message. 
+                                                                                 5.  a Program Expression Graph form that further standard-
+               3. Description of the PROGRES dataset                                izes the C++ code (see subsec 3.3 for more details). 
+               We  call  our  dataset  PROGRES:  Programs  from  Real          Figure 2 shows an illustration for a single task. 
+               Executed Subproblems.                                           3.2. Implementation and design decisions 
+               3.1. Structure of the dataset                                    In this section we provide an overview of how we obtained 
+               In competitive programming there are regularly-scheduled        the data contained in PROGRES. The goal is to provide a 
+               contests, each with multiple new problems for humans to         better understanding on the data distribution, explaining how 
+               solve by coding their solutions as programs.  Each Code-        we computed the input-output examples as well as some lim-
+               Forces problem consists of a short text describing a back-      itations of our pipeline, which effectively constrain the pro-
+               story and the requirements for the program, as well as multi-   grams in our dataset to be in a (large) subset of C++. We ob-
+               ple test-cases (some public, some private) that the submitted   tain the original C++ programs from codeforces.com, 
+               program has to satisfy.  Because all user submissions are       leveraging the scraping and standarization done by SPoC 
+               public, for each problem there are hundreds of available        and DrRepair (Kulal et al., 2019; Yasunaga & Liang, 2020). 
+               programs that solve it, providing us with multiple pairs of     Since this scraping only contained simple programs solving 
+               (program, test suite) such that the entire program satisfes     very easy problems, we performed an additional scraping 
+               the test-cases. For each program we can obtain many sub-        to capture problems of all diffculties.  We obtain around 
+               programs: valid segments of code contained in the original      300,000 programs; however, since C++ is a compiled lan-
+               program, expressing an intermediate variable as a function      guage, it is not meant to be run line-by-line, which we 
+               of other variables.  To be valid, a subprogram has to be        need to do to obtain the subprograms. This process imposes 
+               correctly parenthesised: start and end at the same level of     some constraints, which restrict us to a subset of C++, which 
+               nesting and never go to a level above where it started in the   around 60,000 of the scraped programs satisfy. The most rel-
+               indentation nesting. For a correct subsequence of the overall   evant exclusions are classes, the queue and stack data-
+               program, we defne potential outputs as the variables modi-      structures, and the instructions break and continue. To 
+               fed on the last line and as inputs all the variables involved   effciently evaluate these programs we leveraged the MIT 
+               in the computations on that sequence that are not created       supercloud (Reuther et al., 2018), parallelizing program 
+               within the subprogram itself.                                   evaluations over 4800 CPU cores. 
+               Given a subprogram, we can generate the data for a single       To interpret C++ we use the Cling C++ interpreter (Vassilev 
+               task; consisting of 20 input-output pairs (10 training, 10      et al.). Cling performs an elaborate incremental just-in-time 
+               test). We obtain these pairs by running the entire program      compilation that keeps modifying the abstract syntax tree 
+               with a custom-made C++ interpreter based on Cling (Vas-         before executing the new line of code.  This allows us to 
+               silev et al.)(more details in section 3.2) and observing the    execute pieces of code and check the values of variables in 
+               intermediate values at every line. Note that the input distri-  between. Since these pieces of code have to be compiled, 
+               bution has a rich structure, as it comes from inputs designed   they have to be self-contained: functions have to be defned 
+               by humans after being processed by previous computations        entirely before being fed to Cling and loops and if statements 
+               in the overall program. Moreover, we also have access to        have to be given as a block. This would restrict the type of 
+               the natural text description of the overall program.  This      subprograms that we can obtain with vanilla Cling, since 
+               text alone does not specify the subprogram, but serves as a     we would not be able inspect the intermediate values within 
+               context to help guide the search.                               loops or functions. 
+               In PROGRES, a task consists of the following information:       We therefore implemented our own emulator on top of Cling 
+                                                                               to be able to obtain intermediate values for loops and if state-
+                                                                               ments. Instead of feeding the entire if/while statement 
+                 1.  a  type  signature  describing  the  variable  types      to Cling, the emulator frst sends its condition and then calls 
+                    (int,string,int[],etc) of all inputs and outputs,          the appropriate code depending on whether the condition 

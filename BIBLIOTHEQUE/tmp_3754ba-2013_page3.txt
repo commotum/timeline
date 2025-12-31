@@ -1,0 +1,72 @@
+             Grammars can be conveniently used to express a wide range           fundamentally increase the expressiveness of the notation,
+             of constraints, and in particular, to bound the depth and/or the    it does offer signiﬁcant convenience in encoding real-world
+             size of the desired expression.                                     synthesis problems.
+                SyGuS Problem Deﬁnition: Informally, given the correct-            Let Expressions in Grammar Productions: The SMT-LIB
+             ness speciﬁcation ϕ and the set L of candidates, we want            interchange format for specifying constraints allows the use of
+             to ﬁnd an expression e ∈ L such that if we use e as                 let expressions as part of the formulas, and this is supported by
+             an implementation of the function f, the speciﬁcation ϕ is          our language also: (let [var = e ] e ). While let-expressions
+                                                                                                                  1    2
+             valid. Let us denote the result of replacing each occurrence        in a speciﬁcation can be desugared, the same does not hold
+             of the function symbol f in ϕ with the expression e by              when they are used in a grammar. As an example, consider
+             ϕ[f/e]. Note that we need to take care of binding of input          the grammar below for the set of candidate expressions for
+             values during such a substitution: if f has two inputs that the     the function f(x,y):
+             expressions in L refer to by the variable names x and y, then               T := (let [z = U] z +z)
+             the occurrence f(e ,e ) in the formula ϕ must be replaced
+                                 1   2                                                   U := x|y|Const|U +U |U ∗U |(U)
+             with the expression e[x/e1,y/e2] obtained by replacing x and
+             y in e by the expressions e and e , respectively. Now we can
+                                         1      2                                The top-level expression speciﬁed by this grammar is the
+             deﬁne the syntax-guided synthesis problem, SyGuS for short,         sum of two identical subexpressions built using arithmetic
+             precisely:                                                          operators, and such a structure cannot be speciﬁed using a
+                  Given a background theory T, a typed function                  standard context-free grammar. In the example above, every
+                  symbol f, a formula ϕ over the vocabulary of T                 let introduced by the grammar uses the same variable name. If
+                  along with f, and a set L of expressions over the              the application of let-expressions are nested in the derivation
+                  vocabulary of T and of the same type as f, ﬁnd an              tree, the standard rules for shadowing of variable deﬁnitions
+                  expression e ∈ L such that the formula ϕ[f/e] is               determine which deﬁnition corresponds to which use of the
+                  valid modulo T.                                                variable.
+                Example 3: For the speciﬁcation ϕ presented earlier, if the        SYNTH-LIB Input Format: To specify the input to the
+                                                    1                            SyGuS problem, we have developed an interchange format,
+             set of allowed implementations is L1 as shown before, there         called SYNTH-LIB, based on the syntax of SMT-LIB2—the
+             is no solution to the synthesis problem. On the other hand, if      input format accepted by the SMT solvers (see smt-lib.org).
+             the set of allowed implementations is L2, a possible solution       The input for the SyGuS problem to synthesize the function f
+             is the conditional if-then-else expression ITE(x ≥ y,x,y).          with the speciﬁcation ϕ in the theory LIA, with the grammar
+                In some special cases, it is possible to reduce the deci-                                1
+                                                                                 for the languages L is encoded in SYNTH-LIB as:
+             sion problem for syntax guided synthesis to the problem of                              1
+             deciding formulas in the background theory using additional              (set-logic LIA)
+             quantiﬁcation. For example, every expression in the set L is             (synth-fun f ((x Int) (y Int)) Int
+                                                                          1             ((Start Int (x y
+             equivalent to ax+by+c, for integer constants a,b,c. If ϕ is the                              (Constant Int)
+             correctness speciﬁcation, then deciding whether there exists an                              (+ Start Start)))))
+             implementation for f in the set L1 corresponds to checking               (declare-var a Int)
+             whether the formula ∃a,b,c.∀X.ϕ[f/ax + by + c] holds,                    (declare-var b Int)
+             where X is the set of all free variables in ϕ. This reduction            (constraint (= (f a b) (f b a)))
+             was possible for L because the set of all expressions in L               (constraint (>= (f a b) a))
+                                 1                                          1         (check-synth)
+             can be represented by a single parameterized expression in the        Optimality Criterion: The answer to our synthesis problem
+             original theory. However, the grammar may permit expressions        need not be unique: there may be two expressions e1 and e2 in
+             of arbitrary depth which may not be representable in this way,      the set L of allowed expressions such that both implementa-
+             as in the case of L2.                                               tions satisfy the correctness speciﬁcation ϕ. Ideally, we would
+                Synthesis of Multiple Functions: A general synthesis prob-       like to associate a cost with each expression, and consider the
+             lemcaninvolve more than one unknown function. In principle,         problem of optimal synthesis which requires the synthesis tool
+             adding support for problems with more than one unknown              to return the expression with the least cost among the correct
+             function is merely a matter of syntactic sugar. For exam-           ones. A natural cost metric is the size of the expression. In
+             ple, suppose we want to synthesize functions f (x ) and
+                                                                   1  1          presence of let-expressions, the size directly corresponds to the
+             f (x ), with corresponding candidate expressions given by
+              2   2                                                              number of instructions in the corresponding straight-line code,
+             grammars G and G , with start non-terminals S and S ,
+                          1         2                              1        2    and thus such a metric can be used effectively for applications
+             respectively. Both functions can be encoded with a single           such as super-optimization.
+             function f (id,x ,x ). The set of candidate expressions is
+                        12      1  2                                                              III. INDUCTIVE SYNTHESIS
+             described by the grammar that contains the rules of G and
+                                                                        1
+             G along with a new production S := ITE(id = 0,S ,S ),                 Algorithmic approaches to program synthesis range over a
+               2                                                       1   2
+             with the new start non-terminal S. Then, every occurrence of        widespectrum, from deductive synthesis to inductive synthesis.
+             f (x ) in the speciﬁcation can be replaced with f      (0,x ,∗)     In deductive program synthesis (e.g., [3]), a program is synthe-
+              1   1                                               12     1
+             and every call to f (x ) can be replaced with f (1,∗,x ).           sized by constructively proving a theorem, employing logical
+                                  2  2                           12        2
+             Although adding support for multiple functions does not             inference and constraint solving. On the other hand, inductive

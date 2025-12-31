@@ -1,0 +1,60 @@
+                                                                                 Stabilizing Equilibrium Models by Jacobian Regularization
+                        Table 5. A more complete version of Table 1 with more memory and efﬁciency comparison. Memory benchmarked on batch size 15
+                         and excludes the embedding layer. † indicates unregularized model hard-stopped at inference time (while still trained with more NFEs).
+                         Overall, we ﬁnd that Jacobian regularization allows us to train and predict with much fewer NFEs, at a relatively small cost in performance.
+                                                                                                                        ModelSize         Perplexity      ttrain (relative)    Train NFE       Valid. NFE        Training Memory
+                                                 AWD-QuasiRNN(Bradburyetal.,2017)                                          159M              33.0                 -                  -                -                 7.1GB
+                                             Relational Memory Core (Santoro et al., 2018)                                 195M              31.6                 -                  -                -                    -
+                                               Megatron-LM(Shoeybietal., 2019) [SOTA]                                      8300M             10.8                 -                  -                -                    -
+                                               Transformer-XL (18-layer) (Dai et al., 2019)                                110M              24.1                1×                  -                -                 9.0GB
+                                              DEQ-Transformer (Pre-LN) (Bai et al., 2019)                                   98M           [diverged]            N/A                 30              N/A                  N/A
+                                              DEQ-Transformer (Post-LN) (Bai et al., 2019)                                  98M              24.0              3:1×                 30               30                 3.9GB
+                                                DEQ-Transformer (Post-LN) early stopped                                     98M              29.2              3:1×                 30               12                 3.9GB
+                                              DEQ-Transformer (Post-LN) (Bai et al., 2019)                                  98M              26.0              2:2×                 20               20                 3.6GB
+                                              DEQ-Transformer (Post-LN) (Bai et al., 2019)                                  98M           [diverged]            N/A                 15              N/A                 3.6GB
+                                                DEQ-Transformer(Pre-LN)+JR(ours)                                            98M              24.5              1:5×                 14               14                 4.8GB
+                                               DEQ-Transformer(Post-LN)+JR(ours)                                            98M              24.9              1:4×                 13               12                 4.8GB
+                                DEQ-Transformer(Post-LN)+JR(ours)(trainedonseqlen=300)                                      98M              23.8              2:2×                 13               13                 6.5GB
+                         and backward passes. At inference time, we generally re-                                                     whichindicatesarelativelymoreaccurategradientproduced
+                         duce the number of NFEs (e.g., cf. Table 4 and Table 1),                                                      bythe implicit function theorem.
+                         while the other hyperparameters (e.g., GroupNorm group                                                       Wefurther corroborate this ﬁnding via empirical evidence
+                         sizes) are kept the same.                                                                                     ontheCIFAR-10datasetwithamultiscale DEQ(MDEQ)
+                         B. Additional Experimental Results                                                                            instance, shown in Figure 10a. Compared to the original
+                                                                                                                                       MDEQ(blueline),theJacobian-regularized version of the
+                         B.1. MemoryConsumption                                                                                        backward pass experiences much fewer ﬂuctuations (and
+                                                                                                                                       thus less stochastic gradients). We also compared to an alter-
+                         AswenotedinSections4and5,usingJacobianregulariza-                                                             native solution that uses the simple weight decay. Although
+                         tion and thus the vector-Jacobian-product-based Hutchinson                                                    it also alleviates the ﬂuctuation problem, our empirical ob-
+                         estimator introduces some extra memory cost at training                                                       servations suggest that weight decay alone almost always
+                         time due to the need to differentiate w.r.t. the kJ                                    k term.                adds more difﬁculty to the ﬁxed point solving. This agrees
+                                                                                                             fθ F                     with what we have observed in the forward pass in Sec-
+                         Overall, with the same batch size and sequence length, we
+                         observearoughly25%increaseintrainingmemoryrequired                                                            tion 5.5. Such comparison can be seen in Figure 10a in
+                         (from about 3.9GB to 4.8GB, excluding embeddings). This                                                       the purple line, which converged even more poorly than the
+                         is less than the memory consumption of a layer, because                                                       original baseline after 14 backward solver iterations (with
+                         the reduction in NFEs needed on the other side saves the                                                      relative residual > 0:05 and increasing slowly over training).
+                         memoryusedbythesolver(see Section 3.4). However, this                                                         In contrast, the regularized backward pass is more smooth
+                         memoryfootprint is still much better than the conventional                                                    and stable (red line) throughout training (we used γ = 0:5).
+                         explicit Transformer-XL model, which consumes about 2×
+                         as much GPU memory. With the Jacobian regularization,                                                         B.3. Failure of Weight Decay to Fix the Problem
+                         as we can see, the DEQ models are much more efﬁcient in                                                      This overall inability of weight decay alone to ﬁx the DEQ
+                         time complexity than before, while still staying competitive                                                  stability issue (e.g., see Figures 8 and 10a), we believe,
+                         onthe space complexity and the performance fronts.                                                            exactly suggests that there is a deeper implicitness property
+                         B.2. DEQ’s Backward Convergence with Jacobian                                                                 of the model that should be regularized than just the value
+                                 Regularization (CIFAR-10)                                                                             of individual weights. As DEQ networks typically rely
+                                                                                                                                       on a single fθ block, their complex non-linear structure
+                         As we discussed in Section 4, the backward dynamics of                                                        makestheir stability depend as much on the linear parts of
+                         a DEQ model is a linear ﬁxed point system that depends                                                        f (which weight decay does regularize) as the non-linear
+                                                                                                                                         θ
+                                                                                                             ?                         parts (which weight decay does not directly regularize; e.g.,
+                         directly on the Jacobian at equilibrium (i.e., Jf (z )). There-
+                                                                                                       θ                               self-attention in f if we use a Transformer layer). On the
+                         fore, the backward pass stability is directly inﬂuenced by                                                                                   θ
+                         the conditioning of the Jacobian that we regularize. The                                                      other hand, Jacobian regularization takes into account both
+                         stabilizing effect of the proposed Jacobian regularization                                                    parts as it tries to constrain the overall spectral radius of the
+                         on the backward pass convergence was already shown for                                                        matrix.
+                        WikiText-103 language modeling in Figure 3b, where we                                                         Wealsoprovide some additional analysis on how kJ k
+                                                                                                                                                                                                                                    f     F
+                         empirically observe that the Jacobian-regularized DEQ-                                                                                                                                                       θ
+                         Transformer’s backward pass stays at a consistent level,                                                      evolves during training in Figure 10b and 10c. Speciﬁ-
+                                                                                                                                       cally, even with weight decay, the convergence of DEQ-

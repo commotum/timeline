@@ -1,0 +1,832 @@
+                                                                    This ICCV paper is the Open Access version, provided by the Computer Vision Foundation.
+                                                                                            Except for this watermark, it is identical to the accepted version;
+                                                                                   the final published version of the proceedings is available on IEEE Xplore.
+                                                                DiffusionDet: Diffusion Model for Object Detection
+                                                                                                  1                             1                                    2,3                             1,4
+                                                                      Shoufa Chen                          Peize Sun                     Yibing Song                             Ping Luo
+                                                                                 1The University of Hong Kong                                              2Tencent AI Lab
+                                                                      3AI3 Institute, Fudan University                                            4Shanghai AI Laboratory
+                                                                  {sfchen, pzsun, pluo}@cs.hku.hk                                                   yibingsong.cv@gmail.com
+                                                                                                                                                                                             ���㌵ (���㌵    |���㌵ )
+                                                                   Abstract                                                                    (a)     ���㌵!                            ���㌵       !   "#$   "   ���㌵                               ���㌵
+                                                                                                                                                                                        "                      "#$                              %
+                             We propose DiffusionDet, a new framework that for-                                                                                                              ���㌵(���㌵ |���㌵    )
+                       mulates object detection as a denoising diffusion process                                                                                                                  "   "#$
+                       from noisy boxes to object boxes.                                     During the training                               (b)
+                       stage, object boxes diffuse from ground-truth boxes to ran-
+                       domdistribution, and the model learns to reverse this nois-
+                       ing process. In inference, the model refines a set of ran-                                                              (c)
+                       domlygeneratedboxestotheoutputresultsinaprogressive
+                       way. Our work possesses an appealing property of flexibil-                                                            Figure 1. Diffusion model for object detection. (a) A diffusion
+                       ity, which enables the dynamic number of boxes and itera-                                                             model where q is the diffusion process and p is the reverse pro-
+                       tive evaluation. The extensive experiments on the standard                                                                                                                                      θ
+                       benchmarksshowthatDiffusionDetachievesfavorableper-                                                                   cess. (b) Diffusion model for image generation task. (c) We pro-
+                                                                                                                                             posetoformulateobjectdetectionasadenoisingdiffusionprocess
+                       formance compared to previous well-established detectors.                                                             from noisy boxes to object boxes.
+                       For example, DiffusionDet achieves 5.3 AP and 4.8 AP
+                       gains when evaluated with more boxes and iteration steps,
+                       underazero-shottransfersettingfromCOCOtoCrowdHu-                                                                      query-based detection paradigm [23,51,90,114].
+                       man. Our code is available at https://github.com/                                                                          While these works achieve a simple and effective de-
+                       ShoufaChen/DiffusionDet.                                                                                              sign, they still have a dependency on a fixed set of learnable
+                                                                                                                                             queries. A natural question is: is there a simpler approach
+                       1. Introduction                                                                                                       that does not even need the surrogate of learnable queries?
+                                                                                                                                                  Weanswerthisquestionbydesigninganovelframework
+                             Object detection aims to predict a set of bounding boxes                                                        that directly detects objects from a set of random boxes.
+                       and associated category labels for targeted objects in one                                                            Starting from purely random boxes, which do not contain
+                       image. As a fundamental visual recognition task, it has                                                               learnable parameters that need to be optimized in the train-
+                       become the cornerstone of many related recognition sce-                                                               ing stage, we expect to gradually refine the positions and
+                       narios, such as instance segmentation [36, 53], pose esti-                                                            sizes of these boxes until they perfectly cover the targeted
+                       mation [9, 22], action recognition [32, 81], object track-                                                            objects. This noise-to-box approach requires neither heuris-
+                       ing [46,65], and visual relationship detection [45,62].                                                               tic object priors nor learnable queries, further simplifying
+                             Modern object detection approaches have been evolv-                                                             the object candidates and pushing the development of the
+                       ing with the development of object candidates, i.e., from                                                             detection pipeline forward.
+                       empirical object priors [27, 59, 72, 74] to learnable object                                                               Our motivation is illustrated in Figure 1.                                           We think
+                       queries [10,90,114]). Specifically, the majority of detectors                                                         of the philosophy of noise-to-box paradigm is analogous
+                       solve detection tasks by defining surrogate regression and                                                            to noise-to-image process in the denoising diffusion mod-
+                       classification on empirically designed object candidates,                                                             els [16,38,88], which are a class of likelihood-based mod-
+                       such as sliding windows [28,79], region proposals [27,74],                                                            els to generate the image by gradually removing noise
+                       anchor boxes [56,72] and reference points [19,105,112].                                                               from an image via the learned denoising model. Diffu-
+                       Recently, DETR [10] proposes learnable object queries                                                                 sionmodelshaveachievedgreatsuccessinmanygeneration
+                       to eliminate the hand-designed components and set up an                                                               tasks [3,4,40,71,94] and start to be explored in perception
+                       end-to-end detection pipeline, attracting great attention on                                                          tasks like image segmentation [1,5,6,13,31,47,97]. How-
+                                                                                                                                      19830
+               # Boxes                 300       500         1000          2000            covers more crowed scenes, DiffusionDet achieves signif-
+               DETR[10]               61.3   61.3 (+0.0)   61.3 (+0.0)  61.3 (+0.0)        icant gains by adjusting the number of evaluation boxes and
+               Sparse R-CNN[90] 66.6 66.5(-0.1)            66.5 (-0.1)  66.5 (-0.1)        iteration steps. In contrast, previous methods only obtain
+               DiffusionDet           66.6   69.0 (+2.4)   71.0 (+4.4)  71.9 (+5.3)        marginal gains or even degraded performance. More de-
+                              (a) Dynamic number of evaluation boxes.                      tailed discussions are left in Section 4.
+                                                                                              Besides, we evaluate DiffusionDet on COCO [57]
+               # Steps                  1         2             3             4            dataset.    With ResNet-50 [37] backbone, DiffusionDet
+               DETR[10]               61.3   62.5 (+1.2)   62.7 (+1.4)   62.7 (+1.4)       achieves 45.8 AP using a single sampling step and 300
+               Sparse R-CNN[90] 66.6 60.6(-6.0)            55.5 (-11.1)  52.6 (-14.0)      random boxes, which significantly outperforms Faster R-
+               DiffusionDet           66.6   69.7 (+3.1)   70.8 (+4.2)   71.4 (+4.8)       CNN[74](40.2AP),DETR[10](42.0AP)andonparwith
+                              (b) Dynamic number of evaluation steps.                      Sparse R-CNN [90] (45.0 AP). Besides, we can further im-
+               Table 1. Zero-shot transfer from COCO to CrowdHuman vis-                    prove DiffusionDet up to 46.8 AP by increasing the number
+               ible box detection. All models are trained with 300 boxes and               of sampling steps and random boxes.
+               tested with different number of boxes and steps.                            Ourcontributions are summarized as follows:
+                                                                                           • We formulate object detection as a generative denoising
+                                                                                             process, which is the first study to apply the diffusion
+               ever, to the best of our knowledge, there is no prior art that                model to object detection to the best of our knowledge.
+               successfully adopts it to object detection.                                 • Our noise-to-box detection paradigm has several appeal-
+                   In this work, we propose DiffusionDet, which tackles                      ing properties, such as decoupling training and evaluation
+               the object detection task with a diffusion model by casting                   stage for dynamic boxes and iterative evaluation.
+               detection as a generative task over the space of the posi-                  • We conduct extensive experiments on COCO, Crowd-
+               tions (center coordinates) and sizes (widths and heights) of                  Human, and LVIS benchmarks. DiffusionDet achieves
+               bounding boxes in the image. At the training stage, Gaus-                     favorable performance against previous well-established
+               sian noise controlled by a variance schedule [38] is added                    detectors, especially zero-shot transferring across differ-
+               to ground truth boxes to obtain noisy boxes. Then these                       ent scenarios.
+               noisy boxes are used to crop [36,74] features of Region of                  2. Related Work
+               Interest (RoI) from the output feature map of the backbone
+               encoder, e.g., ResNet [37], Swin Transformer [60]. Finally,                 Object detection.         Most modern object detection ap-
+               these RoI features are sent to the detection decoder, which                 proachesperformboxregressionandcategoryclassification
+               is trained to predict the ground-truth boxes without noise.                 on empirical object priors, such as proposals [27,74], an-
+               With this training objective, DiffusionDet is able to predict               chors [56,72,73], points [93,95,112]. Recently, Carion et
+               the groundtruthboxesfromrandomboxes. Attheinference                         al. proposed DETR [10] to detect objects using a fixed set
+               stage, DiffusionDet generates bounding boxes by reversing                   of learnable queries. Since then, the query-based detection
+               the learned diffusion process, which adjusts a noisy prior                  paradigm has attracted great attention and inspired a series
+               distribution to the learned distribution over bounding boxes.               of following works [12,24,43,51,58,64,66,89,90,107,110,
+                   As a probabilistic model, DiffusionDet has an attractive                114]. In this work, we push forward the development of the
+               superiority of flexibility, i.e., we can train the network once             object detection pipeline further with DiffusionDet.
+               andusethesamenetworkparametersunderdiversesettings                          Diffusion model. As a class of deep generative models,
+               in the inference stage, mainly including: (1) Dynamic num-
+               ber of boxes. Leveraging random boxes as object candi-                      diffusion models [38,86,88] start from the sample in ran-
+               dates, we decouple the training and evaluation stage of Dif-                domdistribution and recover the data sample via a gradual
+               fusionDet, i.e., we can train DiffusionDet with N                ran-       denoising process. Diffusion models have recently demon-
+                                                                         train             strated remarkable results in fields including computer vi-
+               dom boxes while evaluating it with N                random boxes,
+                                                             eval                          sion [4,21,33,35,39,68,71,75,76,82,104,108], nature lan-
+               where the N         is arbitrary and does not need to be equal
+                              eval                                                         guageprocessing[3,30,52],audioprocessing[41,48,50,70,
+               to N       .  (2) Iterative evaluation. Benefited by the iter-
+                     train                                                                 91,100,103],graph-relatedtopics[42], interdisciplinary ap-
+               ative denoising property of diffusion models, DiffusionDet
+               can reuse the whole detection head in an iterative way, fur-                plications [2,40,44,78,94,99,102], etc. More applications
+               ther improving its performance.                                             of diffusion models can be found in recent surveys [8,104].
+                   The flexibility of DiffusionDet makes it a great advan-                 Diffusion model for perception tasks.                While Diffu-
+               tage in detecting objects across different scenarios, e.g.,                 sion models have achieved great success in image gener-
+               sparse or crowded, without additional fine-tuning. Specifi-                 ation [16,38,88], their potential for discriminative tasks has
+               cally, Table 1 shows that when directly evaluating COCO-                    yet to be fully explored. Some pioneer works tried to adopt
+               pretraiend models on CrowdHuman [80] dataset, which                         the diffusion model for image segmentation tasks [1,5,6,
+                                                                                       19831
+                                                                       ���㌵    Gaussian Noise           ���㌵′                                                                             Diffusion model.                                Diffusion models [38, 83, 84, 86] are
+                                                                       ���㌵                             ���㌵′                                                                             a classes of likelihood-based models inspired by nonequi-
+                                                                       ���㌵                             ���㌵′
+                                                                       ℎ                              ℎ′                                                                              librium thermodynamics [86,87]. These models define a
+                                                                                                                                                                                      Markovian chain of diffusion forward process by gradually
+                                                                                                                                                                                      adding noise to sample data. The forward noise process is
+                                                                                                                                                                                      defined as
+                                                                                                                                            Class
+                                                                                                                                             Box                                                                                                         √
+                                                                               Image Encoder               Detection Decoder                                                                                  q(zt|z0) = N(zt| α¯tz0,(1−α¯t)I),                                                                          (1)
+                                                                                (a) Overall pipeline.                                                                                 which transforms data sample z0 to a latent noisy sample
+                                                                                                                                                                                                                                                                                                                          :
+                                                                                                                                                                                      z for t ∈ {0,1,...,T} by adding noise to z . α¯                                                                                       =
+                                                                                                                                                                                         t                                                                                                              0            t
+                                                            Stage-1                                                                                                                   Q                               Q
+                                      s                                                  s                                                                                                 t                                t
+                                      e                                                  n
+                                      x                                                  o                                 Iterative Evaluation                                                      α =                            (1 − β ) and β represents the noise
+                                      o                                                  i                                                                                                              s                                             s                    s
+                                      B                                                  t                                                                                                 s=0                              s=0
+                                                                                         c
+                                                                                         i
+                                      m   Feature                                        d
+                                      o                                                                                                                                               variance schedule [38]. During training, a neural network
+                                      d                        n                         Pre
+                                      n                        g                         x
+                                      Ra                       i
+                                      	                        Al                        Bo
+                                                                                         	                          1          2                   6                                  f (z ,t) is trained to predict z from z by minimizing the
+                                      ���㌵                       I                  FC                                                                                                     θ       t                                                           0                    t
+                                      	                        Ro                        ���㌵                         -          -                   -                                  training objective with ℓ loss [38]:
+                                                                                                                                                                                                                                              2
+                                                                                                                    Stage      Stage               Stage
+                                                                        ���㌵	                                                                        Head                                                                                      1                                           2
+                                                                                                                                                                                                                         L             = ||f (z ,t)−z || .                                                               (2)
+                                                                   RoI Features                                                                                                                                              train           2         θ       t                   0
+                                                            (b) Details of the detection decoder/head.                                                                                At inference stage, data sample z0 is reconstructed from
+                              Figure 2. DiffusionDet framework. (a) The image encoder ex-                                                                                             noise zT with the model fθ and an updating rule [38,84]
+                                                                                                                                                                                      in an iterative way, i.e., z                                       →z                       →... → z . More
+                              tracts feature representation from an input image. The detection                                                                                                                                                     T                T−∆                                      0
+                              decoder takes noisy boxes as input and predicts category classifi-                                                                                      detailed formulation of diffusion models can be found in
+                              cation and box coordinates. (b) The detection decoder has 6 stages                                                                                      Appendix A.
+                              in one detection head, following DETR and Sparse R-CNN. Be-                                                                                                    In this work, we aim to solve the object detection task
+                              sides, DiffusionDet can reuse this detection head (with 6 stages)                                                                                       via the diffusion model. In our setting, data samples are a
+                                                                                                                                                                                      set of bounding boxes z = b, where b ∈ RN×4 is a set of
+                              multiple times, which is called “iterative evaluation”.                                                                                                                                                         0
+                                                                                                                                                                                      Nboxes. Aneuralnetworkf (z ,t,x)istrainedtopredict
+                                                                                                                                                                                                                                                          θ       t
+                                                                                                                                                                                      z from noisy boxes z , conditioned on the corresponding
+                                                                                                                                                                                         0                                                  t
+                              13, 31, 47, 97], for example, Chen et al. [13] adopted Bit                                                                                              image x. The corresponding category label c is produced
+                              Diffusion model [14] for panoptic segmentation [49] of im-                                                                                              accordingly.
+                              ages and videos. However, despite significant interest in                                                                                               3.2. Architecture
+                              this idea, there are no previous solutions that successfully
+                              adapt generative diffusion models for object detection, the                                                                                                    Since the diffusion model generates data samples iter-
+                              progress of which remarkably lags behind that of segmenta-                                                                                              atively, it needs to run model fθ multiple times at the in-
+                              tion. We argue that this may be because segmentation tasks                                                                                              ference stage. However, it would be computationally in-
+                              are processed in an image-to-image style, which is more                                                                                                 tractable to directly apply fθ on the raw image at every it-
+                              conceptually similar to the image generation tasks, while                                                                                               erative step. Therefore, we propose to separate the whole
+                              object detection is a set prediction problem [10] which re-                                                                                             modelintotwoparts,imageencoderanddetectiondecoder,
+                              quires assigning object candidates [10, 55, 74] to ground                                                                                               where the former runs only once to extract a deep feature
+                              truth objects. To the best of our knowledge, this is the first                                                                                          representation from the raw input image x, and the latter
+                              workthat adopts a diffusion model for object detection.                                                                                                 takes this deep feature as condition, instead of the raw im-
+                                                                                                                                                                                      age, to progressively refine the box predictions from noisy
+                              3. Approach                                                                                                                                             boxes zt.
+                              3.1. Preliminaries                                                                                                                                      Image encoder. Image encoder takes as input the raw im-
+                                                                                                                                                                                      age and extracts its high-level features for the following
+                              Object detection. The learning objective of object detec-                                                                                               detection decoder. We implement DiffusionDet with both
+                              tion is input-target pairs (x,b,c), where x is the input im-                                                                                            Convolutional Neural Networks such as ResNet [37] and
+                              age, b and c are a set of bounding boxes and category labels                                                                                            Transformer-based models like Swin [60]. Feature Pyramid
+                              for objects in the image x, respectively. More specifically,                                                                                            Network [55] is used to generate multi-scale feature maps
+                                                                                                                           i             i       i         i       i                  for both ResNet and Swin backbones following [55,60,90].
+                              weformulatethei-th box in the set as b = (c ,c ,w ,h ),
+                                                                                                                                         x       y
+                                                   i        i
+                              where (c ,c ) is the center coordinates of the bounding                                                                                                 Detection decoder. Borrowed from Sparse R-CNN [90],
+                                                   x        y
+                                                 i       i
+                              box, (w ,h ) are width and height of that bounding box,                                                                                                 the detection decoder takes as input a set of proposal boxes
+                              respectively.                                                                                                                                           to crop RoI-feature [36, 74] from feature map generated
+                                                                                                                                                                             19832
+               Algorithm 1 DiffusionDet Training                                        Algorithm 2 DiffusionDet Sampling
+               def train_loss(images, gt_boxes):                                        def infer(images, steps, T):
+                 """                                                                      """
+                 images: [B, H, W, 3]                                                     images: [B, H, W, 3]
+                 gt_boxes: [B, *, 4]                                                      # steps: number of sample steps
+                 # B: batch                                                               # T: number of time steps
+                 # N: number of proposal boxes                                            """
+                 """
+                                                                                          # Encode image features
+                 # Encode image features                                                  feats = image_encoder(images)
+                 feats = image_encoder(images)
+                                                                                          # noisy boxes: [B, N, 4]
+                 # Pad gt_boxes to N                                                      pb_t = normal(mean=0, std=1)
+                 pb = pad_boxes(gt_boxes) # padded boxes: [B, N, 4]
+                                                                                          # uniform sample step size
+                 # Signal scaling                                                         times = reversed(linespace(-1, T, steps))
+                 pb = (pb * 2 - 1) * scale
+                                                                                          # [(T-1, T-2), (T-2, T-3), ..., (1, 0), (0, -1)]
+                 # Corrupt gt_boxes                                                       time_pairs = list(zip(times[:-1], times[1:])
+                 t = randint(0, T)                  # time step
+                 eps = normal(mean=0, std=1) # noise: [B, N, 4]                           for t_now, t_next in zip(time_pairs):
+                 pb_crpt = sqrt(         alpha_cumprod(t)) * pb +                           # Predict pb_0 from pb_t
+                             sqrt(1 - alpha_cumprod(t)) * eps                               pb_pred = detection_decoder(pb_t, feats, t_now)
+                 # Predict                                                                  # Estimate pb_t at t_next
+                 pb_pred = detection_decoder(pb_crpt, feats, t)                             pb_t = ddim_step(pb_t, pb_pred, t_now, t_next)
+                 # Set prediction loss                                                      # Box renewal
+                 loss = set_prediction_loss(pb_pred, gt_boxes)                              pb_t = box_renewal(pb_t)
+                 return loss                                                              return pb_pred
+                                                            Q
+               alpha cumprod(t): cumulativeproductofα ,i.e.,   t  α                     linespace: generate evenly spaced values
+                                                       i       i=1 i
+               by image encoder, and sends these RoI-features to detec-                 explore several padding strategies, for example, repeating
+               tion head to obtain box regression and classification results.           existing ground truth boxes, concatenating random boxes
+               For DiffusionDet, these proposal boxes are disturbed from                or image-size boxes. Comparisons of these strategies are in
+               ground truth boxes at training stage and directly sampled                Section 4.4, and concatenating random boxes works best.
+               from Gaussian distribution at evaluation stage.           Follow-        Box corruption. We add Gaussian noises to the padded
+               ing [10, 90, 114], our detection decoder is composed of 6                ground truth boxes. The noise scale is controlled by α (in
+               cascading stages (Figure 2b). The differences between our                                                                               t
+               decoder and the one in Sparse R-CNN are that (1) Diffu-                  Eq. (1)), which adopts the monotonically decreasing cosine
+                                                                                        schedule for α in different time step t, as proposed in [67].
+               sionDet begins from random boxes while Sparse R-CNN                                       t
+               uses a fixed set of learned boxes in inference; (2) Sparse R-            Notably, the ground truth box coordinates need to be scaled
+               CNNtakesasinput pairs of the proposal boxes and its cor-                 as well since the signal-to-noise ratio has a significant ef-
+               responding proposal feature, while DiffusionDet needs the                fect on the performance of diffusion model [13]. We ob-
+               proposal boxes only; (3) DiffusionDet can re-use the detec-              serve that object detection favors a relatively higher signal
+               tor head in an iterative way for evaluation and the parame-              scaling value than image generation task [14,16,38]. More
+               ters are shared across different steps, each of which is spec-           discussions are in Section 4.4.
+               ified to the diffusion process by timestep embedding [38],               Training losses.       The detection detector takes as input
+                                                                                        N        corrupted boxes and predicts N             predictions of
+               which is called iterative evaluation, while Sparse R-CNN                    train                                     train
+               uses the detection decoder only once in the forward pass.                category classification and box coordinates. We apply set
+                                                                                        prediction loss [10, 90, 114] on the set of N              predic-
+                                                                                                                                             train
+               3.3. Training                                                            tions. We assign multiple predictions to each ground truth
+                  During training, we first construct the diffusion process             by selecting the top k predictions with the least cost by an
+               from ground-truth boxes to noisy boxes and then train the                optimal transport assignment method [18,25,26,98].
+               model to reverse this process. Algorithm 1 provides the                  3.4. Inference
+               pseudo-code of DiffusionDet training procedure.
+               Ground truth boxes padding. For modern object detec-                         The inference procedure of DiffusionDet is a denoising
+               tion benchmarks [20,34,57,80], the number of instances of                sampling process from noise to object boxes. Starting from
+               interest typically varies across images. Therefore, we first             boxes sampled in Gaussian distribution, the model progres-
+               pad some extra boxes to original ground truth boxes such                 sively refines its predictions, as shown in Algorithm 2.
+               that all boxes are summed up to a fixed number Ntrain. We                Sampling step. In each sampling step, the random boxes
+                                                                                    19833
+             or the estimated boxes from the last sampling step are sent      nents of DiffusionDet.
+             into the detection decoder to predict the category classifica-   COCO[57] dataset contains about 118K training images
+             tion and box coordinates. After obtaining the boxes of the       in the train2017 set and 5K validation images in the
+             current step, DDIM [84] is adopted to estimate the boxes         val2017 set. There are 80 object categories in total.
+             for the next step. We note that sending the predicted boxes      Wereport box average precision over multiple IoU thresh-
+             without DDIM to the next step is also an optional progres-       olds (AP), threshold 0.5 (AP  ) and 0.75 (AP   ).
+             sive refinement strategy. However, it brings significant de-                                 50               75
+             terioration, as discussed in Section 4.4.                        LVIS v1.0 [34] dataset is a large-vocabulary object de-
+             Boxrenewal. Aftereachsamplingstep,thepredictedboxes              tection and instance segmentation dataset which has 100K
+             can be coarsely categorized into two types, desired and un-      training imagesand20Kvalidationimages. LVISsharesthe
+             desired predictions. The desired predictions contain boxes       samesourceimagesasCOCO,whileitsannotationscapture
+             that are properly located at corresponding objects, while the    the long-tailed distribution in 1203 categories. We adopt
+                                                                              MS-COCO style box metric AP, AP         and AP     in LVIS
+             undesired ones are distributed arbitrarily. Directly sending                                          50         75
+             these undesired boxes to the next sampling iteration would       evaluation. For LVIS, the training schedule is 210K, 250K,
+             not bring a benefit since their distribution is not constructed  and 270K.
+             by box corruption in training. To make inference better          CrowdHuman[80]dataset is a large dataset covering var-
+             align with training, we propose the strategy of box renewal      ious crowd scenarios. It has 15K training images and 4.4K
+             to revive these undesired boxes by replacing them with ran-      validation images, including a total of 470K human in-
+             domboxes. Specifically, we first filter out undesired boxes      stances and 22.6 persons per image. Following previous
+             withscoreslowerthanaparticularthreshold. Then,wecon-             settings [54, 90, 109, 113], we adopt evaluation metrics as
+             catenate the remaining boxes with new random boxes sam-          APunderIoUthreshold0.5.
+             pled from a Gaussian distribution.                               4.1. Implementation Details.
+             Flexible usage. Thanks to the random boxes design, we               TheResNetandSwinbackboneareinitialized with pre-
+             can evaluate DiffusionDet with an arbitrary number of ran-       trained weights on ImageNet-1K and ImageNet-21K [15],
+             domboxesandthenumberofiteration times, which do not              respectively. The newly added detection decoder is ini-
+             need to be equal to the training stage. As a comparison,         tialized with Xavier init [29]. We train DiffusionDet us-
+             previous approaches [10,90,114] rely on the same number          ing AdamW [61] optimizer with the initial learning rate as
+             of processed boxes during training and evaluation, and their              −5                            −4
+             detection decoders are used only once in the forward pass.       2.5 × 10    and the weight decay as 10    . All models are
+                                                                              trained with a mini-batch size 16 on 8 GPUs. The default
+             3.5. Discussion                                                  training schedule is 450K iterations, with the learning rate
+                                                                              divided by 10 at 350K and 420K iterations. Data augmen-
+                We conduct a comparative analysis between Diffusion-          tation strategies contain random horizontal flip, scale jitter
+             Det and previous multi-stage detectors [7,10,74,90]. Cas-        of resizing the input images such that the shortest side is
+             cadeR-CNNadoptsathree-stagepredictionrefinementpro-              at least 480 and at most 800 pixels while the longest is at
+             cess where the three stages do not share parameters and are      most 1333 [101], and random crop augmentations. We do
+             used only once as a complete head during the inference           not use the EMA and some strong data augmentation like
+             phase. Recent works [10,90,114] have adopted a similar           MixUp[106]orMosaic[26].
+             structure as Cascade R-CNNbutwithmorestages(i.e.,six),              Attheinference stage, we report performances of Diffu-
+             following the default setting of DETR [10]. While Diffu-         sionDet under diverse settings, which are combinations of
+             sionDetalsoemploysthesix-stagestructurewithinitshead,            different numbers of random boxes and iteration steps. The
+             the distinguishing feature is that DiffusionDet can reuse the    predictions at each sampling step are ensembled together by
+             entire head multiple times to achieve further performance        NMStogetthefinalpredictions.
+             gains.  However, prior works could not improve perfor-
+             mancebyreusingthedetection head in most cases or could           4.2. Main Properties
+             only achieve limited performance gains. More detailed re-           ThemainpropertiesofDiffusionDetlieononcetraining
+             sults are in Section 4.4.                                        for all inference cases. Once the model is trained, it can
+             4. Experiments                                                   be used with changing the number of boxes and the num-
+                                                                              ber of iteration steps in inference, as shown in Figure 3 and
+                We first show the attractive flexibility of Diffusion-        Table 1. Therefore, we can deploy a single DiffusionDet
+             Det. Then we compare DiffusionDet with previous well-            to multiple scenarios and obtain a desired speed-accuracy
+             established detectors on COCO[57]andCrowdHuman[80]               trade-off without re-training the network.
+             dataset. Finally, we provide ablation studies on the compo-      Dynamic number of boxes. We compare DiffusionDet
+                                                                          19834
+                    50                                                                                                           whenthe number of boxes increases from 300 to 4000. On
+                              DETR                           45.8       46.3           46.7          46.8            46.8
+                              DiffusionDet                                                                                       the contrary, cloning more queries for DETR (N                                         >300)
+                    45                                                                                                                                                                                          eval
+                                     41.9                                                                                        causes a slight decrease in DETR performance from 38.8
+                                                                                 Clone
+                    40                                       38.8       38.4           38.4           38.4           38.4        to 38.4 AP, which is then held constant when using more
+                                     34.9                                36.5                                                    queries.
+                    35 33.0                                                            34.0
+                       31.0                                             Concat Random                 30.2                            We also implement another method for DETR when
+                    30                                                                                                           N           >N ,concatenating extra N                                      −N               ran-
+                                                                                                                     26.4            eval            train                                          eval            train
+                                     N    >N
+                                      train  eval                                    N    <N
+                    25                                                                train  eval                                domly initialized queries (a.k.a. concat random). With
+                      50            100                     300        500            1000           2000           4000         this strategy, DETR has a clear performance drop when
+                                                        number of boxes (log-scale)
+                                                                                                                                 the N             is different from N                       .   Besides, this perfor-
+                     (a) Dynamic number boxes. Both DETR and DiffusionDet are trained                                                      eval                                      train
+                     with 300 object queries or proposal boxes. More proposal boxes in in-                                       mance drop becomes larger when the difference between
+                     ference bring accuracy improvement on DiffusionDet, while degenerate                                        N          and N               increases. For example, when the num-
+                     DETR.                                                                                                           eval              train
+                                                                                                                                 ber of boxes increases to 4000, DETR only has 26.4 AP
+                                                                                                                                 with concat random strategy, which is 12.4 lower than
+                    47              46.8         46.8         46.8         46.9         46.9          46.9         46.8          the peak value (i.e., 38.8 AP with 300 queries).
+                       46.3                      46.6         46.6         46.8         46.8          46.8         46.8
+                                    46.5                                                              46.2                       Iterative evaluation.                   We further investigate the perfor-
+                       45.8                                   45.8         45.8         46.0                       46.1          mance of our proposed approach by increasing the num-
+                    45                           45.2                                                                            ber of iterative steps from 1 to 8, and the corresponding re-
+                                    44.5                                                                                         sults are illustrated in Figure 3b. Our findings indicate that
+                    43                                                                                                           the DiffusionDet models employing 100, 300, and 500 ran-
+                                                                                                    DiffusionDet: S@500          domboxesexhibitconsistentperformanceimprovementsas
+                       41.9                                                                         DiffusionDet: S@300
+                                                                                                    DiffusionDet: S@100          the number of iterations increases. Moreover, we observe
+                    411             2            3            4            5            6            7            8              that DiffusionDet with fewer randomboxestendstoachieve
+                                                         number of iteration steps S                                             more substantial gains with refinement. For instance, the
+                     (b) Iterative evaluation. ‘S@500’ denotes that we evaluate DiffusionDet                                     AP of DiffusionDet instance utilizing 100 random boxes
+                     with 500 boxes using a different number of iteration steps.. For all cases,                                 improves from 41.9 (1 step) to 46.1 (8 steps), representing
+                     the accuracy increases with refinement times.
+                                                                                                                                 an absolute improvement of 4.2 AP.
+                     Figure 3. Flexibility of DiffusionDet. All experiments are trained                                          Zero-shot transferring. To further validate the effective-
+                     onCOCO2017trainsetandevaluatedonCOCO2017valset.                                                             ness of generalization, we conduct an evaluation of COCO-
+                     DiffusionDet uses the same network parameters for all settings in                                           pretrained models on the CrowdHuman dataset, without
+                     Figure 3a and 3b. Our proposed DiffusionDet is able to benefit                                              any additional fine-tuning.                      Specifically, our focus is on
+                     from more proposal boxes and iteration steps using the same net-
+                     workparameters.                                                                                             the [person] class for the final average precision (AP)
+                                                                                                                                 performance. The experimental results are presented in Ta-
+                                                                                                                                 ble 1. Our observations indicate that when transferring to a
+                     with DETR [10] to show the advantage of dynamic boxes.                                                      newdataset with scenarios that are more densely populated
+                     Comparisons with other detectors are in Appendix B. We                                                      than COCO, our proposed method, namely DiffusionDet,
+                     reproduce DETR [10] with 300 object queries using the of-                                                   demonstrates a notable advantage by increasing the number
+                     ficial code and default settings for 300 epochs of training.                                                of evaluation boxes or iteration steps. For instance, by in-
+                     WetrainDiffusionDet with 300 random boxes such that the                                                     creasing the number of boxes from 300 to 2000 and the iter-
+                     number of candidates is consistent with DETR for a fair                                                     ation steps from 1 to 4, DiffusionDet achieves a significant
+                     comparison. The evaluation is on {50, 100, 300, 500, 1000,                                                  APgain of 5.3 and 4.8, respectively. In contrast, previous
+                     2000, 4000} queries or boxes.                                                                               methods exhibit limited gain or serious performance degra-
+                          Since the learnable queries are fixed after training in the                                            dation, with a decrease of 14.0 AP. The impressive flexi-
+                     original setting of DETR, we propose a simple workaround                                                    bility of DiffusionDet implies that it is an invaluable asset
+                     to enable DETR work with a different number of queries:                                                     for object detection tasks across a wide range of scenarios,
+                     when N                 < N             , we directly choose N                          queries              including sparsely populated and densely crowded environ-
+                                   eval             train                                           eval
+                     from N                queries; when N                      >N ,wecloneex-                                   ments, without any additional fine-tuning requirements.
+                                  train                                 eval            train
+                     isting N                 queries up to N                     (a.k.a.       clone). We
+                                    train                                 eval                                                   4.3. Benchmarking on Detection Datasets
+                     equip DETR with NMS because cloned queries will pro-
+                     duce similar detection results as the original queries. As                                                       In Table 2, we present a comparison of our DiffusionDet
+                     shown in Figure 3a, the performance of DiffusionDet in-                                                     with several state-of-the-art detectors [7,10,56,74,90,114]
+                     creases steadily with the number of boxes used for evalu-                                                   ontheCOCOdataset. Formorecomprehensiveexperimen-
+                     ation. For example, DiffusionDet can achieve 1.0 AP gain                                                    tal settings, please refer to the Appendix. Notably, our Dif-
+                                                                                                                           19835
+                 Method                    AP AP        AP     AP    AP     AP            Method                     AP    AP     AP      AP     AP    AP
+                                                   50      75     s     m      l                                              50     75      r      c     f
+                                          ResNet-50 [37]                                                             ResNet-50 [37]
+                 RetinaNet [101]          38.7   58.0   41.5   23.3   42.3  50.3          Faster R-CNN†             22.5   37.1    23.6    9.9   21.1   29.7
+                                                                                                          †
+                 Faster R-CNN [101]       40.2   61.0   43.8   24.2   43.5  52.0          Cascade R-CNN             26.3   37.8    27.8   12.3   24.9   34.1
+                 Cascade R-CNN[101]       44.3   62.2   48.0   26.6   47.7  57.7          Faster R-CNN              25.2   40.6    26.9   16.4   23.4   31.1
+                 DETR[10]                 42.0   62.4   44.2   20.5   45.8  61.1          Cascade R-CNN             29.4   41.4    30.9   20.0   27.7   35.4
+                 Deformable DETR[114] 43.8       62.6   47.7   26.4   47.1  58.0          Sparse R-CNN              29.2   41.0    30.7   20.6   27.7   34.6
+                 Sparse R-CNN[90]         45.0   63.4   48.2   26.9   47.2  59.5          DiffusionDet (1 @ 300)    29.4   40.4    31.0   22.7   27.2   34.7
+                 DiffusionDet (1 @ 300)   45.8   64.1   50.4   27.6   48.7  62.2          DiffusionDet (1 @ 500)    30.5   42.1    32.1   23.3   28.1   36.3
+                 DiffusionDet (4 @ 300)   46.6   65.1   51.3   28.9   49.2  62.1          DiffusionDet (1 @ 1000)   31.4   43.2    33.3   24.5   28.8   37.3
+                 DiffusionDet (1 @ 500)   46.3   64.8   50.7   28.6   49.0  62.1          DiffusionDet (4 @ 300)    31.5   43.4    33.5   24.1   29.3   37.4
+                 DiffusionDet (4 @ 500)   46.8   65.3   51.8   29.6   49.3  62.2                                    ResNet-101 [37]
+                                          ResNet-101 [37]                                 Faster R-CNN†             24.8   39.8    26.1   13.7   23.1   31.5
+                 RetinaNet [101]          40.4   60.2   43.2   24.0   44.3  52.2                          †
+                                                                                          Cascade R-CNN             28.6   40.1    30.1   15.3   27.3   35.9
+                 Faster R-CNN [101]       42.0   62.5   45.9   25.2   45.6  54.6          Faster R-CNN              27.2   42.9    29.1   18.8   25.4   33.0
+                 Cascade R-CNN[11]        45.5   63.7   49.9   27.6   49.2  59.1          Cascade R-CNN             31.6   43.8    33.4   23.9   29.8   37.0
+                 DETR[10]                 43.5   63.8   46.4   21.9   48.0  61.8          Sparse R-CNN              30.1   42.0    31.9   23.5   27.5   35.9
+                 Sparse R-CNN[90]         46.4   64.6   49.5   28.3   48.3  61.6          DiffusionDet (1 @ 300)    30.9   42.1    32.6   22.4   29.9   35.8
+                 DiffusionDet (1 @ 300)   46.7   65.0   51.0   29.6   49.7  63.2          DiffusionDet (1 @ 500)    31.8   43.7    33.6   23.5   30.2   37.3
+                 DiffusionDet (4 @ 300)   47.4   65.8   52.0   30.1   50.4  63.1          DiffusionDet (1 @ 1000)   33.0   45.0    34.9   24.8   31.4   38.3
+                 DiffusionDet (1 @ 500)   47.2   65.7   51.6   30.2   50.2  62.7          DiffusionDet (4 @ 300)    33.0   45.2    35.1   24.2   31.5   38.5
+                 DiffusionDet (4 @ 500)   47.5   65.7   52.0   30.8   50.4  63.1                                     Swin-Base [60]
+                                          Swin-Base [60]                                  DiffusionDet (1 @ 300)    39.5   52.3    42.0   33.0   38.5   43.5
+                 Cascade R-CNN[60]        51.9   70.9   56.5   35.4   55.2  67.4          DiffusionDet (1 @ 500)    40.8   54.2    43.6   33.4   39.9   45.2
+                 Sparse R-CNN             52.0   72.2   57.0   35.8   55.1  68.2          DiffusionDet (1 @ 1000)   41.9   55.7    44.8   35.3   40.6   46.2
+                 DiffusionDet (1 @ 300)   52.5   71.8   57.3   35.0   56.4  69.3          DiffusionDet (4 @ 300)    42.0   55.8    44.9   34.8   40.9   46.4
+                 DiffusionDet (4 @ 300)   53.3   72.8   58.6   36.6   57.0  69.2
+                 DiffusionDet (1 @ 500)   53.0   72.3   58.0   35.5   56.9  69.1         Table 3. Comparisons with different object detectors on LVIS
+                 DiffusionDet (4 @ 500)   53.3   72.7   58.4   36.2   56.9  69.0         v1.0 val set.     We re-implement all detectors using federated
+                                                                                         loss [111] except for the rows in light gray (with †).
+               Table 2.    Comparisons with different object detectors on
+               COCO2017valset. [S@Neval] denotes the number of itera-
+               tion steps S and number of evaluation boxes Neval. The reference          We reproduce Faster R-CNN and Cascade R-CNN based
+               after each method indicates the source of its results. The method         on detectron2 [101] while Sparse R-CNN on its origi-
+               without reference is our implementation.                                  nal code. We first reproduce Faster R-CNN and Cascade R-
+                                                                                         CNNusingthedefaultsettingsofdetectron2,achieving
+               fusionDet (1 @ 300), which adopts a single iteration step                 22.5/24.8and26.3/28.8AP(with† inTable3)withResNet-
+               and 300 evaluation boxes, achieves an AP of 45.8 with a                   50/101 backbone, respectively. Further, we boost their per-
+               ResNet-50 backbone, surpassing the performance of sev-                    formance using the federated loss in [111]. Since images
+               eral well-established methods such as Faster R-CNN, Reti-                 in LVIS are annotated in a federated way [34], the neg-
+               naNet, DETR, and Sparse R-CNN by a considerable mar-                      ative categories are sparsely annotated, which deteriorates
+               gin.   Moreover, DiffusionDet can further enhance its su-                 the training gradients, especially for rare classes [92]. Fed-
+               periority by increasing the number of iterations and eval-                erated loss is proposed to mitigate this issue by sampling a
+               uation boxes.       Besides, DiffusionDet shows steady im-                subset S of classes for each training image that includes all
+               provement when the backbone size scales up. Diffusion-                    positive annotations and a random subset of negative ones.
+               DetwithResNet-101(1@300)achieves46.7. Whenusing                           Following [111], we choose |S| = 50 in all experiments.
+               ImageNet-21kpre-trained Swin-Base [60] as the backbone,                   Faster R-CNN and Cascade R-CNN earn about 3 AP gains
+               DiffusionDet obtains 52.5 AP, outperforming strong base-                  with federated loss. All following comparisons are based
+               lines such as Cascade R-CNN and Sparse R-CNN.                             onthis loss.
+                  Our current model is still lagging behind behind some                      We see that DiffusionDet attains remarkable gains us-
+               well developed works like DINO [107] since it uses some                   ing more evaluation steps, with both small and large back-
+               more advanced components such as deformable atten-                        bones. Moreover, we note that iterative evaluation brings
+               tion [114], wider detection head. Some of these techniques                more gains on LVIS compared with COCO. For example,
+               are orthogonaltoDiffusionDetandwewillexploretoincor-                      its performance increases from 45.8 to 46.6 (+ 0.8 AP) on
+               poratethesetoourcurrentpipelineforfurtherimprovement.                     COCOwhilefrom 29.4 to 31.5 (+2.1 AP) on LVIS, which
+                                                                                         demonstrates that our DiffusionDet would become more
+                  Experimental results on LVIS are presented in Table 3.                 helpful for a more challenging benchmark.
+                                                                                     19836
+                         scale    AP     AP       AP                  case             AP     AP       AP              DDIM boxrenewal         iter 1  iter 2   iter 3
+                                             50      75                                          50       75
+                          0.1    38.9     54.3     42.1               Repeat          44.2     62.0     48.3                                   45.8     44.4     44.1
+                          1.0    45.0     63.0     48.9               Cat Gaussian    45.8     64.1     50.4             ✓                     45.8     46.0     46.1
+                          2.0    45.8     64.1     50.4               Cat Uniform     45.2     63.3     49.3                         ✓         45.8     46.3     46.3
+                          3.0    45.6     63.9     50.0               Cat Full        45.7     63.9     49.9             ✓           ✓         45.8     46.5     46.6
+                    (a) Signal scale. A large scaling factor        (b) GT boxes padding. Concatenating            (c) Sampling strategy. Using both DDIM and box
+                    can improve detection performance.              Gaussian boxes works best.                     renewal works best.
+                Table 4. DiffusionDet ablation experiments on COCO. We report AP, AP , and AP . If not specified, the default setting is: the
+                                                                                                         50           75
+                backbone is ResNet-50 [37] with FPN [55], the signal scale is 2.0, ground-truth boxes padding method is concatenating Gaussian random
+                boxes, DDIM and box renewal are used in sampling step. Default settings are marked in gray .
+                4.4. Ablation Study                                                                     train     eval     100       300      500      1000      2000
+                    WeconductablationexperimentsonCOCOtostudyDif-                                            100           42.9     44.4      44.5     44.6      44.6
+                fusionDet in detail. All experiments use ResNet-50 with                                      300           42.8     45.7      46.2     46.3      46.4
+                FPN as the backbone and 300 random boxes for inference                                       500           41.9     45.8      46.3     46.7      46.8
+                without further specification.                                                    Table 5. Matching between training and inference box num-
+                Signal scaling.         The signal scaling factor controls the                    bers on COCO.DiffusionDet decouples the number of boxes dur-
+                signal-to-noise ratio (SNR) of the diffusion process. We                          ing the training and inference stages and works well with flexible
+                study the influence of scaling factors in Table 4a. Results                       combinations.
+                demonstrate that the scaling factor of 2.0 achieves optimal
+                AP performance, outperforming the standard value of 1.0                           remarkable gains when equipped with both DDIM and re-
+                in image generation task [14,38] and 0.1 used for panoptic                        newal. These experiments together verify the necessity of
+                segmentation [13]. We explain that it is because one box                          both DDIMandboxrenewalinthesamplingstep.
+                only has four representation parameters, i.e., center coordi-
+                                                                                                  Matching between N                    and N         .    As discussed
+                nates (c ,c ) and box size (w,h), which is coarsely analo-                                                      train            eval
+                          x   y                                                                   in Sec. 4.2, DiffusionDet has an appealing property
+                gous to an image with only four pixels in image generation.
+                The box representation is more fragile than the dense rep-                        of evaluating with an arbitrary number of random
+                resentation, e.g., 512 × 512 mask presentation in panoptic                        boxes.     To study how the number of training boxes af-
+                segmentation [14]. Therefore, DiffusionDet prefers an eas-                        fects inference performance, we train DiffusionDet with
+                                                                                                  N           ∈ {100,300,500} random boxes separately
+                ier training objective with an increased signal-to-noise ratio                      train
+                                                                                                  and then evaluate each of these models with N                           ∈
+                compared to image generation and panoptic segmentation.                                                                                            eval
+                GTboxespaddingstrategy. As introduced in Section 3.3,                             {100,300,500,1000,2000}. The results are summarized
+                weneedtopadadditionalboxestotheoriginalgroundtruth                                in Table 5. First, no matter how many random boxes Dif-
+                boxes such that each image has the same number of boxes.                          fusionDet uses for training, the accuracy increases steadily
+                                                                                                  with the N         until the saturated point at around 2000 ran-
+                We study different padding strategies in Table 4b, includ-                                     eval
+                ing (1) repeating original ground truth boxes evenly un-                          dom boxes. Second, DiffusionDet tends to perform better
+                                                                                                  whentheN             andN         matcheswitheachother. Forex-
+                til the total number reaches pre-defined value N                     ; (2)                      train          eval
+                                                                               train              ample, DiffusionDet trained with Ntrain = 100 boxes be-
+                padding random boxes that follow Gaussian distribution;                           havesbetterthanN               =300and500whenN                    =100.
+                (3) padding random boxes that follow uniform distribution;                                                train                               eval
+                (4) padding boxes that have the same size as the whole im-                        Running time vs. accuracy. We investigate the running
+                age, which is the default initialization of learnable boxes                       time of DiffusionDet under multiple settings, which are
+                in [90]. Concatenating Gaussian random boxes works best                           evaluatedonasingleNVIDIAA100GPUwithamini-batch
+                for DiffusionDet. We use this padding strategy as default.                        size of 1. We utilize the notation #Stages×#Heads to
+                                                                                                  indicate the number of stages and headsutilized during
+                Sampling strategy. We compare different sampling strate-                          the training and test phases, as depicted in Figure 2b and
+                gies in Table 4c. When evaluating DiffusionDet that does                          results of our investigation are presented in Table 6.
+                not use DDIM, we directly take the output prediction of                               First, our findings indicate that DiffusionDet with a sin-
+                the current step as input for the next step. We found that                        gle iteration step and 300 evaluation boxes demonstrate
+                the AP of DiffusionDet degrades with more iteration steps                         a comparable speed to Sparse R-CNN, achieving 30 and
+                when neither DDIM nor box renewal is adopted. Besides,                            31 frames per second (FPS), respectively.                 DiffusionDet
+                only using DDIM or box renewal would bring slight bene-                           also showcases similar zero-shot transfer performance on
+                fits at 3 iteration steps. Moreover, our DiffusionDet attains                     CrowdHumanwhileoutperforming Sparse R-CNN with an
+                                                                                             19837
+                  Method              Train     Test      COCO         CrowdHuman        FPS            method                             AP50 ↑       mMR↓ Recall↑
+                                      6×1      6×1      42.0           61.3               39            Faster R-CNN [74]                    85.0         50.4         90.2
+                  DETR[10]            6×1      6×2      41.6 (-0.4)    62.5 (+1.2)        32            RetinaNet [56]                       81.7         57.6         88.6
+                                      6×1      6×1      45.0           66.6               30            FCOS[93]                             86.1         55.2         94.3
+                      Sparse          6×1      6×2      43.6 (-1.4)    60.6 (-6.0)        21            DETR[10]                             66.1         80.6           -
+                  R-CNN[90]          12×1      12×1     44.7 (-0.3)    66.1 (-0.5)        21            Deformable DETR[114]                 86.7         54.0         92.5
+                                      6×1      6×1      45.8           66.6               30            Sparse R-CNN[90] (500)               89.2         48.3         95.9
+                  DiffusionDet        6×1      6×2      46.5 (+0.7)    69.7 (+3.1)        20            Sparse R-CNN[90] (1000)              89.7         49.1         97.5
+                  DiffusionDet †      6×1      6×1      46.8 (+1.0)    71.0 (+4.4)        24            DiffusionDet (1 @ 1000)              90.1         46.5         96.2
+                                                                                                        DiffusionDet (1 @ 3000)              91.2         47.7         98.4
+                 Table 6. Running time vs. performance. † denotes Diffusion-                            DiffusionDet (3 @ 1000)              91.4         45.7         98.4
+                 Det with 1000 boxes. #Stages×#Heads denotes the number                                             Table 7. Full tuning on CrowdHuman.
+                 of stages and heads utilized during training and test phases.
+                 Thedefinitions of Stage and Head are illustrated in Figure 2b.                      Random Seed Since DiffusionDet is given random boxes
+                 45.8 AP as opposed to 45.0 AP on COCO. Besides, Sparse                              as input at the start of inference, one may ask whether
+                 R-CNN’s utilization of the six stages twice results in a 1.4                        there is a large performance variance across different ran-
+                 APdrop (from 45.0 to 43.6) on COCO and a 6.0 AP drop                                dom seeds. We evaluate the stability of DiffusionDet by
+                 (from 66.6 to 60.6) on CrowdHuman. Similarly, DETR ex-                              training five models independently with the same config-
+                 periences 0.4 performance drop on COCO but 1.2 perfor-                              urations except for random seed. Then, we evaluate each
+                 mancegainonCrowdHuman.                                                              model instance with ten different random seeds to measure
+                     When increasing the number of iteration steps, Diffu-                           the distribution of performance, inspired by [69, 96]. As
+                 sionDetachievesa0.7APgainonCOCOanda3.1APgain                                        shown in Figure 4, most evaluation results are distributed
+                 on CrowdHuman. And DiffusionDet obtains clear perfor-                               closely to 45.7 AP. Besides, the performance differences
+                 mance gains with 1000 evaluation boxes. However, neither                            amongdifferent model instances are marginal, demonstrat-
+                 DETR nor Sparse R-CNN can achieve performance gains                                 ingthatDiffusionDetisrobusttotherandomboxesandpro-
+                 with additional iteration steps. Even if we expand the num-                         duces reliable results.
+                 ber of stages to 12, it can cause performance degradation                           4.5. Full-tuning on CrowdHuman
+                 for Sparse R-CNN.                                                                       In addition to the cross-dataset generalization evaluation
+                     It is worth noting that in this work, we have utilized                          from COCO to CrowdHuman discussed in Section 4.2, we
+                 the most fundamental diffusion strategy, DDIM, in our pi-                           further full-tune DiffusionDet on CrowdHuman. The com-
+                 oneering exploration of using generation models for per-                            parison results are shown in Table 7. We see that Diffusion-
+                 ception tasks.       Similar to the Diffusion model employed                        Detachieves superior performance compared with previous
+                 in generation tasks, DiffusionDet may suffer from a rela-                           methods. For example, with a single step and 1000 boxes,
+                 tively slow sampling speed. Nonetheless, a series of recent                         DiffusionDet obtains 90.1 AP , outperforming Sparse R-
+                 works [17,63,77,85] have been proposed to improve the                                                                      50
+                 sampling efficiency of the diffusion model. For instance,                           CNNwith1000boxes. Besides,furtherincreasing boxes to
+                 the most recent consistency models [85] have proposed a                             3000anditeration steps can both bring performance gains.
+                 fast one-stepgenerationmethodforthediffusionmodel. We                               5. Conclusion
+                 believethatamoreadvanceddiffusionstrategycouldpoten-
+                 tially address the issue of decreased speed performance of                              In this work, we propose a novel detection paradigm,
+                 DiffusionDet, which we plan to explore in future work.                              DiffusionDet, by viewing object detection as a denoising
+                                                                                                     diffusion process from noisy boxes to object boxes. Our
+                  46.0                                                                               noise-to-box pipeline has several appealing properties, in-
+                                                                                                     cluding the dynamic number of boxes and iterative evalu-
+                  45.8                                     45.77                                     ation, enabling us to use the same network parameters for
+                               45.76
+                                             45.72                       45.72                       flexible evaluation without re-training the model. Experi-
+                                                                                       45.66         ments on standard detection benchmarks show that Diffu-
+                  45.6                                                                               sionDet achieves favorable performance compared to well-
+                                                                                                     established detectors.
+                  45.4      1             2             3              4             5               Acknowledgement.                  This    paper     is   partially     sup-
+                                                Training Random Seed
+                                                                                                     ported by the National Key R&D Program of China
+                 Figure4. Statistical results over 5 independent training instances,                 No.2022ZD0161000 and the General Research Fund of
+                 each is evaluated 10 times with different random seeds.                             HongKongNo.17200622.
+                                                                                                19838
+                   References                                                                                             assignment. arXiv preprint arXiv:2207.13085, 1(2), 2022.
+                      [1] Tomer Amit, Eliya Nachmani, Tal Shaharbany, and Lior                                            2
+                            Wolf. Segdiff: Image segmentation with diffusion proba-                                [13] Ting Chen, Lala Li, Saurabh Saxena, Geoffrey Hinton,
+                            bilistic models. arXiv preprint arXiv:2112.00390, 2021. 1,                                    and David J Fleet.            A generalist framework for panop-
+                            2                                                                                             tic segmentation of images and videos.                     arXiv preprint
+                      [2] Namrata Anand and Tudor Achim. Protein structure and                                            arXiv:2210.06366, 2022. 1, 2, 3, 4, 8
+                            sequence generation with equivariant denoising diffusion                               [14] Ting Chen, Ruixiang Zhang, and Geoffrey Hinton. Analog
+                            probabilistic models.           arXiv preprint arXiv:2205.15019,                              bits: Generating discrete data using diffusion models with
+                            2022. 2                                                                                       self-conditioning. arXiv preprint arXiv:2208.04202, 2022.
+                      [3] Jacob Austin, Daniel D Johnson, Jonathan Ho, Daniel Tar-                                        3, 4, 8
+                            low, and Rianne van den Berg. Structured denoising diffu-                              [15] Jia Deng, Wei Dong, Richard Socher, Li-Jia Li, Kai Li,
+                            sionmodelsindiscretestate-spaces. AdvancesinNeuralIn-                                         and Li Fei-Fei. Imagenet: A large-scale hierarchical im-
+                            formation Processing Systems, 34:17981–17993, 2021. 1,                                        age database. In 2009 IEEE conference on computer vision
+                            2                                                                                             and pattern recognition, pages 248–255. Ieee, 2009. 5
+                      [4] OmriAvrahami,DaniLischinski,andOhadFried. Blended                                        [16] Prafulla Dhariwal and Alexander Nichol. Diffusion models
+                            diffusion for text-driven editing of natural images. In Pro-                                  beat gans on image synthesis. Advances in Neural Informa-
+                            ceedings of the IEEE/CVF Conference on Computer Vision                                        tion Processing Systems, 34:8780–8794, 2021. 1, 2, 4
+                            and Pattern Recognition, pages 18208–18218, 2022. 1, 2                                 [17] Tim Dockhorn, Arash Vahdat, and Karsten Kreis. GENIE:
+                      [5] Dmitry Baranchuk, Andrey Voynov, Ivan Rubachev,                                                 Higher-order denoising diffusion solvers. In Alice H. Oh,
+                            Valentin Khrulkov, and Artem Babenko.                     Label-efficient                     Alekh Agarwal, Danielle Belgrave, and Kyunghyun Cho,
+                            semantic segmentation with diffusion models. In Interna-                                      editors, Advances in Neural Information Processing Sys-
+                            tional Conference on Learning Representations, 2022. 1,                                       tems, 2022. 9
+                            2                                                                                      [18] Yuming Du, Wen Guo, Yang Xiao, and Vincent Lep-
+                      [6] Emmanuel Asiedu Brempong, Simon Kornblith, Ting                                                 etit.   1st place solution for the uvo challenge on image-
+                            Chen, Niki Parmar, Matthias Minderer, and Mohammad                                            based open-world segmentation 2021.                       arXiv preprint
+                            Norouzi. Denoising pretraining for semantic segmentation.                                     arXiv:2110.10239, 2021. 4
+                            In Proceedings of the IEEE/CVF Conference on Computer                                  [19] Kaiwen Duan, Song Bai, Lingxi Xie, Honggang Qi, Qing-
+                            Vision and Pattern Recognition, pages 4175–4186, 2022. 1,                                     ming Huang, and Qi Tian. Centernet: Keypoint triplets for
+                            2                                                                                             object detection. In Proceedings of the IEEE/CVF inter-
+                      [7] Zhaowei Cai and Nuno Vasconcelos. Cascade r-cnn: high                                           national conference on computer vision, pages 6569–6578,
+                            quality object detection and instance segmentation. IEEE                                      2019. 1
+                            transactions on pattern analysis and machine intelligence,                             [20] Mark Everingham, Luc Van Gool, Christopher KI
+                            43(5):1483–1498, 2019. 5, 6                                                                   Williams, John Winn, and Andrew Zisserman. The pascal
+                      [8] Hanqun Cao, Cheng Tan, Zhangyang Gao, Guangyong                                                 visual object classes (voc) challenge. International journal
+                            Chen, Pheng-Ann Heng, and Stan Z Li. A survey on gen-                                         of computer vision, 88(2):303–338, 2010. 4
+                            erative diffusion model. arXiv preprint arXiv:2209.02646,                              [21] WanshuFan,Yen-ChunChen,DongdongChen,YuCheng,
+                            2022. 2                                                                                       LuYuan,andYu-ChiangFrankWang. Frido: Featurepyra-
+                      [9] Z. Cao, G. Hidalgo Martinez, T. Simon, S. Wei, and Y. A.                                        mid diffusion for complex scene image synthesis. ArXiv,
+                            Sheikh. Openpose: Realtime multi-person 2d pose estima-                                       abs/2208.13753, 2022. 2
+                            tion using part affinity fields. IEEE Transactions on Pattern                          [22] Hao-Shu Fang, Shuqin Xie, Yu-Wing Tai, and Cewu Lu.
+                            Analysis and Machine Intelligence, 2019. 1                                                    Rmpe: Regionalmulti-person pose estimation. In Proceed-
+                    [10] Nicolas Carion, Francisco Massa, Gabriel Synnaeve, Nico-                                         ings of the IEEE international conference on computer vi-
+                            las Usunier, Alexander Kirillov, and Sergey Zagoruyko.                                        sion, pages 2334–2343, 2017. 1
+                            End-to-endobjectdetectionwithtransformers. InEuropean                                  [23] Peng Gao, Minghang Zheng, Xiaogang Wang, Jifeng Dai,
+                            conference on computer vision, pages 213–229. Springer,                                       and Hongsheng Li.             Fast convergence of detr with spa-
+                            2020. 1, 2, 3, 4, 5, 6, 7, 9                                                                  tially modulated co-attention.                In Proceedings of the
+                    [11] Kai Chen, Jiaqi Wang, Jiangmiao Pang, Yuhang Cao, Yu                                             IEEE/CVF International Conference on Computer Vision
+                            Xiong, Xiaoxiao Li, Shuyang Sun, Wansen Feng, Ziwei                                           (ICCV), pages 3621–3630, October 2021. 1
+                            Liu, Jiarui Xu, Zheng Zhang, Dazhi Cheng, Chenchen Zhu,                                [24] Ziteng Gao, Limin Wang, Bing Han, and Sheng Guo.
+                            Tianheng Cheng, Qijie Zhao, Buyu Li, Xin Lu, Rui Zhu,                                         Adamixer: A fast-converging query-based object detector.
+                            Yue Wu, Jifeng Dai, Jingdong Wang, Jianping Shi, Wanli                                        In Proceedings of the IEEE/CVF Conference on Computer
+                            Ouyang, Chen Change Loy, and Dahua Lin. MMDetec-                                              Vision and Pattern Recognition, pages 5364–5373, 2022. 2
+                            tion: Open mmlab detection toolbox and benchmark. arXiv                                [25] Zheng Ge, Songtao Liu, Zeming Li, Osamu Yoshie, and
+                            preprint arXiv:1906.07155, 2019. 7                                                            Jian Sun. Ota: Optimal transport assignment for object de-
+                    [12] Qiang Chen, Xiaokang Chen, Jian Wang, Haocheng Feng,                                             tection. In Proceedings of the IEEE/CVF Conference on
+                            Junyu Han, Errui Ding, Gang Zeng, and Jingdong Wang.                                          Computer Vision and Pattern Recognition, pages 303–312,
+                            Groupdetr: Fastdetrtrainingwithgroup-wiseone-to-many                                          2021. 4
+                                                                                                            19839
+               [26] Z Ge, S Liu, F Wang, Z Li, and J Sun.              Yolox:        [39] Jonathan Ho, Tim Salimans, Alexey Gritsenko, William
+                     Exceeding yolo series in 2021. arxiv.     arXiv preprint             Chan, Mohammad Norouzi, and David J Fleet. Video dif-
+                     arXiv:2107.08430, 2021. 4, 5                                         fusion models. arXiv preprint arXiv:2204.03458, 2022. 2
+               [27] Ross Girshick. Fast r-cnn. In Proceedings of the IEEE            [40] Emiel Hoogeboom, Victor Garcia Satorras, Clement Vi-
+                     international conference on computer vision, pages 1440–             gnac, and Max Welling. Equivariant diffusion for molecule
+                     1448, 2015. 1, 2                                                     generation in 3d. arXiv e-prints, pages arXiv–2203, 2022.
+               [28] Ross Girshick, Jeff Donahue, Trevor Darrell, and Jitendra             1, 2
+                     Malik.  Rich feature hierarchies for accurate object de-        [41] Rongjie Huang, Zhou Zhao, Huadai Liu, Jinglin Liu,
+                     tection and semantic segmentation. In Proceedings of the             Chenye Cui, and Yi Ren. Prodiff: Progressive fast diffu-
+                     IEEE conference on computer vision and pattern recogni-              sion model for high-quality text-to-speech. arXiv preprint
+                     tion, pages 580–587, 2014. 1                                         arXiv:2207.06389, 2022. 2
+               [29] Xavier Glorot and Yoshua Bengio. Understanding the dif-          [42] Hyosoon Jang, Sangwoo Mo, and Sungsoo Ahn. Diffusion
+                     ficulty of training deep feedforward neural networks. In             probabilistic models for graph-structured prediction. arXiv
+                     Proceedings of the thirteenth international conference on            preprint arXiv:2302.10506, 2023. 2
+                     artificial intelligence and statistics, pages 249–256. JMLR     [43] Ding Jia, Yuhui Yuan, Haodi He, Xiaopei Wu, Haojun Yu,
+                     WorkshopandConferenceProceedings, 2010. 5                            Weihong Lin, Lei Sun, Chao Zhang, and Han Hu. Detrs
+               [30] Shansan Gong, Mukai Li, Jiangtao Feng, Zhiyong Wu,                    with hybrid matching. arXiv preprint arXiv:2207.13080,
+                     and LingPeng Kong.     Diffuseq: Sequence to sequence                2022. 2
+                     text generation with diffusion models.    arXiv preprint        [44] BowenJing,GabrieleCorso,ReginaBarzilay,andTommiS
+                     arXiv:2210.08933, 2022. 2                                            Jaakkola. Torsional diffusion for molecular conformer gen-
+                                                                                          eration. In ICLR2022 Machine Learning for Drug Discov-
+               [31] Alexandros Graikos, Nikolay Malkin, Nebojsa Jojic, and                ery, 2022. 2
+                     Dimitris Samaras. Diffusion models as plug-and-play pri-        [45] Justin Johnson, Ranjay Krishna, Michael Stark, Li-Jia Li,
+                     ors. arXiv preprint arXiv:2206.09012, 2022. 1, 2                     David Shamma, Michael Bernstein, and Li Fei-Fei. Im-
+               [32] ChunhuiGu,ChenSun,DavidARoss,CarlVondrick,Car-                        age retrieval using scene graphs.   In Proceedings of the
+                     oline Pantofaru, Yeqing Li, Sudheendra Vijayanarasimhan,             IEEE conference on computer vision and pattern recogni-
+                     George Toderici, Susanna Ricco, Rahul Sukthankar, et al.             tion, pages 3668–3678, 2015. 1
+                     Ava: A video dataset of spatio-temporally localized atomic      [46] Zdenek Kalal, Krystian Mikolajczyk, and Jiri Matas.
+                     visual actions. In Proceedings of the IEEE Conference                Tracking-learning-detection. IEEE transactions on pattern
+                     on Computer Vision and Pattern Recognition, pages 6047–              analysis and machine intelligence, 34(7):1409–1422, 2011.
+                     6056, 2018. 1                                                        1
+               [33] Shuyang Gu, Dong Chen, Jianmin Bao, Fang Wen, Bo                 [47] Boah Kim, Yujin Oh, and Jong Chul Ye. Diffusion adver-
+                     Zhang, Dongdong Chen, Lu Yuan, and Baining Guo. Vec-                 sarial representation learning for self-supervised vessel seg-
+                     tor quantized diffusion model for text-to-image synthesis.           mentation. arXiv preprint arXiv:2209.14566, 2022. 1, 2
+                     In Proceedings of the IEEE/CVF Conference on Computer           [48] Sungwon Kim, Heeseung Kim, and Sungroh Yoon.
+                     Vision and Pattern Recognition, pages 10696–10706, 2022.             Guided-tts 2: A diffusion model for high-quality adap-
+                     2                                                                    tive text-to-speech with untranscribed data. arXiv preprint
+               [34] Agrim Gupta, Piotr Dollar, and Ross Girshick. Lvis: A                 arXiv:2205.15370, 2022. 2
+                     dataset for large vocabulary instance segmentation. In Pro-     [49] Alexander Kirillov, Kaiming He, Ross Girshick, Carsten
+                                                                                                                ´
+                     ceedings of the IEEE/CVF conference on computer vision               Rother, and Piotr Dollar. Panoptic segmentation. In Pro-
+                     and pattern recognition, pages 5356–5364, 2019. 4, 5, 7              ceedings of the IEEE/CVF Conference on Computer Vision
+               [35] WilliamHarvey,SaeidNaderiparizi,VadenMasrani,Chris-                   and Pattern Recognition, pages 9404–9413, 2019. 3
+                     tian Weilbach, and Frank Wood. Flexible diffusion model-        [50] Alon Levkovitch, Eliya Nachmani, and Lior Wolf. Zero-
+                     ing of long videos. arXiv preprint arXiv:2205.11495, 2022.           shot voice conditioning for denoising diffusion tts models.
+                     2                                                                    arXiv preprint arXiv:2206.02246, 2022. 2
+                                                              ´                      [51] Feng Li, Hao Zhang, Shilong Liu, Jian Guo, Lionel M Ni,
+               [36] Kaiming He, Georgia Gkioxari, Piotr Dollar, and Ross Gir-             and Lei Zhang. Dn-detr: Accelerate detr training by intro-
+                     shick. Mask r-cnn. In Proceedings of the IEEE interna-               ducing query denoising. In Proceedings of the IEEE/CVF
+                     tional conference on computer vision, pages 2961–2969,               Conference on Computer Vision and Pattern Recognition,
+                     2017. 1, 2, 3                                                        pages 13619–13627, 2022. 1, 2
+               [37] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun.           [52] Xiang Lisa Li, John Thickstun, Ishaan Gulrajani, Percy
+                     Deep residual learning for image recognition. In Proceed-            Liang, and Tatsunori B Hashimoto.       Diffusion-lm im-
+                     ings of the IEEE conference on computer vision and pattern           proves controllable text generation.       arXiv preprint
+                     recognition, pages 770–778, 2016. 2, 3, 7, 8                         arXiv:2205.14217, 2022. 2
+               [38] Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising dif-        [53] Yi Li, Haozhi Qi, Jifeng Dai, Xiangyang Ji, and Yichen
+                     fusion probabilistic models. Advances in Neural Informa-             Wei. Fully convolutional instance-aware semantic segmen-
+                     tion Processing Systems, 33:6840–6851, 2020. 1, 2, 3, 4,             tation. In Proceedings of the IEEE conference on computer
+                     8                                                                    vision and pattern recognition, pages 2359–2367, 2017. 1
+                                                                                19840
+                [54] Matthieu Lin, Chuming Li, Xingyuan Bu, Ming Sun, Chen              [67] Alexander Quinn Nichol and Prafulla Dhariwal.           Im-
+                     Lin, Junjie Yan, Wanli Ouyang, and Zhidong Deng. Detr                    proved denoising diffusion probabilistic models. In Inter-
+                     for crowd pedestrian detection, 2021. 5                                  national Conference on Machine Learning, pages 8162–
+                                               ´                                              8171. PMLR, 2021. 4
+                [55] Tsung-Yi Lin, Piotr Dollar, Ross Girshick, Kaiming He,
+                     Bharath Hariharan, and Serge Belongie.        Feature pyra-        [68] Alexander Quinn Nichol, Prafulla Dhariwal, Aditya
+                     mid networks for object detection. In Proceedings of the                 Ramesh, Pranav Shyam, Pamela Mishkin, Bob Mcgrew,
+                     IEEE conference on computer vision and pattern recogni-                  Ilya Sutskever, and Mark Chen. GLIDE: Towards photo-
+                     tion, pages 2117–2125, 2017. 3, 8                                        realistic image generation and editing with text-guided dif-
+                [56] Tsung-Yi Lin, Priya Goyal, Ross Girshick, Kaiming He,                    fusion models. In Proceedings of the 39th International
+                                    ´                                                         Conference on Machine Learning, volume 162 of Proceed-
+                     and Piotr Dollar. Focal loss for dense object detection. In              ings of Machine Learning Research, pages 16784–16804.
+                     Proceedings of the IEEE international conference on com-                 PMLR,17–23Jul2022. 2
+                     puter vision, pages 2980–2988, 2017. 1, 2, 6, 9                    [69] David Picard.      Torch. manual seed (3407) is all you
+                [57] Tsung-Yi Lin, Michael Maire, Serge Belongie, James                       need: On the influence of random seeds in deep learn-
+                                                                         ´
+                     Hays, Pietro Perona, Deva Ramanan, Piotr Dollar, and                     ing architectures for computer vision.      arXiv preprint
+                     CLawrence Zitnick. Microsoft coco: Common objects in                     arXiv:2109.08203, 2021. 9
+                     context. In European conference on computer vision, pages          [70] Vadim Popov, Ivan Vovk, Vladimir Gogoryan, Tasnima
+                     740–755. Springer, 2014. 2, 4, 5                                         Sadekova, and Mikhail Kudinov.      Grad-tts: A diffusion
+                [58] Shilong Liu, Feng Li, Hao Zhang, Xiao Yang, Xianbiao Qi,                 probabilistic model for text-to-speech. In ICML, 2021. 2
+                     Hang Su, Jun Zhu, and Lei Zhang. DAB-DETR: Dynamic                 [71] Aditya Ramesh, Prafulla Dhariwal, Alex Nichol, Casey
+                     anchor boxes are better queries for DETR. In International               Chu, and Mark Chen. Hierarchical text-conditional image
+                     Conference on Learning Representations, 2022. 2                          generation with clip latents. ArXiv, abs/2204.06125, 2022.
+                [59] Wei Liu, Dragomir Anguelov, Dumitru Erhan, Christian                     1, 2
+                     Szegedy, Scott Reed, Cheng-Yang Fu, and Alexander C                [72] Joseph Redmon, Santosh Divvala, Ross Girshick, and Ali
+                     Berg. Ssd: Single shot multibox detector. In European con-               Farhadi. You only look once: Unified, real-time object de-
+                     ference on computer vision, pages 21–37. Springer, 2016. 1               tection. In ProceedingsoftheIEEEconferenceoncomputer
+                [60] Ze Liu, Yutong Lin, Yue Cao, Han Hu, Yixuan Wei, Zheng                   vision and pattern recognition, pages 779–788, 2016. 1, 2
+                     Zhang, Stephen Lin, and Baining Guo. Swin transformer:             [73] Joseph Redmon and Ali Farhadi. Yolo9000: better, faster,
+                     Hierarchical vision transformer using shifted windows. In                stronger. In Proceedings of the IEEE conference on com-
+                     Proceedings of the IEEE/CVF International Conference on                  puter vision and pattern recognition, pages 7263–7271,
+                     ComputerVision, pages 10012–10022, 2021. 2, 3, 7                         2017. 2
+                [61] Ilya Loshchilov and Frank Hutter. Decoupled weight de-             [74] Shaoqing Ren, Kaiming He, Ross B. Girshick, and Jian
+                     cay regularization. In International Conference on Learn-                Sun. FasterR-CNN:towardsreal-timeobjectdetectionwith
+                     ing Representations, 2019. 5                                             regionproposalnetworks. IEEETrans.PatternAnal.Mach.
+                [62] Cewu Lu, Ranjay Krishna, Michael Bernstein, and Li Fei-                  Intell., 39(6):1137–1149, 2017. 1, 2, 3, 5, 6, 9
+                     Fei. Visual relationship detection with language priors. In        [75] Nataniel Ruiz, Yuanzhen Li, Varun Jampani, Yael Pritch,
+                     European conference on computer vision, pages 852–869.                   Michael Rubinstein, and Kfir Aberman. Dreambooth: Fine
+                     Springer, 2016. 1                                                        tuning text-to-image diffusion models for subject-driven
+                [63] Cheng Lu, Yuhao Zhou, Fan Bao, Jianfei Chen, Chongx-                     generation. ArXiv, abs/2208.12242, 2022. 2
+                     uan Li, and Jun Zhu. DPM-solver: A fast ODE solver for             [76] Chitwan Saharia, William Chan, Saurabh Saxena, Lala
+                     diffusion probabilistic model sampling in around 10 steps.               Li, Jay Whang, Emily Denton, Seyed Kamyar Seyed
+                     In Alice H. Oh, Alekh Agarwal, Danielle Belgrave, and                    Ghasemipour, Burcu Karagol Ayan, S Sara Mahdavi,
+                     Kyunghyun Cho, editors, Advances in Neural Information                   Rapha Gontijo Lopes, et al. Photorealistic text-to-image
+                     Processing Systems, 2022. 9                                              diffusion models with deep language understanding. arXiv
+                [64] Depu Meng, Xiaokang Chen, Zejia Fan, Gang Zeng,                          preprint arXiv:2205.11487, 2022. 2
+                     Houqiang Li, Yuhui Yuan, Lei Sun, and Jingdong Wang.               [77] TimSalimansandJonathanHo. Progressive distillation for
+                     Conditional detr for fast training convergence. In Proceed-              fast sampling of diffusion models. In International Confer-
+                     ings of the IEEE/CVF International Conference on Com-                    ence on Learning Representations, 2022. 9
+                     puter Vision, pages 3651–3660, 2021. 2                             [78] ArneSchneuing,YuanqiDu,CharlesHarris,ArianJamasb,
+                                                                                                                                                 ´
+                                                                                              Ilia Igashov, Weitao Du, Tom Blundell, Pietro Lio, Carla
+                                                    ´
+                [65] Anton Milan, Laura Leal-Taixe, Ian Reid, Stefan Roth, and                Gomes, Max Welling, Michael Bronstein, and Bruno Cor-
+                     Konrad Schindler. Mot16: A benchmark for multi-object                    reia. Structure-based drug design with equivariant diffusion
+                     tracking. arXiv preprint arXiv:1603.00831, 2016. 1                       models. arXiv preprint arXiv:2210.13695, 2022. 2
+                                                                                                                                                       ¨
+                [66] Duy-Kien Nguyen, Jihong Ju, Olaf Booij, Martin R Os-               [79] Pierre Sermanet, David Eigen, Xiang Zhang, Michael
+                     wald, and Cees GM Snoek. Boxer: Box-attention for 2d                     Mathieu, Rob Fergus, and Yann LeCun. Overfeat: Inte-
+                     and3dtransformers. InProceedingsoftheIEEE/CVFCon-                        grated recognition, localization and detection using convo-
+                     ference on ComputerVisionandPatternRecognition,pages                     lutional networks. arXiv preprint arXiv:1312.6229, 2013.
+                     4773–4782, 2022. 2                                                       1
+                                                                                   19841
+              [80] Shuai Shao, Zijian Zhao, Boxun Li, Tete Xiao, Gang Yu,            ings of the IEEE/CVF international conference on com-
+                   Xiangyu Zhang, and Jian Sun. Crowdhuman: A bench-                 puter vision, pages 9627–9636, 2019. 2, 9
+                   mark for detecting human in a crowd.     arXiv preprint      [94] Brian L Trippe, Jason Yim, Doug Tischer, Tamara Brod-
+                   arXiv:1805.00123, 2018. 2, 4, 5                                   erick, David Baker, Regina Barzilay, and Tommi Jaakkola.
+                                            ¨
+              [81] Gunnar A Sigurdsson, Gul Varol, Xiaolong Wang, Ali                Diffusion probabilistic modeling of protein backbones in
+                   Farhadi, Ivan Laptev, and Abhinav Gupta. Hollywood in             3d for the motif-scaffolding problem.    arXiv preprint
+                   homes: Crowdsourcing data collection for activity under-          arXiv:2206.04119, 2022. 1, 2
+                   standing.  In European Conference on Computer Vision,        [95] Xinggang Wang, Kaibing Chen, Zilong Huang, Cong Yao,
+                   pages 510–526. Springer, 2016. 1                                  andWenyuLiu. Pointlinking network for object detection.
+              [82] Uriel Singer, Adam Polyak, Thomas Hayes, Xi Yin, Jie An,          arXiv preprint arXiv:1706.03646, 2017. 2
+                   Songyang Zhang, Qiyuan Hu, Harry Yang, Oron Ashual,          [96] Ross Wightman, Hugo Touvron, and Herve Jegou. Resnet
+                   Oran Gafni, et al. Make-a-video: Text-to-video generation         strikes back: An improved training procedure in timm. In
+                   without text-video data. arXiv preprint arXiv:2209.14792,         NeurIPS 2021 Workshop on ImageNet: Past, Present, and
+                   2022. 2                                                           Future, 2021. 9
+              [83] Jascha Sohl-Dickstein, Eric Weiss, Niru Maheswaranathan,                                   ¨
+                   and Surya Ganguli.    Deep unsupervised learning using       [97] Julia Wolleb, Robin Sandkuhler, Florentin Bieder, Philippe
+                   nonequilibrium thermodynamics.    In International Con-           Valmaggia, and Philippe C Cattin. Diffusion models for
+                   ference on Machine Learning, pages 2256–2265. PMLR,               implicit image segmentation ensembles.   arXiv preprint
+                   2015. 3                                                           arXiv:2112.03145, 2021. 1, 2
+              [84] Jiaming Song, Chenlin Meng, and Stefano Ermon. Denois-       [98] Junfeng Wu, Qihao Liu, Yi Jiang, Song Bai, Alan Yuille,
+                   ing diffusion implicit models. In International Conference        and Xiang Bai.   In defense of online models for video
+                   onLearning Representations, 2021. 3, 5                            instance segmentation. arXiv preprint arXiv:2207.10661,
+              [85] Yang Song, Prafulla Dhariwal, Mark Chen, and Ilya                 2022. 4
+                   Sutskever.     Consistency models.      arXiv preprint       [99] Lemeng Wu, Chengyue Gong, Xingchao Liu, Mao Ye, and
+                   arXiv:2303.01469, 2023. 9                                         Qiang Liu. Diffusion-based molecule generation with in-
+              [86] Yang Song and Stefano Ermon. Generative modeling by               formative prior bridges. arXiv preprint arXiv:2209.00865,
+                   estimating gradients of the data distribution. Advances in        2022. 2
+                                                                                                                    ˆ         ˆ
+                   Neural Information Processing Systems, 32, 2019. 2, 3       [100] Shoule Wu and Ziqiang Shi. Itotts and itowave: Linear
+              [87] Yang Song and Stefano Ermon. Improved techniques for              stochastic differential equation is all you need for audio
+                   training score-based generative models. Advances in neural        generation. arXiv e-prints, pages arXiv–2105, 2021. 2
+                   information processing systems, 33:12438–12448, 2020. 3     [101] Yuxin Wu, Alexander Kirillov, Francisco Massa, Wan-Yen
+              [88] Yang Song, Jascha Sohl-Dickstein, Diederik P Kingma,              Lo, and Ross Girshick. Detectron2. https://github.
+                   Abhishek Kumar, Stefano Ermon, and Ben Poole. Score-              com/facebookresearch/detectron2,2019. 5,7
+                   based generative modeling through stochastic differential   [102] MinkaiXu,LantaoYu,YangSong,ChenceShi,StefanoEr-
+                   equations. In International Conference on Learning Repre-         mon,andJianTang. Geodiff: A geometric diffusion model
+                   sentations, 2021. 1, 2                                            for molecular conformation generation.  In International
+              [89] Peize Sun, Yi Jiang, Enze Xie, Wenqi Shao, Zehuan Yuan,           Conference on Learning Representations, 2021. 2
+                   ChanghuWang,andPingLuo. Whatmakesforend-to-end              [103] Dongchao Yang, Jianwei Yu, Helin Wang, Wen Wang,
+                   object detection? In International Conference on Machine          Chao Weng, Yuexian Zou, and Dong Yu. Diffsound: Dis-
+                   Learning, pages 9934–9944. PMLR, 2021. 2                          crete diffusion model for text-to-sound generation. arXiv
+              [90] Peize Sun, Rufeng Zhang, Yi Jiang, Tao Kong, Chen-                preprint arXiv:2207.09983, 2022. 2
+                   feng Xu, Wei Zhan, Masayoshi Tomizuka, Lei Li, Zehuan       [104] Ruihan Yang, Prakhar Srivastava, and Stephan Mandt. Dif-
+                   Yuan, Changhu Wang, et al. Sparse r-cnn: End-to-end ob-           fusion probabilistic modeling for video generation. arXiv
+                   ject detection with learnable proposals. In Proceedings of        preprint arXiv:2203.09481, 2022. 2
+                   the IEEE/CVF conference on computer vision and pattern      [105] Ze Yang, Shaohui Liu, Han Hu, Liwei Wang, and Stephen
+                   recognition, pages 14454–14463, 2021. 1, 2, 3, 4, 5, 6, 7,        Lin. Reppoints: Point set representation for object detec-
+                   8, 9                                                              tion. In Proceedings of the IEEE/CVF International Con-
+              [91] JaesungTae,HyeongjuKim,andTaesuKim. Editts: Score-                ference on Computer Vision, pages 9657–9666, 2019. 1
+                   basededitingforcontrollabletext-to-speech. arXivpreprint    [106] Hongyi Zhang, Moustapha Cisse, Yann N. Dauphin, and
+                   arXiv:2110.02584, 2021. 2                                         DavidLopez-Paz. mixup: Beyondempiricalriskminimiza-
+              [92] Jingru Tan, Changbao Wang, Buyu Li, Quanquan Li, Wanli            tion. In International Conference on Learning Representa-
+                   Ouyang, Changqing Yin, and Junjie Yan.     Equalization           tions, 2018. 5
+                   loss for long-tailed object recognition. In Proceedings of  [107] Hao Zhang, Feng Li, Shilong Liu, Lei Zhang, Hang Su,
+                   the IEEE/CVF conference on computer vision and pattern            Jun Zhu, Lionel Ni, and Harry Shum. Dino: Detr with im-
+                   recognition, pages 11662–11671, 2020. 7                           proveddenoisinganchorboxesforend-to-endobjectdetec-
+              [93] Zhi Tian, Chunhua Shen, Hao Chen, and Tong He. Fcos:              tion. In International Conference on Learning Representa-
+                   Fully convolutional one-stage object detection. In Proceed-       tions, 2022. 2, 7
+                                                                            19842
+              [108] Mingyuan Zhang, Zhongang Cai, Liang Pan, Fangzhou
+                    Hong, Xinying Guo, Lei Yang, and Ziwei Liu. Motiondif-
+                    fuse: Text-driven human motion generation with diffusion
+                    model. arXiv preprint arXiv:2208.15001, 2022. 2
+              [109] Shanshan Zhang, Rodrigo Benenson, and Bernt Schiele.
+                    Citypersons: A diverse dataset for pedestrian detection. In
+                    Proceedings of the IEEE conference on computer vision
+                    and pattern recognition, pages 3213–3221, 2017. 5
+              [110] Shilong Zhang, Xinjiang Wang, Jiaqi Wang, Jiangmiao
+                    Pang, Chengqi Lyu, Wenwei Zhang, Ping Luo, and Kai
+                    Chen. Densedistinct query for end-to-end object detection.
+                    In Proceedings of the IEEE/CVF Conference on Computer
+                    Vision and Pattern Recognition (CVPR), pages 7329–7338,
+                    June 2023. 2
+                                                                    ¨     ¨
+              [111] Xingyi Zhou, Vladlen Koltun, and Philipp Krahenbuhl.
+                    Probabilistic two-stage detection.     In arXiv preprint
+                    arXiv:2103.07461, 2021. 7
+                                                               ¨     ¨
+              [112] Xingyi Zhou, Dequan Wang, and Philipp Krahenbuhl. Ob-
+                    jects as points. arXiv preprint arXiv:1904.07850, 2019. 1,
+                    2
+              [113] Benjin Zhu*, Feng Wang*, Jianfeng Wang, Siwei Yang,
+                    Jianhu Chen, and Zeming Li. cvpods: All-in-one toolbox
+                    for computer vision research, 2020. 5
+              [114] XizhouZhu,WeijieSu,LeweiLu,BinLi,XiaogangWang,
+                    andJifengDai. Deformable{detr}: Deformabletransform-
+                    ers for end-to-end object detection. In International Con-
+                    ference on Learning Representations, 2021. 1, 2, 4, 5, 6, 7,
+                    9
+                                                                               19843

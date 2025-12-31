@@ -1,0 +1,58 @@
+                                             REALM:Retrieval-AugmentedLanguageModelPre-Training
+              els comprehendasingle document,Open-QAmodelsmust               3.2. Model architecture
+              retain knowledgefrommillionsofdocuments,sinceaques-            We now describe the two key components:                the
+              tion could be about any of them.                               neural knowledge retriever, which models p(z|x),
+              WefocusonOpen-QAsystemsthatutilizeatextualknowl-               and the knowledge-augmented encoder, which models
+              edge corpus Z as the knowledge source. Many of these           p(y|z,x).
+              systems employ a retrieval-based approach: given a ques-
+              tion x, retrieve potentially relevant documents z from         Knowledge Retriever      The retriever is deﬁned using a
+              the corpus Z, and then extract an answer y from the            dense inner product model:
+              documents (Brill et al., 2002; Chen et al., 2017; Lee et al.,
+              2019).    Our approach, REALM, is inspired by this                                    expf(x,z)
+              paradigm and extends it to language model pre-training.                 p(z|x) = Pz′ expf(x,z′),
+              Alternatively, some recent work has proposed generation-                                         ⊤
+              based systemsthatapplyasequence-to-sequencemodelon                      f(x,z) = Embedinput(x) Embeddoc(z),
+              xtodirectly generate y token-by-token(Lewis et al., 2019;      where Embed        and Embed     are embedding functions
+              Raffel et al., 2019). We will compare against state-of-the-                 input            doc
+              art systems from both paradigms in our experiments.            that map x and z respectively to d-dimensional vectors.
+                                                                             The relevance score f(x,z) between x and z is deﬁned as
+                                                                             the inner product of the vector embeddings. The retrieval
+              3. Approach                                                    distribution is the softmax over all relevance scores.
+              We start by formalizing REALM’s pre-training and ﬁne-          Weimplement the embedding functions using BERT-style
+              tuning tasks as a retrieve-then-predict generative process     Transformers (Devlin et al., 2018).   Following standard
+              in Section 3.1. Then in Section 3.2, we describe the model     practices, we join spans of text by applying wordpiece tok-
+              architectures for each component of that process. In Sec-      enization, separating them with [SEP] tokens, preﬁxing a
+              tion 3.3, we show how to implement REALM pre-training          [CLS]token,andappendingaﬁnal[SEP]token.
+              andﬁne-tuningbymaximizingthelikelihoodofREALM’s
+              generativeprocess. En route, we address important compu-                 join     (x) = [CLS]x[SEP]
+                                                                                            BERT
+              tational challenges, explain why training works, and also           join     (x ,x ) = [CLS]x [SEP]x [SEP]
+                                                                                       BERT  1   2             1         2
+              discuss strategies for injecting useful inductive biases. The
+              overall framework is illustrated in Figure 2.                  Asin Devlin et al. (2018), we pass this into a Transformer,
+                                                                             which produces one vector for each token, including the
+              3.1. REALM’s generativeprocess                                 vectorcorrespondingto[CLS]whichisusedasa“pooled”
+                                                                             representation of the sequence (denoted BERTCLS). Finally,
+              For both pre-training and ﬁne-tuning, REALM takes some         weperformalinearprojectionto reducethedimensionality
+              input x and learns a distribution p(y|x) over possible out-    of the vector, denoted as a projection matrix W:
+              puts y. For pre-training, the task is masked language mod-
+              eling: x is a sentence from a pre-training corpus X with         Embed      (x) = W       BERT    (join     (x))
+              some tokens masked out, and the model must predict the                 input          input    CLS      BERT
+                                                                                 Embeddoc(z) = WdocBERTCLS(join         (ztitle, zbody))
+              value of those missing tokens, y. For ﬁne-tuning, the task                                             BERT
+              is Open-QA:x is a question, and y is the answer.               where z    is the document’s title and z   is its body. We
+                                                                                     title                          body
+              REALMdecomposesp(y|x)intotwosteps: retrieve,then               let θ denote all parameters associated with the retriever,
+              predict. Given an input x, we ﬁrst retrieve possibly helpful   which include the Transformer and projection matrices.
+              documentszfromaknowledgecorpusZ. Wemodelthisas
+              a sample from the distribution p(z |x). Then, we condition     Knowledge-AugmentedEncoder Given an input x and
+              on both the retrieved z and the original input x to generate   a retrieved documentz, the knowledge-augmentedencoder
+              the output y—modeled as p(y|z,x). To obtain the overall        deﬁnes p(y|z,x). We join x and z into a single sequence
+              likelihood of generating y, we treat z as a latent variable    that we feed into a Transformer (distinct from the one used
+              and marginalize over all possible documents z, yielding        in the retriever). This allows us to perform rich cross-
+                                                                             attention betweenx andz beforepredictingy. See Figure1
+                                                                             for a concrete example.
+                                                                             At this stage, the architectures for pre-training and ﬁne-
+                                                                             tuning differ slightly. For the masked language model pre-
+                           p(y|x) = Xp(y|z,x)p(z|x).                 (1)     training task, we must predict the original value of each
+                                     z∈Z                                     [MASK] token in x. To do so, we use the same masked

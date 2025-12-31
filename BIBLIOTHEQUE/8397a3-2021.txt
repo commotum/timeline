@@ -1,0 +1,840 @@
+                                                          Did Aristotle Use a Laptop?
+                       AQuestionAnsweringBenchmarkwithImplicitReasoningStrategies
+                                                     1,2                        2                1                   2
+                                       MorGeva ,DanielKhashabi ,EladSegal ,TusharKhot ,
+                                                                        3                        1,2
+                                                           DanRoth ,JonathanBerant
+                                 1Tel Aviv University         2Allen Institute for AI        3University of Pennsylvania
+                                 morgeva@mail.tau.ac.il, {danielk,tushark}@allenai.org,
+                                        elad.segal@gmail.com, danroth@seas.upenn.edu
+                                                             joberant@cs.tau.ac.il
+                                          Abstract                                  Commonly, the language of questions in such
+                                                                                  benchmarks explicitly describes the process for
+                        Akeylimitation in current datasets for multi-             deriving the answer. For instance (Figure 1, Q2),
+                        hop reasoning is that the required steps                  the question Was Aristotle alive when the laptop
+                        for answering the question are mentioned                  was invented? explicitly specifies the required
+                        in it explicitly. In this work, we introduce              reasoning steps. However, in real-life questions,
+                        STRATEGYQA, a question answering (QA)                     reasoning is often implicit. For example, the
+                        benchmark where the required reasoning
+                        steps  are   implicit  in   the  question,   and          question Did Aristotle use a laptop? (Q1) can
+                        should be inferred using a strategy. A                    be answered using the same steps, but the
+                        fundamental challenge in this setup is                    model must infer the strategy for answering the
+                        how to elicit such creative questions from                question–temporal comparison, in this case.
+                        crowdsourcing workers, while covering a                     Answering implicit questions poses several
+                        broadrangeofpotentialstrategies.Wepropose
+                        a data collection procedure that combines                 challenges compared to answering their explicit
+                        term-based priming to inspire annotators,                 counterparts. First, retrieving the context is
+                        careful control over the annotator population,            difficult as there is little overlap between the
+                        and adversarial     filtering  for   eliminating          question and its context (Figure 1, Q1 and ‘E’).
+                        reasoning shortcuts. Moreover, we annotate                Moreover, questions tend to be short, lowering
+                        each question with (1) a decomposition into               the possibility of the model exploiting shortcuts
+                        reasoning steps for answering it, and (2)                 in the language of the question. In this work, we
+                        Wikipediaparagraphsthatcontaintheanswers                  introduceSTRATEGYQA,aBooleanQAbenchmark
+                        to each step. Overall, STRATEGYQA includes
+                        2,780 examples, each consisting of a strategy             focusing on implicit multi-hop reasoning for
+                        question, its decomposition, and evidence                 strategy questions, where a strategy is the
+                        paragraphs. Analysis shows that questions                 ability to infer from a question its atomic sub-
+                        in STRATEGYQA are short, topic-diverse, and               questions. In contrast to previous benchmarks
+                        cover a wide range of strategies. Empirically,            (Khot et al., 2020a; Yang et al., 2018), questions
+                        we show that humans perform well (87%) on                 in STRATEGYQA are not limited to predefined
+                        this task, while our best baseline reaches an             decomposition patterns and cover a wide range
+                        accuracy of ∼ 66%.
+                                                                                  of strategies that humans apply when answering
+                   1 Introduction                                                 questions.
+                                                                                    Eliciting strategy questions using crowdsourc-
+                   Developing models that successfully reason                     ing is non-trivial. First, authoring such questions
+                   over multiple parts of their input has attracted               requires creativity. Past work often collected
+                   substantial attention recently, leading to the                 multi-hop questions by showing workersanentire
+                   creation of many multi-step reasoning Question                 context, which led to limited creativity and high
+                   Answering(QA)benchmarks(Welbletal., 2018;                      lexical overlap between questions and contexts
+                   Talmor and Berant, 2018; Khashabi et al., 2018;                and consequently to reasoning shortcuts (Khot
+                   Yang et al., 2018; Dua et al., 2019; Suhr et al.,              et al., 2020a; Yang et al., 2018). An alter-
+                   2019).                                                         native approach, applied in Natural Questions
+                                                                             346
+                               Transactions of the Association for Computational Linguistics, vol. 9, pp. 346–361, 2021. https://doi.org/10.1162/tacl a 00370
+                                      Action Editor: Kristina Toutanova. Submission batch: 10/2020; Revision batch: 12/2020; Published 4/2021.
+                                             c
+                                            2021AssociationforComputationalLinguistics. Distributed under a CC-BY 4.0 license.
+                                                                                    Our      analysis    shows      that    STRATEGYQA
+                                                                                  necessitates reasoning on a wide variety of
+                                                                                  knowledge domains (physics, geography, etc.)
+                                                                                  andlogical operations (e.g., number comparison).
+                                                                                  Moreover, experiments show that STRATEGYQA
+                                                                                  poses a combined challenge of retrieval and
+                                                                                  QA, and while humans perform well on these
+                                                                                  questions, even strong systems struggle to answer
+                                                                                  them.
+                   Figure 1: Questions in STRATEGYQA (Q1) require                   In summary, the contributions of this work are:
+                   implicit   decomposition into reasoning steps (D),
+                   for which we annotate supporting evidence from                   1. Defining strategy questions—a class of
+                   Wikipedia (E). This is in contrast to multi-step                    question      requiring     implicit    multi-step
+                   questions that explicitly specify the reasoning process             reasoning.
+                   (Q2).
+                                                                                    2. STRATEGYQA,thefirstbenchmarkforimplicit
+                   (Kwiatkowski et al., 2019) and MS-MARCO                             multi-step QA, that covers a diverse set
+                   (Nguyen et al., 2016), overcomes this by col-                       of reasoning skills. STRATEGYQA consists
+                   lecting real user questions. However,can we elicit                  of 2,780 questions, annotated with their
+                   creative questions independently of the context                     decomposition and per-step evidence.
+                   and without access to users?                                     3. A novel annotation pipeline designed to
+                      Second, an important property in STRATEGYQA                      elicitqualitystrategyquestions,withminimal
+                   is that questions entail diverse strategies. While                  context for priming workers.
+                   the example in Figure 1 necessitates temporal
+                   reasoning, there are many possible strategies                  Thedatasetandcodebasearepubliclyavailableat
+                   for answering questions (Table 1). We want                     https://allenai.org/data/strategyqa.
+                   a benchmark that exposes a broad range of
+                   strategies. But crowdsourcing workers often use                2 Strategy Questions
+                   repetitive patterns, which may limit question
+                   diversity.                                                     2.1   Desiderata
+                      To overcome these difficulties, we use the                  We define strategy questions by characterizing
+                   following techniques in our pipeline for eliciting             their desired properties. Some properties, such as
+                   strategy questions: (a) we prime crowd workers                 whether the question is answerable, also depend
+                   with random Wikipedia terms that serve as a                    on the context used for answering the question.
+                   minimal context to inspire their imagination and               In this work, we assume this context is a corpus
+                   increase their creativity; (b) we use a large set of           of documents, specifically, Wikipedia, which we
+                   annotators to increase question diversity, limiting            assumeprovides correct content.
+                   the number of questions a single annotator can                 Multi-step     Strategy questions are multi-step
+                   write; and (c) we continuously train adversarial               questions, that is, they comprise a sequence of
+                   models during data collection, slowly increasing               single-step questions. A single-step question is
+                   the difficulty in question writing and preventing              either (a) a question that can be answered from
+                   recurring patterns (Bartolo et al., 2020).                     a short text fragment in the corpus (e.g., steps
+                      Beyond the questions, as part of STRATEGYQA,                1 and 2 in Figure 1), or (b) a logical operation
+                   we annotated: (a) question decompositions: a                   over answers from previous steps (e.g., step 3 in
+                   sequence of steps sufficient for answering the                 Figure1). Astrategyquestion should haveat least
+                   question (‘D’ in Figure 1), and (b) evidence                   twostepsforderivingtheanswer.Examplemulti-
+                   paragraphs: Wikipedia paragraphs that contain                  andsingle-stepquestionsareprovidedinTable2.
+                   the answer to each decomposition step (‘E’ in                  Wedefinethereasoningprocessstructurein§2.2.
+                   Figure 1). STRATEGYQA is the first QA dataset to
+                   provide decompositions and evidenceannotations                 Feasible     Questions should be answerable from
+                   for each individual step of the reasoning process.             paragraphs in the corpus. Specifically, for each
+                                                                             347
+                  Question                                       Implicit facts
+                  Canonespothelium?(No)                          Helium is a gas, Helium is odorless, Helium is
+                                                                 tasteless, Helium has no color.
+                  WouldHadesandOsirishypothetically              HadeswastheGreekgodofdeathandthe
+                  compete for real estate in the Underworld?     Underworld.Osiris was the Egyptian god of the
+                  (Yes)                                          Underworld.
+                  Wouldamonoclebeappropriateforacyclop?          Cyclops have one eye. A monocle helps one eye at
+                  (Yes)                                          a time.
+                  Should a finished website have lorem ipsum     LoremIpsumparagraphsaremeanttobetemporary.
+                  paragraphs? (No)                               Webdesignersalwaysremoveloremipsum
+                                                                 paragraphs before launch.
+                  Isitnormaltofindparsleyinmultiplesections      Parsley is available in both fresh and dry forms.
+                  of the grocery store? (Yes)                    Fresh parsley must be kept cool. Dry parsley is a
+                                                                 shelf stable product.
+                        Table 1: Example strategy questions and the implicit facts needed for answering them.
+                 Question                       MS IM Explanation
+                 WasBarackObamabornin                       The question explicitly states the required information for
+                 the United States? (Yes)                   the answer–the birth place of Barack Obama. The answer
+                                                            is likely to be found in a single text fragment in Wikipedia.
+                 Docarsusedrinking water                    The question explicitly states the required information for
+                 to power their engine? (No)                the answer–the liquid used to power car engines. The
+                                                            answer is likely to be found in a single text fragment in
+                                                            Wikipedia.
+                 Aresharksfasterthancrabs?      X           Thequestionexplicitly states the requiredreasoning steps:
+                 (Yes)                                      1) How fast are sharks? 2) How fast are crabs? 3) Is #1
+                                                            faster than #2?
+                 WasTomCruisemarriedto          X           Thequestionexplicitly states the requiredreasoning steps:
+                 the female star of Inland                  1) Who is the female star of Inland Empire? 2) Was Tom
+                 Empire? (No)                               Cruise married to #2?
+                 Aremorewatermelons             X X Theanswercanbederivedthroughgeographical/botanical
+                 growninTexasthanin                         reasoning that the climate in Antarctica does not support
+                 Antarctica? (Yes)                          growth of watermelons.
+                 Wouldsomeonewitha              X X Theanswercan be derived through biological reasoning
+                 nosebleed benefit from                     that Coca constricts blood vessels, and therefore, serves to
+                 Coca?(Yes)                                 stop bleeding.
+                Table 2: Example questions demonstrating the multi-step (MS) and implicit (IM) properties of strategy
+                questions.
+                 reasoning step in the sequence, there should be     belongings, and this information is unlikely to
+                 sufficient evidence from the corpus to answer the   be found in Wikipedia.
+                 question. For example, the answer to the question
+                 Wouldamonoclebeappropriateforacyclop?can            Implicit   Akeypropertydistinguishing strategy
+                 be derived from paragraphs stating that cyclops     questions from prior multi-hop questions is
+                 have one eye and that a monocle is used by one      their implicit nature. In explicit questions, each
+                 eye at the time. This information is found in       step in the reasoning process can be inferred
+                 our corpus, Wikipedia, and thus the question is     from the language of the question directly. For
+                 feasible. In contrast, the question Does Justin     example, in Figure 1, the first two questions
+                 Beiber own a Zune? is not feasible, because         are explicitly stated, one in the main clause
+                 answering it requires going through Beiber’s        and one in the adverbial clause. Conversely,
+                                                                 348
+                 reasoning steps in strategy questions require         Question         Decomposition
+                 going beyond the language of the question. Due        Did the Battle   (1) HowlongdidtheBattleof
+                 to language variability, a precise definition of      of Peleliu or    Peleliu last?
+                 implicit questions based on lexical overlap is        the Seven        (2) How long did the Seven
+                 elusive, but a good rule-of-thumbisthefollowing:      DaysBattles      DaysBattle last?
+                 If the question decomposition can be written with     last longer?     (3)Whichislongerof#1,#2?
+                 a vocabulary limited to words from the questions,     Canthe           (1) What is the citizenship
+                 their inflections, and function words, then it is     President of     requirementfor voting
+                 an explicit question. If new content words must       Mexico vote      in New Mexico?
+                 be introduced to describe the reasoning process,      in               (2) What is the citizenship
+                 the question is implicit. Examples for implicit and   NewMexico        requirementof any
+                 explicit questions are in Table 2.                    primaries?       President of Mexico?
+                                                                                        (3) Is #2 the same as #1?
+                 Definite   A type of questions we wish to             Cana             (1)Whatkindofbatterydoes
+                 avoid are non-definitive questions, such as Are       microwave        a Toyota Prius use?
+                 hamburgers considered a sandwich? and Does            melt a Toyota    (2) What type of material is
+                 chocolate taste better than vanilla? for which        Prius battery?   #1madeoutof?
+                 there is no clear answer. We would like to                             (3) What is the melting point
+                 collect questions where the answer is definitive                       of #2?
+                 or, at least, very likely, based on the corpus.                        (4) Can a microwave’s
+                 For example, consider the question Does wood                           temperaturereachat least
+                 conduct electricity?. Although it is possible that a                   #3?
+                 dampwoodwillconductelectricity, the answer is         Wouldit be       (1) Where is a typical
+                 generally no.                                         commonto         penguin’s natural habitat?
+                   To summarize, strategy questions are multi-         findapenguin     (2) Whatconditions make #1
+                 step questions with implicit reasoning (a strategy)   in Miami?        suitable for penguins?
+                 and a definitive answer that can be reached given                      (3) Are all of #2 present in
+                 a corpus. We limit ourselves to Boolean yes/no                         Miami?
+                 questions,whichlimitstheoutputspace,butletsus
+                 focusonthecomplexityofthequestions,whichis           Table3:Explicit (row1)andstrategy(rows2–4)
+                 the key contribution. Example strategy questions     question decompositions. We mark words that
+                 are in Table 1, and examples that demonstrate the    areexplicit (italic) or implicit in the input (bold).
+                 mentioned properties are in Table 2. Next (§2.2),
+                 wedescribeadditionalstructuresannotatedduring
+                 data collection.                                       Inspired by recent work (Wolfson et al.,
+                                                                      2020), we associate every question-answer pair
+                 2.2  DecomposingStrategyQuestions                    with a strategy question decomposition. A
+                 Strategyquestionsinvolvecomplexreasoningthat         decomposition of a question q is a sequence of n
+                 leads to a yes/no answer. To guide and evaluate      steps hs(1),s(2),...,s(n)i required for computing
+                 the QA process, we annotate every example with       the answer to q. Each step s(i) corresponds to
+                 a description of the expected reasoning process.     a single-step question and may include special
+                   Prior work used rationales or supporting facts,    references, which are placeholders referring
+                 namely, text snippets extracted from the context     to the result of a previous step s(j). The
+                 (DeYoung et al., 2020; Yang et al., 2018;            last decomposition step (i.e., s(n)) returns the
+                 Kwiatkowski et al., 2019; Khot et al., 2020a) as     final answer to the question. Table 3 shows
+                 evidence for an answer. However, reasoning can       decomposition examples.
+                 rely on elements that are not explicitly expressed     Wolfson et al. (2020) targeted explicit multi-
+                 in the context. Moreover, answering a question       step questions (first row in Table 3), where the
+                 based on relevant context does not imply that        decomposition is restricted to a small vocabulary
+                 the modelperformsreasoningproperly(Jiangand          derivedalmostentirelyfromtheoriginalquestion.
+                 Bansal, 2019).                                       Conversely,   decomposing strategy questions
+                                                                  349
+                  Figure 2: Overview of the data collection pipeline. First (CQW, §3.1), a worker is presented with a term (T) and
+                  anexpectedanswer(A)andwritesaquestion(Q)andthefacts(F1,F2)requiredtoanswerit.Next,thequestionis
+                  decomposed (SQD, §3.2) into steps (S1, S2) along with Wikipedia page titles (P1, P2) that the worker expects to
+                  find the answer in. Last (EVM, §3.3), decomposition steps are matched with evidence from Wikipedia (E1, E2).
+                  requires using implicit knowledge, and thus               We break the data collection into three tasks:
+                  decompositions can include any token that is            question writing (§3.1), question decomposition
+                  neededfordescribingtheimplicit reasoning(rows           (§3.2), and evidence matching (§3.3). In addition,
+                  2–4 in Table 3). This makes the decomposition           we implement mechanisms for quality assurance
+                  task significantly harder for strategy questions.       (§3.4).Anoverviewofthedatacollectionpipeline
+                    In this work, we distinguish between two types        is in Figure 2.
+                  of required actions for executing a step. Retrieval,
+                  a step that requires retrieval from the corpus,         3.1   Creative Question Writing (CQW)
+                  and operation, a logical function over answers to
+                  previous steps. In the second row of Table 3, the       Generating natural language annotations through
+                  first two steps are retrieval steps, and the last step  crowdsourcing (e.g., question generation) is
+                  is an operation. A decomposition step can require       known to suffer from several shortcomings.
+                  both retrieval and an operation (see last row in        First, when annotators generate many instances,
+                  Table 3).                                               they use recurring patterns that lead to biases
+                    To verify that steps are valid single-step            in the data. (Gururangan et al., 2018; Geva
+                  questions that can be answered using the corpus         et al., 2019). Second, when language is generated
+                  (Wikipedia), we collect supporting evidence for         conditionedonalongcontext,suchasaparagraph,
+                  each retrieval step and annotate operation steps.       annotators use similar language (Kwiatkowski
+                  Asupporting evidence is one or more paragraphs          et al., 2019), leading to high lexical overlap
+                  that provide an answer to the retrieval step.           and hence, inadvertently, to an easier problem.
+                    In summary, each example in our dataset               Moreover, a unique property of our setup is that
+                  contains a) a strategy question, b) the strategy        we wish to cover a broad and diverse set of
+                  question   decomposition,     and c) supporting         strategies. Thus, we must discourage repeated use
+                  evidence per decomposition step. Collecting             of the same strategy.
+                  strategy questions and their annotations is the           Wetackle these challenges on multiple fronts.
+                  main challenge of this work, and we turn to this        First, rather than using a long paragraph as
+                  next.                                                   context, we prime workers to write questions
+                                                                          given single terms from Wikipedia, reducing the
+                  3 DataCollectionPipeline                                overlap with the context to a minimum. Second,
+                                                                          to encourage diversity, we control the population
+                  Our goal is to establish a procedure for                of annotators, making sure a large number of
+                  collecting strategy questions and their annotations     annotators contribute to the dataset. Third, we use
+                  at scale. To this end, we build a multi-step            model-in-the-loop adversarial annotations (Dua
+                  crowdsourcing1pipelinedesignedforencouraging            etal., 2019;Khotetal.,2020a;Bartoloetal.,2020)
+                  worker creativity, while preventing biases in the       to filter our questions, and only accept questions
+                  data.                                                   that fool our models. While some model-in-the-
+                                                                          loop approaches use fixed pre-trained models
+                     1WeuseAmazonMechanical Turkasour framework.          to eliminate ‘‘easy’’ questions, we continuously
+                                                                      350
+                  updatethemodelsduringdatacollectiontocombat              3.2   Strategy Question Decomposition (SQD)
+                  the use of repeated patterns or strategies.              Once     a   question    and    the   corresponding
+                     Wenowprovide a description of the task, and           facts   are written, we generate the strategy
+                  elaborate on these methods (Figure 2, upper row).        question decomposition (Figure 2, middle row).
+                                                                           We annotate decompositions before matching
+                  Task description      Given a term (e.g., silk), a       evidence in order to avoid biases stemming from
+                  description of the term, and an expected answer          seeing the context.
+                  (yes or no), the task is to write a strategy question       The decomposition strategy for a question is
+                  about the term with the expected answer, and the         notalwaysobvious,whichcanleadtoundesirable
+                  facts required to answer the question.                   explicit decompositions. For example, a possible
+                  Priming     with    Wikipedia      Terms Writing         explicit decomposition for Q1 (Figure 1) might
+                  strategy questions from scratch is difficult. To         be (1) What items did Aristotle use? (2) Is laptop
+                  inspireworkercreativity,weasktowritequestions            in #1?; but the first step is not feasible. To guide
+                  about terms they are familiar with or can easily         the decomposition, we provide workers with the
+                  understand. The terms are titles of ‘‘popular’’2         facts written in the CQW task to show the strategy
+                  Wikipediapages.Weprovideworkersonlywitha                 of the question author. Evidently, there can be
+                  short description of the given term. Then, workers       many valid strategies and the same strategy can
+                  use their background knowledge and Web search            bephrasedinmultiple ways—thefactsonlyserve
+                  skills to form a strategy question.                      as a soft guidance.
+                                                                           Task Description       Given a strategy question, a
+                  Controlling the Answer Distribution          Weask       yes/no answer, and a set of facts, the task is to
+                  workers to write questions where the answer is           write the steps needed to answer the question.
+                  set to be ‘yes’ or ‘no’. To balance the answer
+                  distribution, the expected answer is dynamically         Auxiliary Sub-task       We observe that in some
+                  sampledinverselyproportionaltotheratioof‘yes’            cases, annotators write explicit decompositions,
+                  and ‘no’ questions collected until that point.           whichoften lead to infeasible steps that cannot be
+                                                                           answeredfromthecorpus.Tohelpworkersavoid
+                  Model-in-the-Loop Filtering        To ensure ques-       explicit decompositions, we ask them to specify,
+                  tions   are  challenging and reduce recurring            for each decomposition step, a Wikipedia page
+                  language and reasoning patterns, questions are           they expectto find the answer in. This encourages
+                  only accepted when verified by two sets of online        workers to write decomposition steps for which it
+                  solvers. We deploy a set of 5 pre-trained models         is possible to find answersin Wikipedia, andleads
+                  (termedPTD)thatcheckifthequestionistooeasy.              to feasible strategy decompositions, with only a
+                  If at least 4 out of 5 answer the question correctly,    small overhead (the workers are not required to
+                  it is rejected. Second, we use a set of 3 models         read the proposed Wikipedia page).
+                  (called FNTD) that are continuously fine-tuned on
+                  our collected data and are meant to detect biases        3.3   EvidenceMatching(EVM)
+                  in the current question set. A question is rejected      Wenow have a question and its decomposition.
+                  if all 3 solvers answer it correctly. The solvers are    Togroundthemincontext, we add a third task of
+                  ROBERTA(Liuetal.,2019)modelsfine-tunedon                 evidence matching (Figure 2, bottom row).
+                  different auxiliary datasets; details in §5.1.           Task Description        Given a question and its
+                  AuxiliarySub-Task        Weaskworkerstoprovide           decomposition(alistofsingle-stepquestions),the
+                  thefactsrequiredtoanswerthequestiontheyhave              task is to find evidence paragraphs on Wikipedia
+                  written, for several reasons: 1) it helps workers        for each retrieval step. Operation steps that do not
+                  frame the question writing task and describe the         require retrieval (§2.2) are marked as operation.
+                  reasoning process they have in mind, 2) it helps         Controlling the Matched Context Workers
+                  reviewing their work, and 3) it provides useful          search for evidence on Wikipedia. We index
+                  information for the decomposition step (§3.2).           Wikipedia3 and provide a search interface where
+                                                                           workers can drag-and-drop paragraphs from the
+                     2Wefilter pages based on the number of contributors and
+                  the number of backward links from other pages.              3WeusetheWikipedia Cirrus dump from 11/05/2020.
+                                                                       351
+                 results shown on the search interface. This             paragraphs.RunningEVVonasubsetofexamples
+                 guarantees that annotators choose paragraphs            during data collection helps identify issues in the
+                 we included in our index, at a pre-determined           pipeline and in worker performance.
+                 paragraph-level granularity.
+                                                                         4 TheSTRATEGYQADataset
+                 3.4   DataVerification Mechanisms
+                 Task Qualifications      For each task, we hold         We run our pipeline on 1,799 Wikipedia terms,
+                 qualifications that test understanding of the task,     allowing a maximum of 5 questions per term. We
+                 and manually review several examples. Workers           update our online fine-tuned solvers (FNTD) every
+                 who follow the requirements are granted access          1Kquestions.Everyquestionisdecomposedonce,
+                 to our tasks. Our qualifications are open to            and evidence is matched for each decomposition
+                 workers from English-speaking countries who             by 3 different workers. The cost of annotating a
+                 have high reputation scores. Additionally, the          full example is $4.
+                 authors regularly review annotations to give              To encourage diversity in strategies used
+                 feedback and prevent noisy annotations.                 in the questions, we recruited new workers
+                                                                         throughout data collection. Moreover, periodic
+                 Real-time Automatic Checks          For CQW, we         updates of the online solvers prevent workers
+                 use heuristics to check question validity, for          from exploiting shortcuts, since the solvers adapt
+                 example, whether it ends with a question mark,          to the training distribution. Overall, there were 29
+                 and that it doesn’t use language that characterizes     questionwriters,19decomposers,and54evidence
+                 explicit multi-hop questions (for instance, having      matchers participating in the data collection.
+                 multiple verbs). For SQD, we check that the               Wecollected 2,835 questions, out of which 55
+                 decomposition structure forms a directed acyclic        weremarkedashavinganincorrectanswerduring
+                 graph, that is: (i) each decomposition step is          SQD(§3.2). This results in a collection of 2,780
+                 referencedby(atleast) oneof the following steps,        verifiedstrategyquestions,forwhichwecreatean
+                 suchthat all steps are reachable from the last step;    annotator-baseddata split (Geva et al., 2019). We
+                 and(ii) steps don’t form a cycle. In the EVM task,      nowdescribe the dataset statistics (§4.1), analyze
+                 a warning message is shown when the worker              the quality of the examples (§4.2), and explore the
+                 marks an intermediate step as an operation (an          reasoning skills in STRATEGYQA (§4.3).
+                 unlikely scenario).
+                                                                         4.1   Dataset Statistics
+                 Inter-task Feedback        At each step of the          Weobserve(Table4)that the answer distribution
+                 pipeline,wecollectfeedbackaboutprevioussteps.           is roughlybalanced(yes/no).Moreover,questions
+                 To verify results from the CQW task, we ask             are short (< 10 words), and the most common
+                 workers to indicate whether the given answer is         trigram occurs in roughly 1% of the examples.
+                 incorrect (in the SQD, EVM tasks), or if the            This indicates that the language of the questions
+                 question is not definitive (in the SQD task) (§2.1).    is both simple and diverse. For comparison,
+                 Similarly, to identify non-feasible questions or        the  average question length in the multi-
+                 decompositions, we ask workers to indicate if           hop datasets HOTPOTQA (Yang et al., 2018)
+                 there is no evidence for a decomposition step (in       and COMPLEXWEBQUESTIONS (Talmor and Berant,
+                 the EVMtask).                                           2018)is 13.7 words and 15.8 words, respectively.
+                 Evidence Verification Task         After the EVM        Likewise, the top trigram in these datasets occurs
+                 step, each example comprises a question, its            in 9.2% and 4.8% of their examples, respectively.
+                 answer, decomposition, and supporting evidence.           More than half of the generated questions are
+                 To verify that a question can be answered               filtered by our solvers, pointing to the difficulty
+                 by executing the decomposition steps against            of generating good strategy questions. We release
+                 the matched evidence paragraphs, we construct           all 3,305 filtered questions as well.
+                 an additional evidence verification task (EVV).           To characterize the reasoning complexity
+                 In this task, workers are given a question,             required to answer questions in STRATEGYQA, we
+                 its decomposition and matched paragraphs, and           examinethedecompositionlengthandthenumber
+                 are asked to answer the question in each                of evidence paragraphs. Figure 3 and Table 4
+                 decomposition step purely based on the provided         (bottom)showthedistributionsoftheseproperties
+                                                                     352
+                                                     Train     Test                       multi-step   single-step
+                  #ofquestions                       2290       490            implicit       81             1         82
+                  %‘‘yes’’questions                 46.8%     46.1%            explicit      14.5           3.5        18
+                  #ofuniqueterms                     1333       442                          95.5           4.5       100
+                  #ofuniquedecomposition             6050      1347
+                  steps                                                       Table 5: Distribution over the implicit and
+                  #ofuniqueevidence                  9251      2136           multi-stepproperties(§2)inasampleof100
+                  paragraphs                                                  STRATEGYQA questions, annotated by two
+                  #ofoccurrencesof the top             31        5            experts (we average the expert decisions).
+                  trigram                                                     Most questions are multi-step and implicit.
+                  #ofquestion writers                  23        6            Annotatoragreementissubstantialforboth
+                  #offiltered questions              2821       484           the implicit (κ = 0.73) and multi-step
+                  Avg.question length (words)         9.6       9.8           (κ = 0.65) properties.
+                  Avg.decomposition length            2.93     2.92
+                  (steps)                                                 questions are implicit, and 95.5% are multi-step
+                  Avg.#ofparagraphsper                2.33     2.29       (Table 5).
+                  question
+                                                                          Do questions in STRATEGYQA have a definitive
+                  Table 4: STRATEGYQA statistics. Filtered questions      answer? We let experts review the answers to
+                  were rejected by the solvers (§3.1). The train and      100 random questions, allowing access to the
+                  test sets of question writers are disjoint. The ‘‘top   Web.Wethenaskthemtostateforeveryquestion
+                  trigram’’ is the most common trigram.                   whether they agree or disagree with the provided
+                                                                          answer. We find that the experts agree with the
+                                                                          answer in 94% of the cases, and disagree only
+                                                                          in 2%. For the remaining 4%, either the question
+                                                                          wasambiguous,ortheannotatorscouldnotfinda
+                                                                          definite answer on the Web. Overall, this suggests
+                                                                          that questions in STRATEGYQA haveclearanswers.
+                                                                          What is the quality of the decompositions?
+                                                                          We randomly sampled 100 decompositions and
+                                                                          asked experts to judge their quality. Experts
+                                                                          judgedifthedecompositionisexplicitorutilizesa
+                  Figure 3: The distributions of decomposition length     strategy. We find that 83% of the decompositions
+                  (left) and the number of evidence paragraphs (right).   validly use a strategy to break down the question.
+                  The majority of the questions in STRATEGYQA require     The remaining 17% decompositions are explicit,
+                  a reasoning process comprised of ≥ 3 steps, of which    however,in14%ofthecasestheoriginalquestion
+                  about 2 steps involve retrieving external knowledge.    is already explicit. Second, experts checked if
+                                                                          the phrasing of the decomposition is ‘‘natural’’,
+                  are centered around 3-step decompositions and 2         that is, it reflects the decomposition of a person
+                  evidence paragraphs, but a considerable portion         that does not already know the answer. We
+                  of the dataset requires more steps and paragraphs.      find that 89% of the decompositions express a
+                                                                          ‘‘natural’’ reasoning process, while 11% may
+                  4.2   DataQuality                                       depend on the answer. Last, we asked experts
+                                                                          to indicate any potential logical flaws in the
+                  Do questions in STRATEGYQA require multi-               decomposition, but no such cases occurred in
+                  step implicit reasoning?      To assess the quality     the sample.
+                  of questions, we sampled 100 random examples
+                  fromthetrainingset,andhadtwoexperts(authors)            Would different annotators use the same
+                  independently annotate whether the questions            decomposition       strategy?    We sample 50
+                  satisfy the desired properties of strategy questions    examples,     and   let   two   different   workers
+                  (§2.1). We find that most of the examples (81%)         decompose      the   questions.    Comparing      the
+                  are valid multi-step implicit questions, 82% of         decomposition pairs, we find that a) for all pairs,
+                                                                      353
+                  the last step returns the same answer, b) in 44         succeeds. In the last 12 cases indeed evidence is
+                  outof50pairs,thedecompositionpairsfollowthe             missing, and is possibly absent from Wikipedia.
+                  samereasoningpath,andc)intheother6pairs,the               Lastly, we let experts review the paragraphs
+                  decompositionseitherfollowadifferentreasoning           matched by one of the three workers to all the
+                  process (5 pairs) or one of the decompositions is       decompositionstepsofaquestion,for100random
+                  explicit (1 pair). This shows that different workers    questions. We find that for 79 of the questions the
+                  usually use the same strategy when decomposing          matched paragraphs provide sufficient evidence
+                  questions.                                              for answering the question. For 12 of the 21
+                                                                          questions without sufficient evidence, the experts
+                  Is the evidence for strategy questions in               indicated they would expect to find evidence in
+                  Wikipedia?     Another important property is            Wikipedia,andtheworkerprobablycouldnotfind
+                  whether questions in STRATEGYQA can be                  it. For the remaining 9 questions, they estimated
+                  answered based on context from our corpus,              that evidence is probably absent from Wikipedia.
+                  Wikipedia, given that questions are written               In conclusion, 93% of the paragraphs matched
+                  independentlyofthecontext.Tomeasureevidence             at the step-levelwerefoundtobevalid.Moreover,
+                  coverage, in the EVM task (§3.3), we provide            when considering single-worker annotations,
+                  workerswithacheckboxforeverydecomposition               ∼80% of the questions are matched with
+                  step,  indicating whether only partial or no            paragraphs that provide sufficient evidence for
+                  evidence could be found for that step. Recall           all retrieval steps. This number increases to
+                  that three different workers match evidence for         88% when aggregating the annotations of three
+                  each decomposition step. We find that 88.3% of          workers.
+                  the questions are fully covered: Evidence was
+                  matchedforeachstepbysomeworker.Moreover,                Do different annotators match the same
+                  in 86.9% of the questions, at least one worker          evidence     paragraphs? To         compare      the
+                  found evidence for all steps. Last, in only 0.5%        evidence    paragraphs    matched     by   different
+                  of the examples were all three annotators unable        workers,   we check whether for a given
+                  to match evidence for any of the steps. This            decomposition step, the same paragraph IDs are
+                  suggests that overall, Wikipedia is a good corpus       retrieved by different annotators. Given two non-
+                  for questions in STRATEGYQA that were written           empty sets of paragraph IDs P1,P2, annotated by
+                  independently of the context.                           two workers, we compute the Jaccard coefficient
+                                                                          J(P ,P ) = |P1∩P2|. In addition, we take the sets
+                  Do matched paragraphs provide evidence?                     1   2     |P1∪P2|
+                  We assess the quality of matched paragraphs             of corresponding Wikipedia page IDs T1,T2 for
+                  by analyzing both example-level and step-level          the matched paragraphs, and compute J(T1,T2).
+                  annotations. First, we sample 217 decomposition         Note that a score of 1 is given to two identical
+                  steps   with   their   corresponding    paragraphs      sets, while a score of 0 correspondsto sets that are
+                  matched by one of the three workers. We let             disjoint. The average similarity score is 0.43 for
+                  3 different crowdworkers decide whether the             paragraphs and 0.69 for pages. This suggests that
+                  paragraphs provide evidence for the answer to           evidenceforadecompositionstepcanbefoundin
+                  that step. We find that in 93% of the cases, the        more than one paragraph in the same page, or in
+                  majority vote is that the evidence is valid.4           different pages.
+                    Next,weanalyzeannotationsoftheverification            4.3   DataDiversity
+                  task (§3.4), where workers are asked to answer all
+                  decomposition steps based only on the matched           Weaimtogeneratecreativeanddiversequestions.
+                  paragraphs.Wefindthattheworkerscouldanswer              Wenowanalyzediversityintermsoftherequired
+                  sub-questions and derive the correct answer in 82       reasoning skills and question topic.
+                  out of 100 annotations. Moreover, in 6 questions        Reasoning Skills      To explore the required
+                  indeed there was an error in evidence matching,         reasoning skills in STRATEGYQA, we sampled
+                  but another worker who annotated the example            100 examples and let two experts (authors)
+                  was able to compensate for the error, leading to        discuss and annotate each example with a) the
+                  88% of the questions where evidence matching            type of strategy for decomposing the question,
+                     4With moderate annotator agreement of κ = 0.42.      and b) the required reasoning and knowledge
+                                                                      354
+                  Strategy       Example                    %
+                  Physical       Canhumannailscarve         13
+                                 astatue out of quartz?
+                  Biological     Is a platypus immune       11
+                                 from cholera?
+                  Historical     Weremollusks an            10
+                                 ingredient in the color
+                                 purple?
+                  Temporal       Did the 40th president     10
+                                 of the United States
+                                 forward lolcats to
+                                 his friends?
+                  Definition     Are quadrupeds             8
+                                 represented on Chinese
+                                 calendar?
+                  Cultural       Wouldacompass              5       Figure4:ReasoningskillsinSTRATEGYQA;eachskillis
+                                                                    associatedwiththeproportionofexamplesitisrequired
+                                 attuned to Earth’s                 for. Domain-related and logical reasoning skills are
+                                 magnetic field be a bad            markedin blue and orange (italic), respectively.
+                                 gift for a Christmas elf?
+                  Religious      WasHillary Clinton’s       5
+                                 deputy chief of staff in
+                                 2009baptised?
+                  Entertainment Would Garfield enjoy a      4
+                                 trip to Italy?
+                  Sports         CanLarryKing’s             4
+                                 ex-wives form a water
+                                 polo team?
+                 Table6:TopstrategiesinSTRATEGYQAandtheir
+                 frequency in a 100 example subset (accounting
+                 for 70% of the analyzed examples).
+                skills per decomposition step. We then aggregate    Figure 5: The top 15 categories of terms used to prime
+                similar labels (e.g., botanical → biological)       workers for question writing and their proportion.
+                and compute the proportion of examples each
+                strategy/reasoningskillisrequiredfor(anexample      for inferring strategies is an important research
+                can have multiple strategy labels).                 direction.
+                   Table 6 demonstrates the top strategies,
+                showing that STRATEGYQA contains a broad set        Question Topics     As questions in STRATEGYQA
+                of strategies. Moreover, diversity is apparent      were triggered by Wikipedia terms, we use the
+                (Figure 4) in terms of both domain-related          ‘‘instance of’’ Wikipedia property to characterize
+                reasoning (e.g., biological and technological) and  the topics of questions.5 Figure 5 shows the
+                logical functions (e.g., set inclusion and ‘‘is     distribution of topic categories in STRATEGYQA.
+                memberof’’).Whilethe reasoningskills sampled        The distribution shows STRATEGYQA is very
+                fromquestions in STRATEGYQA do not necessarily      diverse, with the top two categories (‘‘human’’
+                reflecttheirprevalenceina‘‘natural’’distribution,      5It is usually a 1-to-1 mapping from a term to a Wikipedia
+                we argue that promoting research on methods         category. In cases of 1-to-many, we take the first category.
+                                                                355
+                and‘‘taxon’’;i.e., a group of organisms)covering          Answeraccuracy                  87%
+                only a quarter of the data, and a total of 609 topic      Strategy match                  86%
+                categories.                                               Decomposition usage             14%
+                   We further     compare    the   diversity  of          Average # searches              1.25
+                STRATEGYQA to HOTPOTQA, a multi-hop QA               Table 7: Human performance in answering
+                dataset over Wikipedia paragraphs. To this end,      questions. Strategy match is computed by
+                we sample 739 pairs of evidence paragraphs           comparingtheexplanationprovidedbytheexpert
+                associated with a single question in both datasets,  with the decomposition. Decomposition usage
+                and map the pair of paragraphs to a pair of          and the number of searches are computed based
+                Wikipedia categories using the ‘‘instance of’’       on information provided by the expert.
+                property. We find that there are 571 unique
+                category pairs in STRATEGYQA, but only 356
+                unique category pairs in HOTPOTQA. Moreover,        strategy questions? b) Is retrieval of relevant
+                the top two category pairs in both of the datasets  contexthelpful?andc)Aredecompositionsuseful
+                (‘‘human-human’’,‘‘taxon-taxon’’)constitute8%       for answering questions that require implicit
+                and 27% of the cases in STRATEGYQA and              knowledge?
+                HOTPOTQA, respectively. This demonstrates the
+                creativity and breadth of category combinations     5.1   Baseline Models
+                in STRATEGYQA.                                      Answering strategy questions requires external
+                                                                    knowledge that cannot be obtained by training
+                4.4   HumanPerformance                              onSTRATEGYQAalone.Therefore,ourmodelsand
+                To see how well humans answer strategy              online solvers (§3.1) are based on pre-trained
+                questions, we sample a subset of 100 questions      LMs,fine-tuned on auxiliary datasets that require
+                from STRATEGYQA and have experts (authors)          reasoning.Specifically,in all models we fine-tune
+                answer questions, given access to Wikipedia         ROBERTA(Liuetal., 2019) on a subset of:
+                articles and an option to reveal the decomposition     • BOOLQ (Clark et al., 2019): A dataset for
+                for every question. In addition, we ask them to          Boolean question answering.
+                provide a short explanation for the answer, the
+                number of searches they conducted to derive the        • MNLI(Williamsetal.,2018):Alargenatural
+                answer, and to indicate whether they have used           language inference (NLI) dataset. The task
+                the decomposition. We expect humans to excel at          is to predict if a textual premise entails,
+                comingupwithstrategiesforansweringquestions.             contradicts, or is neutral with respect to the
+                Yet, humans are not necessarily an upper bound           hypothesis.
+                becausefindingtherelevantparagraphsisdifficult
+                and could potentially be performed better by           • TWENTY QUESTIONS (20Q): A collection of
+                                                                         50KshortcommonsenseBooleanquestions.6
+                machines.
+                   Table 7 summarizes the results. Overall,            • DROP(Duaetal.,2019):Alargedatasetfor
+                humansinfertherequiredstrategyandanswerthe               numerical reasoning over paragraphs.
+                questions with high accuracy. Moreover, the low
+                number of searches shows that humans leverage          Modelsaretrained in two configurations:
+                background knowledge, as they can answer some          • No context : The model is fed with the
+                of the intermediate steps without search. An error       questiononly,andoutputsabinaryprediction
+                analysis shows that the main reason for failure          using the special CLS token.
+                (10%) is difficulty to find evidence, and the rest
+                of the cases (3%) are due to ambiguity in the          • With context : We use BM25 (Robertson
+                question that could lead to the opposite answer.         et al., 1995) to retrieve context from our
+                                                                         corpus, while removing stop words from all
+                5 Experimental Evaluation                                queries. We examine two retrieval methods:
+                In this section, we conduct experiments to               a) question-based retrieval: by using the
+                answer the following questions: a) How well              question as a query and taking the top
+                do pre-trained language models (LMs) answer            6https://github.com/allenai/twentyquestions.
+                                                                356
+                           k = 10 results, and b) decomposition-                        Model                                 Solver group(s)
+                           basedretrieval: by initiating a separate query               ROBERTA (20Q)                            PTD, FNTD
+                                                                                                    ∅
+                           for each (gold or predicted) decomposition                   ROBERTA (20Q+BOOLQ)                      PTD, FNTD
+                                                                                                    ∅
+                           step and concatenating the top k = 10                        ROBERTA (BOOLQ)                          PTD, FNTD
+                                                                                                    ∅
+                           results of all steps (sorted by retrieval                    ROBERTA          (BOOLQ)                     PTD
+                           score). In both cases, the model is fed                                  IR-Q
+                                                                                        ROBERTA          (MNLI+BOOLQ)                PTD
+                           with the question concatenated to the                                    IR-Q
+                           retrieved context, truncated to 512 tokens                  Table8:QAmodelsusedasonlinesolversduring
+                           (the maximum input length of ROBERTA),                      datacollection(§3.1).Eachmodelwasfine-tuned
+                           and outputs a binary prediction.                            onthe datasets mentioned in its name.
+                                                                                       Model                        Accuracy        Recall@10
+                     Predicting Decompositions              We train a seq-            MAJORITY                        53.9               -
+                     to-seq model, termed BART                 , that, given a         ROBERTA*                     63.6 ± 1.3            -
+                                                         DECOMP                                      ∅
+                     question, generates its decomposition token-by-                   ROBERTA                      53.6 ± 1.0         0.174
+                                                                                                   IR-Q
+                     token. Specifically, we fine-tune BART (Lewis                     ROBERTA*IR-Q                 63.6 ± 1.0         0.174
+                     et al., 2020) on STRATEGYQA decompositions.                       ROBERTA*IR-D                 61.7 ± 2.2         0.195
+                                                                                       ROBERTA*IR-ORA-D             62.0 ± 1.3         0.282
+                     Baseline Models         As our base model, we train               ROBERTA*ORA-P                70.7 ± 0.6            -
+                     a model as follows: We take a ROBERTA (Liu                        ROBERTA*last-step-raw        65.2 ± 1.4            -
+                                                                                                     ORA-P-D
+                     et al., 2019) model and fine-tune it on DROP, 20Q                 ROBERTA*last-step            72.0 ± 1.0            -
+                                                                                                     ORA-P-D
+                     and BOOLQ (in this order). The model is trained
+                     on DROPwith multiple output heads, as in Segal                   Table 9: QA accuracy (with standard deviation
+                     et al. (2020), which are then replaced with a single             across 7 experiments), and retrieval performance,
+                     Boolean output.7 We call this model ROBERTA*.                    measured by Recall@10, of baseline models on
+                        We use ROBERTA* and ROBERTA to train                          the test set.
+                     the following models on STRATEGYQA: without
+                     context     (ROBERTA* ), with question-based                           the predicted answers. Last, we fine-tune
+                                                ∅
+                     retrieval (ROBERTA*             ,  ROBERTA          ),  and            ROBERTA*toanswerthelastdecomposition
+                                                IR-Q                IR-Q
+                     with predicted decomposition-based retrieval                           step of STRATEGYQA, for which we have
+                     (ROBERTA*IR-D).                                                        supervision.
+                        Wealsopresentfour oracle models:                                 • ROBERTA*last-step-raw:        ROBERTA* that is
+                                                                                                          ORA-P-D
+                                                                                            fine-tuned     to   predict     the   answer from
+                        • ROBERTA*             : Uses the gold paragraphs                   the gold paragraphs and the last step of
+                                         ORA-P                                              the gold decomposition, without replacing
+                           (no retrieval).
+                                                                                            placeholder references.
+                        • ROBERTA*                 : Performs retrieval with          Online Solvers        Forthe solvers integrated in the
+                                         IR-ORA-D                                     data collection process (§3.1), we use three no-
+                           the gold decomposition.
+                                                                                      context models and two question-based retrieval
+                                                                                      models. The solvers are listed in Table 8.
+                        • ROBERTA*last-step : Exploits both the gold
+                                         ORA-P-D                                      5.2    Results
+                           decomposition and the gold paragraphs. We
+                           fine-tune ROBERTA on BOOLQ and SQUAD                       StrategyQAperformance Table9summarizes
+                           (Rajpurkar et al., 2016) to obtain a model                 the results of all models (§5.1). ROBERTA*IR-Q
+                           that can answer single-step questions. We                  substantially outperforms ROBERTA                 , indicat-
+                                                                                                                                   IR-Q
+                           thenrunthismodelonSTRATEGYQAtoobtain                       ing that fine-tuning on related auxiliary datasets
+                           answersforalldecompositionsub-questions,                   before STRATEGYQA is crucial. Hence, we focus
+                           and replace all placeholder references with                onROBERTA*forallotherresults and analysis.
+                                                                                         Strategy questions pose a combined challenge
+                        7For brevity, exact details on model training and             of retrieving the relevant context, and deriving
+                     hyper-parameters will be released as part of our codebase.       the answer based on that context. Training
+                                                                                  357
+                     without context shows a large accuracy gain of                         To understand the low retrieval scores, we
+                     53.9 → 63.6 over the majority baseline. This                        analyzed the query results of 50 random
+                     is far from human performance, but shows that                       decomposition steps. Most failure cases are
+                     some questions can be answered by a large LM                        due to the shallow pattern matching done by
+                     fine-tuned on related datasets without retrieval.                   BM25—forexample,failure to match synonyms.
+                     On the other end, training with gold paragraphs                     This shows that indeed there is little word
+                     raises performance to 70.7. This shows that                         overlap between decomposition steps and the
+                     high-quality retrieval lets the model effectively                   evidence, as intended by our pipeline design. In
+                     reason over the given paragraphs. Last, using                       other examples, either a key question entity was
+                     both gold decompositions and retrieval further                      missing because it was represented by a reference
+                     increases performanceto 72.0, showing the utility                   token, or the decomposition step had complex
+                     of decompositions.                                                  language, leading to failed retrieval. This analysis
+                        Focusing on retrieval-based methods, we                          suggests that advances in neural retrieval might
+                     observe that question-based retrieval reaches                       be beneficial for STRATEGYQA.
+                     an accuracy of 63.6 and retrieval with gold
+                     decompositionsresultsinanaccuracyof62.0.This                        Human Retrieval Performance To quantify
+                     shows that the quality of retrieval even with gold                  human performance in finding gold paragraphs,
+                     decompositionsis nothigh enoughto improvethe                        we ask experts to find evidence paragraphs for
+                     63.6 accuracyobtained by ROBERTA*∅, a model                         100 random questions. For half of the questions
+                     that uses no context. Retrieval with predicted                      we also provide decomposition. We observe
+                     decompositions results in an even lower accuracy                    average Recall@10 of 0.586 and 0.513 with
+                     of61.7.Wealsoanalyzepredicteddecompositions                         andwithoutthedecomposition,respectively.This
+                     below.                                                              shows that humans significantly outperform our
+                                                                                         IR baselines. However, humans are still far from
+                     Retrieval Evaluation            A question decomposi-               covering the gold paragraphs, since there are
+                     tion describes the reasoning steps for answering                    multiple valid evidence paragraphs (§4.2), and
+                     the question. Therefore, using the decomposi-                       retrieval can be difficult even for humans. Lastly,
+                     tion for retrieval may help obtain the relevant                     using decompositions improves human retrieval,
+                     context and improve performance. To test this,                      showing decompositions indeed are useful for
+                     we directly compare performance of question-                        finding evidence.
+                     and decomposition-based retrieval with respect
+                     to the annotated gold paragraphs. We compute
+                     Recall@10, that is, the fraction of the gold para-                  PredictedDecompositions               Analysisshowsthat
+                                                                                         BART              ’s decompositions are grammatical
+                     graphs retrieved in the top-10 results of each                               DECOMP
+                     method. Since there are 3 annotations per ques-                     and well-structured. Interestingly, the model
+                     tion, we compute Recall@10 for each annotation                      generates strategies, but often applies them to
+                     andtakethemaximumasthefinalscore.Forafair                           questions incorrectly. For example, the question
+                     comparison,in decomposition-basedretrieval, we                      Canalifeboatrescuepeoplein the HookeSea?is
+                     use the top-10 results across all steps.                            decomposed to 1) What is the maximum depth of
+                        Results (Table 9) show that retrieval per-                       the Hooke Sea? 2) How deep can a lifeboat dive?
+                     formance is low, partially explaining why                           3) Is #2 greater than or equal to #1?. While the
+                     retrieval models do not improve performance                         decomposition is well-structured, it uses a wrong
+                     compared to ROBERTA* , and demonstrating                            strategy (lifeboats do not dive).
+                                                       ∅
+                     the    retrieval    challenge in our setup. Gold
+                     decomposition-based retrieval substantially out-                    6 RelatedWork
+                     performs question-based retrieval, showing that
+                     using the decomposition for retrieval is a promis-                  Prior work has typically let annotators write
+                     ing direction for answering multi-step questions.                   questions based on an entire context (Khot et al.,
+                     Still,   predicted decomposition-based retrieval                    2020a; Yang et al., 2018; Dua et al., 2019;
+                     does not improve retrieval compared to question-                    Mihaylov et al., 2018; Khashabi et al., 2018).
+                     based retrieval, showing better decomposition                       In this work, we prime annotators with minimal
+                     models are needed.                                                  information (few tokens) and let them use their
+                                                                                    358
+                   imagination and own wording to create questions.           References
+                   Arelated priming method was recently proposed              Max Bartolo, Alastair Roberts, Johannes Welbl,
+                   by Clark et al. (2020), who used the first 100                Sebastian    Riedel,    and   Pontus     Stenetorp.
+                   characters of a Wikipedia page.                               2020. Beat the AI: Investigating adversarial
+                     Among multi-hop reasoning datasets, our                     human annotation for reading comprehen-
+                   dataset stands out in that it requires implicit               sion. Transactions of the Association for
+                   decompositions. Two recent datasets (Khot et al.,             Computational Linguistics, 8:662–678. DOI:
+                   2020a; Mihaylov et al., 2018) have considered                 https://doi.org/10.1162/tacl a
+                   questions requiring implicit facts. However, they              00338
+                   are limited to specific domain strategies, while in
+                   our work we seek diversity in this aspect.                 ChristopherClark,KentonLee,Ming-WeiChang,
+                     Most multi-hop reasoning datasets do not fully              Tom Kwiatkowski, Michael Collins, and
+                   annotate question decomposition (Yang et al.,                 Kristina Toutanova. 2019. BoolQ: Exploring
+                   2018; Khot et al., 2020a; Mihaylov et al., 2018).             the surprising difficulty of natural yes/no
+                   This issue has prompted recent work to create                 questions.    In   Proceedings     of   the   2019
+                   question decompositions for existing datasets                 Conference of the North American Chapter of
+                   (Wolfson et al., 2020), and to train models that              the Association for Computational Linguistics:
+                   generate question decompositions (Perez et al.,               Human Language Technologies, Volume 1
+                   2020; Khot et al., 2020b; Min et al., 2019). In               (Long and Short Papers), pages 2924–2936,
+                   this work, we annotate question decompositions                Minneapolis,     Minnesota.      Association     for
+                   as part of the data collection.                               Computational Linguistics.
+                                                                              Jonathan    H. Clark, Eunsol Choi, Michael
+                   7 Conclusion                                                  Collins, Dan Garrette, Tom Kwiatkowski,
+                                                                                 Vitaly Nikolaev, and Jennimaria Palomaki.
+                   We present STRATEGYQA, the first dataset of                   2020.TyDiQA:Abenchmarkforinformation-
+                   implicit multi-step questions requiring a wide-               seeking question answering in typologically
+                   range of reasoning skills. To build STRATEGYQA,               diverse languages. Transactions of the Asso-
+                   we introduced a novel annotation pipeline for                 ciation for Computational Linguistics (TACL),
+                   eliciting  creative   questions that use simple               8:454–470. DOI: https://doi.org/10
+                   language, but cover a challenging range of                    .1162/tacl a 00317
+                   diverse strategies. Questions in STRATEGYQA are
+                   annotatedwithdecompositionintoreasoningsteps               Jay DeYoung, Sarthak Jain, Nazneen Fatema
+                   and evidence paragraphs, to guide the ongoing                 Rajani, Eric Lehman, Caiming Xiong, Richard
+                   research towards addressing implicit multi-hop                Socher,andByronC.Wallace.2020.ERASER:
+                   reasoning.                                                    A benchmark to evaluate rationalized NLP
+                                                                                 models. In Proceedings of the 58th Annual
+                                                                                 Meeting of the Association for Computational
+                   Acknowledgments                                               Linguistics, pages 4443–4458. Association for
+                   We thank Tomer Wolfson for helpful feedback                   Computational Linguistics. DOI: https://
+                   and the REVIZ team at Allen Institute for                     doi.org/10.18653/v1/2020.acl-main
+                   AI, particularly Michal Guerquin and Sam                      .408
+                   Skjonsberg. This research was supported in part            Dheeru Dua, Yizhong Wang, Pradeep Dasigi,
+                   by the Yandex Initiative for Machine Learning,                Gabriel    Stanovsky,     Sameer      Singh,    and
+                   and the European Research Council (ERC) under                 Matt Gardner. 2019. DROP: A reading
+                   the European Union Horizons 2020 research                     comprehension benchmark requiring discrete
+                   and innovation programme (grant ERC DELPHI                    reasoning over paragraphs. In North American
+                   802800). Dan Roth is partly supported by ONR                  Chapter of the Association for Computational
+                   contractN00014-19-1-2620andDARPAcontract                      Linguistics (NAACL).
+                   FA8750-19-2-1004, under the Kairos program.
+                   This workwascompletedinpartialfulfillmentfor               MorGeva,YoavGoldberg,and Jonathan Berant.
+                   the PhD degree of Mor Geva.                                   2019. Are we modeling the task or the
+                                                                          359
+                   annotator? An investigation of annotator bias      Textmodularnetworks:Learningtodecompose
+                   in natural language understanding datasets.        tasks in the language of existing models. arXiv
+                   In Proceedings of the 2019 Conference on           preprint arXiv:2009.00751.
+                   Empirical Methods in Natural Language
+                   Processing and the 9th International Joint       Tom Kwiatkowski, Jennimaria Palomaki, Olivia
+                   Conference on Natural Language Processing          Redfield, Michael Collins, Ankur Parikh, Chris
+                   (EMNLP-IJCNLP), pages 1161–1166, Hong              Alberti, Danielle Epstein, Illia Polosukhin,
+                   Kong, China. Association for Computational         JacobDevlin, Kenton Lee, Kristina Toutanova,
+                   Linguistics.                                       Llion Jones, Matthew Kelcey, Ming-Wei
+                                                                      Chang, Andrew M. Dai, Jakob Uszkoreit,
+                SuchinGururangan,SwabhaSwayamdipta,Omer               Quoc Le, and Slav Petrov. 2019. Natural
+                   Levy, Roy Schwartz, Samuel Bowman, and             questions:Abenchmarkforquestionanswering
+                   Noah A. Smith. 2018. Annotation artifacts          research. Transactions of the Association for
+                   in natural language inference data. In Pro-        ComputationalLinguistics(TACL),7:453–466.
+                   ceedings of the 2018 Conference of the             DOI: https://doi.org/10.1162/tacl
+                   North American Chapter of the Association           a 00276
+                   for Computational Linguistics: Human Lan-
+                   guage Technologies, Volume 2 (Short Papers),     Mike Lewis, Yinhan Liu, Naman Goyal, Marjan
+                   pages 107–112, New Orleans, Louisiana.             Ghazvininejad, Abdelrahman Mohamed, Omer
+                   Association for Computational Linguistics.         Levy,VeselinStoyanov,andLukeZettlemoyer.
+                   DOI: https://doi.org/10.18653/v1                   2020. BART: Denoising sequence-to-sequence
+                   /N18-2017                                          pre-training for natural language generation,
+                                                                      translation,andcomprehension.InProceedings
+                Yichen    Jiang   and   Mohit    Bansal.   2019.      of the 58th Annual Meeting of the Association
+                   Avoiding reasoning shortcuts: Adversarial          forComputationalLinguistics,pages7871–7880.
+                   evaluation, training, and model development        Association for Computational Linguistics.
+                   for multi-hop QA. In Association for Compu-        DOI: https://doi.org/10.18653/v1
+                   tational Linguistics (ACL). DOI: https://          /2020.acl-main.703
+                   doi.org/10.18653/v1/P19-1262,
+                   PMID:31353678                                    Yinhan Liu, Myle Ott, Naman Goyal, Jingfei
+                                                                      Du, Mandar Joshi, Danqi Chen, Omer
+                Daniel Khashabi, Snigdha Chaturvedi, Michael          Levy, Mike Lewis, Luke Zettlemoyer, and
+                   Roth, Shyam Upadhyay, and Dan Roth. 2018.          VeselinStoyanov.2019.RoBERTa:Arobustly
+                   Looking beyond the surface: A challenge            optimized BERT pretraining approach. arXiv
+                   set for reading comprehension over multi-          preprint arXiv:1907.11692.
+                   ple sentences. In Proceedings of the 2018
+                   Conference of the North American Chap-           Todor Mihaylov, Peter Clark, Tushar Khot,
+                   ter of  the Association for Computational          and   Ashish    Sabharwal.   2018.    Can   a
+                   Linguistics: Human Language Technologies,          suit  of   armor    conduct   electricity?  A
+                   Volume 1 (Long Papers), pages 252–262,             new    dataset  for   open    book   question
+                   NewOrleans,Louisiana. Association for Com-         answering.   In  Proceedings   of  the   2018
+                   putational Linguistics, DOI: https://doi           Conference on Empirical Methods in Natural
+                   .org/10.18653/v1/N18-1023                          Language    Processing,   pages   2381–2391,
+                                                                      Brussels, Belgium. Association for Compu-
+                Tushar Khot, Peter Clark, Michal Guerquin,            tational Linguistics. DOI: https://doi
+                   Peter Jansen, and Ashish Sabharwal. 2020a.         .org/10.18653/v1/D18-1260
+                   QASC: A dataset for question answering
+                   via sentence composition. In AAAI. DOI:          Sewon Min, Victor Zhong, Luke Zettlemoyer,
+                   https://doi.org/10.1609/aaai.v34i05                and Hannaneh Hajishirzi. 2019. Multi-hop
+                   .6319                                              reading   comprehension    through   question
+                                                                      decompositionandrescoring.InProceedingsof
+                Tushar Khot, Daniel Khashabi, Kyle Richardson,        the 57th Annual Meeting of the Association for
+                   Peter Clark, and Ashish Sabharwal. 2020b.          Computational Linguistics, pages 6097–6109,
+                                                                360
+                       Florence,      Italy.    Association       for    Com-          pages 6418–6428, Florence, Italy. Associ-
+                       putational     Linguistics.     DOI: https://                   ation for Computational Linguistics. DOI:
+                       doi.org/10.18653/v1/P19-1613                                    https://doi.org/10.18653/v1/P19
+                                                                                       -1644
+                    Tri Nguyen, Mir Rosenberg, Xia Song, Jianfeng
+                       Gao, Saurabh Tiwary, Rangan Majumder, and                    AlonTalmorandJonathanBerant.2018.Theweb
+                       Li Deng. 2016. MS MARCO: A human                                as a knowledge-base for answering complex
+                       generated machine reading comprehension                         questions. In North American Chapter of
+                       dataset. In Workshop on Cognitive Computing                     the Association for Computational Linguistics
+                       at NIPS.                                                        (NAACL). DOI: https://doi.org/10
+                                                                                       .18653/v1/N18-1059
+                    Ethan Perez, Patrick Lewis, Wen-tau Yih,
+                       Kyunghyun Cho, and Douwe Kiela. 2020.                        Johannes Welbl, Pontus Stenetorp, and Sebastian
+                       Unsupervised       question     decomposition        for        Riedel. 2018. Constructing datasets for multi-
+                       question answering. In Proceedings of the                       hop reading comprehension across documents.
+                       2020 Conference on Empirical Methods                            Transactions of the Association for Computa-
+                       in Natural Language Processing (EMNLP),                         tional Linguistics (TACL), 6:287–302. DOI:
+                       pages 8864–8880.                                                https://doi.org/10.1162/tacl a
+                                                                                        00021
+                    Pranav     Rajpurkar,      Jian    Zhang,     Konstantin
+                       Lopyrev, and Percy Liang. 2016. SQuAD:                       Adina Williams, Nikita Nangia, and Samuel
+                       100,000+ questions for machine comprehen-                       Bowman. 2018. A broad-coverage challenge
+                       sion of text. In Empirical Methods in Natural                   corpus for sentence understanding through
+                       Language        Processing       (EMNLP).         DOI:          inference.     In    Proceedings       of   the    2018
+                       https://doi.org/10.18653/v1/D16                                 Conference of the North American Chapter of
+                       -1264                                                           the Association for Computational Linguistics:
+                                                                                       Human Language Technologies, Volume 1
+                    Stephen Robertson, S. Walker, S. Jones, M. M.                      (LongPapers),pages1112–1122,NewOrleans,
+                       Hancock-Beaulieu, and M. Gatford. 1995.                         Louisiana,      Association     for    Computational
+                       Okapi at TREC-3. In Overview of the                             Linguistics. DOI: https://doi.org/10
+                       Third Text REtrieval Conference (TREC-3),                       .18653/v1/N18-1101
+                       pages 109–126. Gaithersburg, MD: NIST.
+                                                                                    Tomer Wolfson, Mor Geva, Ankit Gupta, Matt
+                    Elad Segal, Avia Efrat, Mor Shoham, Amir                           Gardner, Yoav Goldberg, Daniel Deutch,
+                       Globerson, and Jonathan Berant. 2020. A                         and Jonathan Berant. 2020. Break it down:
+                       simple and effective model for answering                        A question understanding benchmark. Trans-
+                       multi-span questions. In Proceedings of the                     actions of the Association for Computational
+                       2020 Conference on Empirical Methods in                         Linguistics (TACL), DOI: https://doi
+                       Natural     Language        Processing      (EMNLP),            .org/10.1162/tacl a 00309
+                       pages3074–3080.DOI:https://doi.org
+                       /10.18653/v1/2020.emnlp-main.248 Zhilin Yang, Peng Qi, Saizheng Zhang, Yoshua
+                                                                                       Bengio,WilliamCohen,RuslanSalakhutdinov,
+                    Alane Suhr, Stephanie Zhou, Ally Zhang,                            andChristopherD.Manning.2018.HotpotQA:
+                       Iris  Zhang, Huajun Bai, and Yoav Artzi.                        A dataset for diverse, explainable multi-hop
+                       2019. A corpus for reasoning about natural                      question answering. In Empirical Methods
+                       language grounded in photographs. In Pro-                       in Natural Language Processing (EMNLP),
+                       ceedings of the 57th Annual Meeting of the                      DOI: https://doi.org/10.18653/v1
+                       Association for Computational Linguistics,                      /D18-1259,PMCID:PMC6156886
+                                                                                361

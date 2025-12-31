@@ -1,0 +1,1189 @@
+                            AI Feynman: a Physics-Inspired Method for Symbolic Regression
+                                                                                             ∗
+                                                     Silviu-Marian Udrescu, Max Tegmark
+                                            Dept. of Physics & Center for Brains, Minds & Machines,
+                                Massachusetts Institute of Technology, Cambridge, MA 02139; sudrescu@mit.edu and
+                                                    Theiss Research, La Jolla, CA 92037, USA
+                                         (Dated: Published in Science Advances, 6:eaay2631, April 15, 2020)
+                            A core challenge for both physics and artiﬁcial intelligence (AI) is symbolic regression: ﬁnding
+                          a symbolic expression that matches data from an unknown function. Although this problem is
+                          likely to be NP-hard in principle, functions of practical interest often exhibit symmetries, sepa-
+                          rability, compositionality and other simplifying properties. In this spirit, we develop a recursive
+                          multidimensional symbolic regression algorithm that combines neural network ﬁtting with a suite of
+                          physics-inspired techniques. We apply it to 100 equations from the Feynman Lectures on Physics,
+                          and it discovers all of them, while previous publicly available software cracks only 71; for a more
+                          diﬃcult physics-based test set, we improve the state of the art success rate from 15% to 90%.
+                              I.  INTRODUCTION                              search space characterizes many famous classes of prob-
+                                                                            lems, from codebreaking and Rubik’s cube to the natu-
+                                                                            ral selection problem of ﬁnding those genetic codes that
+             In 1601, Johannes Kepler got access to the world’s best        produce the most evoutionarily ﬁt organisms. This has
+             data tables on planetary orbits, and after 4 years and         motivated genetic algorithms [2, 3] for targeted searches
+             about 40 failed attempts to ﬁt the Mars data to various        in exponentially large spaces, which replace the above-
+             ovoid shapes, he launched a scientiﬁc revolution by dis-       mentioned brute-force search by biology-inspired strate-
+             covering that Mars’ orbit was an ellipse [1]. This was         gies of mutation, selection, inheritance and recombina-
+             an example of symbolic regression: discovering a sym-          tion; crudely speaking, the role of genes is played by use-
+             bolic expression that accurately matches a given data          ful symbol strings that may form part of the sought-after
+             set.  More speciﬁcally, we are given a table of num-           formula or program. Such algorithms have been success-
+             bers, whose rows are of the form {x1,...,xn,y} where           fully applied to areas ranging from design of antennas
+             y = f(x1,...,xn), and our task is to discover the correct      [4, 5] and vehicles [6] to wireless routing [7], vehicle rout-
+             symbolic expression for the unknown mystery function f,        ing [8], robot navigation [9], code breaking [10], discover-
+             optionally including the complication of noise.                ing partial diﬀerential equations [11], investment strategy
+             Growing data sets have motivated attempts to automate          [12], marketing [13], classiﬁcation [14], Rubik’s cube [15],
+             such regression tasks, with signiﬁcant success. For the        program synthesis [16] and metabolic networks [17].
+             special case where the unknown function f is a linear
+             combination of known functions of {x ,...,x }, symbolic
+                                                    1      n                The symbolic regression problem for mathematical func-
+             regression reduces to simply solving a system of linear        tions (the focus of this paper) has been tackled with a
+             equations. Linear regression (where f is simply an aﬃne        variety of methods [18–20], including sparse regression
+             function) is ubiquitous in the scientiﬁc literature, from      [21–24] and genetic algorithms [25, 26]. By far the most
+             ﬁnance to psychology. The case where f is a linear com-        successful of these is, as we will see in Section III, the ge-
+             bination of monomials in {x1,...,xn} corresponds to lin-       netic algorithm outlined in [27] and implemented in the
+             ear regression with interaction terms, and to polynomial       commercial Eureqa software [26].
+             ﬁtting more generally. There are countless other exam-
+             ples of popular regression functions that are linear com-
+             binations of known functions, ranging from Fourier ex-         The purpose of this paper is to further improve on this
+             pansions to wavelet transforms. Despite these successes        state-of-the-art, using physics-inspired strategies enabled
+             with special cases, the general symbolic regression prob-      by neural networks. Our most important contribution is
+        arXiv:1905.11481v2  [physics.comp-ph]  15 Apr 2020lem remains unsolved, and it is easy to see why: If weusing neural networks to discover hidden simplicity such
+             encode functions as strings of symbols, then the number        as symmetry or separability in the mystery data, which
+             of such strings grows exponentially with string length, so     enables us to recursively break harder problems into sim-
+             if we simply test all strings by increasing length, it may     pler ones with fewer variables. The rest of this paper is
+             take longer than the age of our universe until we get to       organized as follows. In Section II, we present our algo-
+             the function we are looking for.                               rithm and the six strategies that it recursively combines.
+             This combinatorial challenge of an exponentially large         In Section III, we present a test suite of regression mys-
+                                                                            teries and use it to test both Eureqa and our new algo-
+                                                                            rithm, ﬁnding major improvements. In Section IV, we
+                                                                            summarize our conclusions and discuss opportunities for
+             ∗Corresponding author. Email: tegmark@mit.edu                  further progress.
+                                                                                                                                                                                         2
+                                                       Data
+                                                x         y           f      
+                                           -0.570631 -0.553583 -1.677797   
+                                            0.883785  0.817601  2.518988  .
+                                           -1.145615  0.546180 -0.053256  .
+                                            1.571480 -2.166711 -2.761942  .
+                                               ...       ...           ...                                                      Dimensional
+                                                                     Dimensional                                                    analysis
+                                                                         analysis
+                                                                           Solved? Yes
+                                                                                No
+                                                                      Polynomial
+                                                                             fit
+                                                                           Solved? Yes
+                                                                                No                                                                Translational
+                                                                          Brute                                                                     symmetry
+                                                                           force
+                                                                           Solved? Yes
+                                                                                No
+                                                                      Train neural                                                                Translational
+                                                                         network                                                                    symmetry
+                                Try new data with                 Yes    Symmetry?
+                                   fewer variables
+                                         Solved?      Yes                       No
+                                                      No                                                                                         Multiplicative
+                              Make 2 new data sets                Yes    Separable?                                                                separability
+                               with fewer variables
+                                          Solved?     Yes                       No
+                                                      No
+                                Try new data with                        Equate                                         Invert                                    Polynomial
+                                   fewer variables                      variables                                                                                        fit
+                                         Solved?      Yes
+                                                      No
+                                  Try transformed                     Transform                                     Polynomial
+                                           data                           x & y                                            fit
+                                          Solved?     Yes
+                                               No
+                                            Fail                                                          FIG. 2:      Example: how our AI Feynman algorithm discov-
+                                                                                                          ered mystery Equation 5. Given a mystery table with many
+                                                     Equation                                             examples of the gravitational force F together with the 9
+                                                                                                          independent variables G, m , m , x ,..., z , this table was
+                                                                                                                                                1     2     1       2
+                                                                                                          recursively transformed into simpler ones until the correct
+                                                                                                          equation was found. First dimensional analysis generated a
+                                                                                                          table of 6 dimensionless independent variables a = m /m ,
+                                                                                                                                                                                   2     1
+                                                                                                          ..., f = z /x and the dimensionless dependent variable
+                                                                                                                         1   1
+                  FIG. 1: Schematic illustration of our AI Feynman algorithm.                             F ≡ F ÷Gm2/x2. Then a neural network was trained to
+                                                                                                                             1    1
+                  It is iterative as described in the text, with four of the steps                        ﬁt this function, which revealed two translational symmetries
+                  capable of generating new mystery data sets that get sent to                            (each eliminating one variable, by deﬁning g ≡ c − d and
+                  fresh instantiations of the the algorithm which may or may                              h ≡ e − f) as well as multiplicative separability, enabling
+                  not return a solution.                                                                  the factorization F(a,b,g,h) = G(a)H(b,g,h), thus splitting
+                                                                                                          the problem into two simpler ones. Both G and H then were
+                                                                                                          solved by polynomial ﬁtting, the latter after applying one of a
+                                                                                                          series of simple transformations (in this case, inversion). For
+                                                                                                          many other mysteries, the ﬁnal step was instead solved using
+                                                                                                          brute-force symbolic search as described in the text.
+                                                                                                                                3
+                                II.  METHODS                                             A. Overall Algorithm
+                                                                         Theoverallalgorithm1 isschematicallyillustratedinFig-
+             Generic functions f(x ,...,x ) are extremely complicated
+                                  1     n                                ure 1. It consists of a series of modules that try to ex-
+             and near-impossible for symbolic regression to discover.    ploit each of the the above-mentioned properties. Like a
+             However, functions appearing in physics and many other      human scientist, it tries many diﬀerent strategies (mod-
+             scientiﬁc applications often have some of the following     ules) in turn, and if it cannot solve the full problem in
+             simplifying properties that make them easier to discover:   one fell swoop, it tries to transform it and divide it into
+                                                                         simpler pieces that can be tackled separately, recursively
+                                                                         re-launching the full algorithm on each piece. Figure 2 il-
+                                                                         lustrates an example of how a particular mystery data set
+                1. Units: f and the variables upon which it depends      (Newton’s law of gravitation with 9 variables) is solved.
+                   have known physical units                             Below we describe each of these algorithm modules in
+                                                                         turn.
+                2. Low-order polynomial: f (or part thereof) is a
+                   polynomial of low degree
+                3. Compositionality: f is a composition of a small                     B.   Dimensional Analysis
+                   set of elementary functions, each typically taking
+                   no more than two arguments                            Ourdimensionalanalysismoduleexploitsthewell-known
+                                                                         fact that many problems in physics can be simpliﬁed by
+                4. Smoothness: f is continuous and perhaps even          requiring the units of the two sides of an equation to
+                   analytic in its domain                                match. This often transforms the problem into a simpler
+                                                                         one with a smaller number of variables that are all di-
+                5. Symmetry: f exhibits translational, rotational or     mensionless. In the best case scenario, the transformed
+                   scaling symmetry with respect to some of its vari-    problem involves solving for a function of zero variables,
+                   ables                                                 i.e., a constant. We automate dimensional analysis as
+                                                                         follows.
+                6. Separability: f can be written as a sum or prod-      Table III shows the physical units of all variables ap-
+                   uct of two parts with no variables in common          pearing in our 100 mysteries, expressed as products of
+                                                                         the fundamental units (meter, second, kilogram, kelvin,
+                                                                         volt) to various integer powers. We thus represent the
+                                                                         units of each variable by a vector u of 5 integers as in
+             The question of why these properties are common re-         the table. For a mystery of the form y = f(x ,...,x ),
+                                                                                                                        1     n
+             mains controversial and not fully understood [28, 29].      we deﬁne the matrix M whose ith column is the u-vector
+             However, as we will see below, this does not prevent us     corresponding to the variable xi, and deﬁne the vector b
+             from discovering and exploiting these properties to facil-  as the u-vector corresponding to y. We now let the vector
+             itate symbolic regression.                                  pbeasolution to the equation Mp = b and the columns
+                                                                         of the matrix U form a basis for the null space, so that
+             Property (1) enables dimensional analysis, which often      MU=0,and deﬁne a new mystery y0 = f0(x0,...,x0 )
+                                                                                                                         1     n
+             transforms the problem into a simpler one with fewer        where
+             independent variables. Property (2) enables polynomial                    n                          n
+             ﬁtting, which quickly solves the problem by solving a                0   Y U          0   y          Y p
+                                                                                 x ≡     x ij,   y ≡     ,  y ≡      x i.     (1)
+             system of linear equations to determine the polynomial               i       j            y∗    ∗        i
+             coeﬃcients. Property (3) enables f to be represented as a                i=j                         i=1
+             parse tree with a small number of node types, sometimes     By construction, the new variables x0 and y0 are dimen-
+             enabling f or a sub-expression to be found via a brute-                                0         i
+                                                                         sionless, and the number n of new variables is equal to
+             force search. Property (4) enables approximating f using    the dimensionality of the null space. When n0 > 0, we
+             a feed forward neural network with a smooth activation      have the freedom to choose any basis we want for the null
+             function. Property (5) can be conﬁrmed using said neural    space and also to replace p by a vector of the form p+Ua
+             network and enables the problem to be transformed into      for any vector a; we use this freedom to set as many ele-
+             a simpler one with one independent variable less (or even   ments as possible in p and U equal to zero, i.e., to make
+             fewer for n > 2 rotational symmetry). Property (6) can
+             be conﬁrmed using said neural network and enables the
+             independent variables to be partitioned into two disjoint
+             sets, and the problem to be transformed into two simpler    1 The code is publicly available at https://github.com/
+             ones, each involving the variables from one of these sets.    SJ001/AI-Feynman.
+                                                                                                                                               4
+              the new variables depend on as few old variables as pos-                           Symbol Meaning      Arguments
+              sible. This choice is useful because it typically results in                       +       add         2
+              the resulting powers of the dimensionless variables being                          ∗       multiply    2
+              integers, making the ﬁnal expression much easier to ﬁnd                            −       subtract    2
+              thanwhenthepowersarefractionsorirrationalnumbers.                                  /       divide      2
+                                                                                                 >       increment 1
+                                                                                                 <       decrement 1
+                                                                                                 ∼       negate      1
+                                  C. Polynomial Fit                                              0       0           0
+                                                                                                 1       1           0
+                                                                                                 R       sqrt        1
+              Many functions f(x ,...,x ) in physics and other sci-                              E       exp         1
+                                     1      n                                                    P       π           0
+              ences either are low-order polynomials, e.g., the kinetic                          L       ln          1
+              energy K = m(v2 + v2 + v2), or have parts that are,
+                              2   x     y     z                                                  I       invert      1
+              e.g., the denominator of the gravitational force F =                               C       cos         1
+                         Gm1m2             . We therefore include a mod-
+               (x −x )2+(y −y )2+(z −z )2                                                        A       abs         1
+                 1  2     1   2     1   2
+              ule that tests if a mystery can be solved by a low-order                           N       arcsin      1
+              polynomial. Our method uses the standard method of                                 T       arctan      1
+              solving a system of linear equations to ﬁnd the best ﬁt                            S       sin         1
+              polynomial coeﬃcients. It tries ﬁtting the mystery data
+              to polynomials of degree 0, 1, ..., d       =4anddeclares          TABLEI: Functionsoptionallyincludedinbruteforcesearch.
+                                                     max                         The following three subsets are tried in turn:
+              success if the best ﬁtting polynomial gives r.m.s. ﬁtting          “+-*/><∼SPLICER”, “+-*/>0∼” and
+              error ≤ ε (we discuss the setting of this threshold be-
+                         p                                                       “+-*/><∼REPLICANTS0”.
+              low).
+                                                                                                    n
+                                                                                 Since there are s    strings of length n using an alphabet
+                                    D. Brute Force                               of s symbols, there can be a signiﬁcant cost both from
+                                                                                 using too manysymbols(increasings)andfromusingtoo
+              Our brute-force symbolic regression model simply tries             few symbols (increasing the required n, or even making
+              all possible symbolic expressions within some class, in or-        a solution impossible). As a compromise, our brute force
+              der of increasing complexity, terminating either when the          module tries to solve the mystery using three diﬀerent
+              maximumﬁttingerrordropsbelowathreshold orafter                    symbol subsets as explained in the caption of Table I.
+                                                                   p
+              a maximum runtime tmax has been exceeded. Although                 To exploit the fact that many equations or parts thereof
+              this module alone could solve all our mysteries in princi-         have multiplicative or additive constants, our brute force
+              ple, it would in many cases take longer than the age of            method comes in two variants that automatically solves
+              our universe in practice. Our brute force method is thus           for such constants, thus allowing the algorithm to focus
+              typically most helpful once a mystery has been trans-              on the symbolic expression and not on numerical con-
+              formed/broken apart into simpler pieces by the modules             stants.
+              described below.
+                                                                                 Althoughtheproblemofoverﬁttingismostfamiliarwhen
+              Wegenerate the expressions to try by representing them             searching a continuous parameter space, the same phe-
+              as strings of symbols, trying ﬁrst all strings of length 1,        nomenon can occur when searching our discrete space of
+              then all of length 2, etc., saving time by only generating         symbol strings. To mitigate this, we follow the prescrip-
+              those strings that are syntactically correct. The sym-             tion in [30] and deﬁne the winning function to be the one
+              bols used are the independent variables as well a sub-             with r.m.s. ﬁtting error  <  that has the smallest total
+                                                                                                                 b
+              set of those listed in Table I, each representing a con-           description length
+              stant or a function. We minimize string length by us-                                                            
+              ing reverse Polish notation, so that parentheses become                                                          
+              unnecessary. For example, x + y can be expressed as                          DL≡log2N+λlog2 max 1,                    ,       (2)
+              the string “xy+”, the number −2/3 can be expressed                                                                d
+              as the string “0<<1>>/” and the relativistic momentum                              −15
+                             p                                                   where  = 10        and N is the rank of the string on the
+                                     2  2                                                 d
+              formula mv/ 1−v /c can be expressed as the string                  list of all strings tried. The two terms correspond roughly
+              “mv 1vv cc /-R/”.
+                   *     *   *                                                   to the number of bits required to store the symbol string
+              Inspection of Table I reveals that many of the symbols are         and the prediction errors, respectively, if the hyperpa-
+              redundant. For example, “1”=“0>” and “x∼” = “0x-”.                 rameter λ is set to equal the number of data points Nd.
+              π = 2arcsin1, so if we drop the symbol “P”, myster-                We use λ = N1/2 in our experiments below, to priori-
+                                                                                                  d
+              ies involving π can still get solved with “P” replaced by          tize simpler formulas. If the mystery has been generated
+              “1N1> ” — it just takes longer.                                    using a neural network (see below), we set the precision
+                      *
+                                                                                                                                   5
+                                                                                                 0
+             threshold b to ten times the validation error, otherwise     convergence to keep      above some positive ﬂoor even
+                            −5                                                                   NN                             0
+             we set it to 10  .                                            as Nd → ∞ and  → 0. In practice, we obtained NN-
+                                                                                             −3             −5
+                                                                           values between 10    f    and 10   f    across the range
+                                                                                                 rms           rms
+                                                                           of tested equations.
+              E.   Neural-network-based tests & transformations
+             Even after applying the dimensional analysis, many mys-             2.  Translational symmetry and generalizations
+             teries are still too complex to be solved by the polyﬁt
+             or brute force modules in a reasonable amount of time.        Wetest for translational symmetry using the neural net-
+             However, if the mystery function f(x1,...,xn) can be          work as detailed in Algorithm 1. We ﬁrst check if the
+             found to have simplifying properties, it may be possible      f(x ,x ,x ,...) = f(x +a,x +a,x ...) to within a pre-
+             to transform it into one or more simpler mysteries that          1   2  3           1      2      3
+                                                                           cision    . If that is the case, then f depends on x and
+             can be more easily solved. To search for such properties,            sym                                         1
+                                                                           x only through their diﬀerence, so we replace these two
+             we need to be able to evaluate f at points {x ,...,x }         2
+                                                              1     n      input variables by a single new variable x0 ≡ x − x .
+             of our choosing where we typically have no data. For                                                     1      2    1
+             example, to test if a function f has translational symme-     Otherwise, we repeat this test for all pairs of input vari-
+             try, we need to test if f(x ,x ) = f(x + a,x + a) for         ables, and also test whether any variable pair can be re-
+                                        1   2        1      2              placed by its sum, product or ratio. The ratio case corre-
+             various constants a, but if a given data point has its two    sponds to scaling symmetry, where two variables can be
+             variables separated by x2 − x1 = 1.61803, we typically        simultaneously rescaled without changing the answer. If
+             have no other examples in our data set with exactly that      any of these simplifying properties is found, the resulting
+             variable separation. To perform our tests, we thus need       transformed mystery (with one fewer input variables) is
+             an accurate high-dimensional interpolation between our        iteratively passed into a fresh instantiation of our full AI
+             data point.                                                   Feynman symbolic regression algorithm, as illustrated in
+                                                                           Figure 1. After experimentation, we chose the precision
+                                                                           threshold      to be 7 times the neural network vali-
+                                                                                      sym
+                             1.  Neural network training                   dation error, which roughly optimized the training set
+                                                                           performance. (If the noise were Gaussian, even a cut at
+                                                                           4 rather than 7 standard deviations would produce neg-
+             In order to obtain such an interpolating function for a       ligible false positives.)
+             given mystery, we train a neural network to predict the
+             output given its input. We train a feed-forward, fully
+             connected neural network with 6 hidden layers with soft-
+             plus activation functions, the ﬁrst 3 having 128 neurons                           3.  Separability
+             and the last 3 having 64 neurons. For each mystery we
+             generated 100,000 data points, using 80% as the training
+             set and the remainder as the validation set, training for     We test for separability using the neural network as ex-
+             100 epochs with learning rate 0.005 and batch size 2048.      empliﬁed in Algorithm 2. A function is separable if it
+             Weusether.m.s.-error loss function and the Adam opti-         can be split into two parts with no variables in common.
+                                             −2
+             mizer with a weight decay of 10   . The learning rate and     Wetest for both additive and multiplicative separability,
+             momentum schedules were implemented as described in           corresponding to these two parts being added and mul-
+             [31, 32] using the FastAI package [33]; with a ration of 20   tiplied, respectively (the logarithm of a multiplicatively
+             between the maximum and minimum learning rates, and           separable function is additively separable).
+             using 10% of the iterations for the last part of the train-
+             ing cycle. For the momentum, the maximum β1-value             For example, to test if a function of 2 variables is mul-
+                                                                           tiplicatively separable, i.e., of the form f(x ,x ) =
+             was 0.95 and the minimum 0.85, while β = 0.99.                                                                1  2
+                                                      2                    g(x )h(x ) for some univariate functions g and h, we ﬁrst
+                                                                              1     2
+             If the neural network were expressive enough to be able       select two constants c1 and c2; for numerical robustness,
+             to perfectly ﬁt the mystery function, and the training        we choose c to be the means of all the values of x in
+                                                                                       i                                        i
+             process would never got stuck in a local minimum, then        the mystery data set, i = 1,2. We then compute the
+                                                                    0
+             one might naively expect the r.m.s. validation error         quantity
+                                                                    NN
+             to scale as f   /N1/2 in the limit of ample data, with a
+                         rms     d                                                                                            
+                                                                                                            f(x ,c )f(c ,x )
+             constant prefactor depending on the number of function                          −1                 1  2    1  2 
+                                                                            ∆ (x ,x )≡f          f(x ,x )−                       (3)
+             arguments and the function’s complexity. Here f         is       sep  1  2      rms   1   2        f(c ,c )      
+                                                                 rms                                                 1  2
+             the r.m.s. of the f-values in the dataset, N is the number
+                                                       d
+             of data points and  is the relative r.m.s. noise on the      for each data point. This is a measure of non-separability,
+             independent variable as explored in Section IIID. For         since it vanishes if f is multiplicatively separable. The
+             realistic situations, one expects limited expressibility and  equationis considered separable if the r.m.s. average ∆sep
+                                                                                                                                               6
+              over the mystery data set is less than an accuracy thresh-              Symbol Meaning                                 Setting
+              old     , which is chosen to be N = 10 times the neural                                                                   −5
+                    sep                                                               br      Tolerance in brute force module        10
+              network validation error 2.                                                                                                −4
+                                                                                      pol     Tolerance in polynomial ﬁt module      10
+              If separability is found, we deﬁne the two new univari-                  0                                                 −2
+                                                                                      NN      Validation error tolerance for neural  10
+              ate mysteries y0 ≡ f(x ,c ) and y00 ≡ f(c ,x )/f(c ,c ).                         network use
+                                       1   2                1   2      1  2
+              Wepasstheﬁrst one, y0, back to a fresh instantiations of                sep     Tolerance for separability            10NN
+              our full AI Feynman symbolic regression algorithm and                           Tolerance for symmetry                 7
+              if it gets solved, we redeﬁne y00 ≡ y/y0c        , where c               sym                                              NN
+                                                          num            num          sep     Tolerance in brute force module af- 10
+              represents any multiplicative numerical constant that ap-                bf                                                NN
+              pears in y0. We then pass y00 back to our algorithm and                          ter separability
+                                                              0 00                    sep     Tolerance in polynomial ﬁt module 10
+              if it gets solved, the ﬁnal solutions is y = y y /c       . We           pol                                               NN
+                                                                   num                         after separability
+              test for additive separability analogously, simply replac-                                                                1/2
+              ing ∗ and / by + and − above; also c         will represent an          λ        Importance of accuracy relative to     Nd
+                                                      num                                      complexity
+              additive numerical constant in this case. If we succeed in
+              solving the two parts, then the full solution to the original       TABLEII:Hyperparametersinouralgorithm and the setting
+              mystery is the sum of the two parts minus the numerical             we use in this paper.
+              constant. When there are more than two variables xi, we
+              are testing all the possible subsets of variables that can
+              lead to separability, and proceed as above for the newly            inverse, sin, cos, tan, arcsin, arccos, arctan.      This re-
+              created two mysteries.                                              duces the number of symbols needed by the brute force
+                                                                                  by one and in certain cases it even allows the poly-
+                                                                                  nomial ﬁt to solve the equation, when the brute force
+                                4.   Setting variables equal                      would otherwise fail. For example, the formula for the
+                                                                                  distance between 2 points in the 3D Euclidean space:
+                                                                                  p            2             2             2
+                                                                                    (x −x ) +(y −y ) +(z −z ) ,onceraisedtothe
+              We also exploit the neural network to explore the eﬀect                  1     2       1     2       1     2
+                                                                                  power of 2 becomes just a polynomial which can be eas-
+              of setting two input variables equal and attempting to              ily discovered by the polynomial ﬁt algorithm. The same
+              solve the corresponding new mystery y0 with one fewer               transformations are also applied to the dependent vari-
+              variable. We try this for all variable pairs, and if the re-        ables, one at a time. In addition multiplication and di-
+              sulting new mystery is solved, we try solving the mystery           vision by 2 were added as transformations in this case.
+              y00 ≡ y/y0 that has the found solution divided out.
+              As an example, this technique solves the Gaussian prob-             It should be noted that, like most machine-learning meth-
+              ability distribution mystery I.6.2. After making θ and              ods, the AI Feynman algorithm has some hyperparame-
+              σ equal, and dividing the initial equation by the result,           ters that can be tuned to optimize performance on the
+              we are getting rid of the denominator and the remaining             problems at hand. They were all introduced above, but
+              part of the equation is an exponential. After taking the            for convenience, they are also summarized in Table II.
+              logarithm of this (see the below section) the resulting ex-
+              pression can be easily solved by the brute force method.
+                                                                                                        III.  RESULTS
+                              F.   Extra Transformations                            A. The Feynman Symbolic Regression Database
+              In addition, several transformations are applied to the             To facilitate quantitative testing of our and other sym-
+              dependent and independent variables which proved to                 bolic regression algorithms, we created the Feynman
+              be useful for solving certain equations. Thus, for each             Symbolic Regression Database (FSReD) and made it
+              equation, we ran the brute force and polynomial ﬁt on               freely available for download3. For each regression mys-
+              a modiﬁed version of the equation in which the depen-               tery, the database contains the following:
+              dent variable was transformed by one of the following
+              functions: square root, raise to the power of 2, log, exp,
+                                                                                     1. Data table: A table of numbers, whose rows are
+                                                                                        of the form {x ,x ,...,y}, where y = f(x ,x ,...);
+                                                                                                         1  2                          1   2
+               2 We also check whether the function is multiplicatively separable
+                 up to an additive constant: f(x ,x ) = a + g(x )h(x ), where
+                                               1   2           1    2
+                 a is a constant. As a backup, we retain the above-mentioned      3 The 6.5GB Feynman Database for Symbolic Regression can be
+                 simpler test for multiplicative separability, which proved more    downloaded here: https://space.mit.edu/home/tegmark/
+                 robust when a = 0                                                  aifeynman.html
+                                                                                                                                                                7
+                       the challenge is to discover the correct analytic ex-                Variables              Units                         m s kg T V
+                       pression for the mystery function f.                                 a, g                   Acceleration                   1 -2   0 0 0
+                                                                                            h, ~, L, J             Angular momentum               2 -1   1 0 0
+                                                                                                       z
+                    2. Unit table: A table specifying the physical units                    A                      Area                           2 0 0 0 0
+                                                                                            k                      Boltzmann constant             2 -2   1 -1 0
+                       of the input and output variables as 6-dimensional                    b
+                                                                                            C                      Capacitance                    2 -2   1 0 -2
+                       vectors of the form seen in Table III.                               q, q , q               Charge                         2 -2   1 0 -1
+                                                                                                1   2
+                                                                                            j                      Current density                0 -3   1 0 -1
+                    3. Equation: The analytic expression for the mys-                       I, I0                  Current Intensity              2 -3   1 0 -1
+                       tery function f, for answer-checking.                                ρ, ρ0                  Density                       -3 0 1 0 0
+                                                                                            θ, θ , θ , σ, n        Dimensionless                  0 0 0 0 0
+                                                                                                1   2
+                                                                                            g , k , γ, χ, β, α     Dimensionless                  0 0 0 0 0
+                                                                                                 f
+                                                                                            p , n , δ, f, µ        Dimensionless                  0 0 0 0 0
+                To test an analytic regression algorithm using the                           γ    0
+                                                                                            n , δ, f, µ, Z , Z     Dimensionless                  0 0 0 0 0
+                database, its task is to predict f for each mystery taking                   0             1    2
+                the data table (and optionally the unit table) as input.                    D                      Diﬀusion coeﬃcient             2 -1   0 0 0
+                                                                                            µ                      Drift velocity constant        0 -1   1 0 0
+                Ofcourse, there are typically many symbolically diﬀerent                     drift
+                                                                                            p                      Electric dipole moment         3 -2   1 0 -1
+                                                                                             d
+                waysofexpressing the same function. For example, if the                     E                      Electric ﬁeld                 -1 0 0 0 1
+                                                                 2                            f
+                mystery function f is (u+v)/(1+uv/c ), then the sym-                                              Electric permitivity           1 -2   1 0 -2
+                                                                           2                E, K, U                Energy                         2 -2   1 0 0
+                bolically diﬀerent expression (v + u)/(1 + uv/c ) should
+                                                                                            E                      Energy density                -1 -2   1 0 0
+                count as a correct solution. The rule for evaluating an                       den
+                                                                                            F                      Energy ﬂux                     0 -3   1 0 0
+                analytic regression method is therefore that a mystery                        E
+                function f is deemed correctly solved by a candidate ex-                    F, Nn                  Force                          1 -2   1 0 0
+                pression f0 if algebraic simpliﬁcation of the expression                    ω, ω0                  Frequency                      0 -1   0 0 0
+                                                                                            k                      Grav. coupling (Gm m ) 3 -2 1 0 0
+                f0−f (say, with the Simplify function in Mathematica                         G                                            1  2
+                or the simplify function in the Python sympy package)                       H                      Hubble constant                0 -1   0 0 0
+                                                                                            L                      Inductance                    -2 4 -1 0 2
+                produces the symbol “0”.                                                      ind
+                                                                                            n                      Inverse volume                -3 0 0 0 0
+                                                                                             rho
+                                                                                            x, x , x , x           Length                         1 0 0 0 0
+                In order to sample equations from a broad range of                              1    2   3
+                                                                                            y, y , y , y           Length                         1 0 0 0 0
+                physics areas, the database is generated using 100 equa-                        1   2   3
+                                                                                            z, z , z , r, r , r    Length                         1 0 0 0 0
+                                                                                                1   2      1   2
+                tions from the seminal Feynman Lectures on Physics [34–                     λ, d , d , d, f , a    Length                         1 0 0 0 0
+                                                                                                1    2      f   f
+                36], a challenging three-volume course covering classical                   I , I , I , I          Light intensity                0 -3   1 0 0
+                                                                                             1   2   ∗   ∗0
+                mechanics, electromagnetism and quantum mechanics as                        B, B , B , B           Magnetic ﬁeld                 -2 1 0 0 1
+                                                                                                  x   y    z
+                                                                                            µ                      Magnetic moment                4 -3   1 0 -1
+                well as a selection of other core physics topics; we pri-                    m
+                oritized the most complex equations, excluding ones in-                     M                      Magnetisation                  1 -3   1 0 -1
+                                                                                            m, m , m , m           Mass                           0 0 1 0 0
+                volving derivatives or integrals. The equations are listed                        0    1    2
+                                                                                            µ                      Mobility                       0 1 -1 0 0
+                in tables IV and V, and can be seen to involve between                       e
+                1 and 9 independent variables as well as the elementary                     p                      Momentum                       1 -1   1 0 0
+                functions +, −, ∗, /, sqrt, exp, log, sin, cos, arcsin and                  G                      Newton’s constant              3 -2 -1 0 0
+                                                                                            P                      Polarization                   0 -2   1 0 -1
+                tanh. The numbers appearing in these equations are seen                       ∗
+                                                                                            P                      Power                          2 -3   1 0 0
+                to be simple rational numbers as well as e and π.                           p                      Pressure                      -1 -2   1 0 0
+                                                                                             F
+                                                                                            R                      Resistance                    -2 3 -1 0 2
+                We also included in the database a set of 20 more chal-                     µ                      Shear modulus                 -1 -2   1 0 0
+                                                                                             S
+                lenging “bonus” equations, extracted from other semi-                       L                      Spectral radiance              0 -2   1 0 0
+                                                                                              rad
+                nal physics books: Classical Mechanics by Herbert Gold-                     k                      Spring constant                0 -2   1 0 0
+                                                                                             spring
+                stein, Charles P. Poole, John L. Safko [37], Classical elec-                σ                      Surface Charge density         0 -2   1 0 -1
+                                                                                             den
+                                                                                            T, T , T               Temperature                    0 0 0 1 0
+                trodynamics by J. Jackson [38], Gravitation and Cosmol-                          1   2
+                ogy: Principles and Applications of the General Theory                      κ                      Thermal conductivity           1 -3   1 -1 0
+                of Relativity by Steven Weinberg [39] and Quantum Field                     t, t1                  Time                           0 1 0 0 0
+                TheoryandtheStandardModelbyMatthewD.Schwartz                                τ                      Torque                         2 -2   1 0 0
+                                                                                            A                      Vector potential              -1 1 0 0 1
+                [40]. These equations were selected for being both famous                     vec
+                and complicated.                                                            u, v, v1, c, w         Velocity                       1 -1   0 0 0
+                                                                                            V, V , V               volume                         3 0 0 0 0
+                                                                                                 1   2
+                                                                                            ρ , ρ                  Volume charge density         -1 -2   1 0 -1
+                The data table provided for each mystery equation con-                       c   c0
+                                                                                            V                      Voltage                        0 0 0 0 1
+                tains 105 rows corresponding to randomly generated in-                       e
+                                                                                            k                      Wave number                   -1 0 0 0 0
+                put variables. These are sampled uniformly between 1                        Y                      Young modulus                 -1 -2   1 0 0
+                and 5. For certain equations, the range of sampling was
+                slightly adjusted to avoid unphysical result, such as di-                  TABLE III: Unit table used for our automated dimensional
+                vision by zero, or taking the square root of a negative                    analysis.
+                number. The range used for each equation is listed in
+                the Feynman Symbolic Regression Database.
+                                                                                                                                                    8
+                    Feynman Equation                                 Solution Methods                       Data   Solved      Solved Noise
+                    eq.                    √                          time (s) used                         needed by Eureqa w/o da tolerance
+                                    −θ2/2                                                                                                −2
+                    I.6.20a    f = e     / 2π                              16 bf                            10     no          yes     10
+                                    − θ2  √
+                                      2σ2       2                                                             2                          −4
+                    I.6.20     f = e     / 2πσ                           2992 ev, bf-log                    10     no          yes     10
+                                      (θ−θ1)2 √
+                                    − 2σ2           2                                                         3                          −4
+                    I.6.20b    f = e         / 2πσ                       4792 sym–, ev, bf-log              10     no          yes     10
+                                   p          2            2                                                  2                          −4
+                    I.8.14     d =   (x −x ) +(y −y )                     544 da, pf-squared                10     no          yes     10
+                                       2    1       2    1
+                                              Gm1m2                                                           6                          −5
+                    I.9.18     F =         2        2         2          5975 da, sym–, sym–, sep∗, pf-inv 10      no          yes     10
+                                    (x −x ) +(y −y ) +(z −z )
+                                     2   1     2   1     2  1
+                                      m                                                                                                  −4
+                    I.10.7     m=r 0                                       14 da, bf                        10     no          yes     10
+                                      1−v2
+                                         2
+                                        c
+                                                                                                              2                          −3
+                    I.11.19    A=x y +x y +x y                            184 da, pf                        10     yes         yes     10
+                                    1 1     2 2    3 3
+                                                                                                                                         −3
+                    I.12.1     F =µNn                                      12 da, bf                        10     yes         yes     10
+                                    q q                                                                                                  −2
+                    I.12.2     F = 1 2                                     17 da, bf                        10     yes         yes     10
+                                    4πr2
+                                      q                                                                                                  −2
+                    I.12.4     Ef =    1                                   12 da                            10     yes         yes     10
+                                     4πr2
+                                                                                                                                         −2
+                    I.12.5     F =q2Ef                                      8 da                            10     yes         yes     10
+                                                                                                                                         −3
+                    I.12.11    F =q(Ef +Bvsinθ)                            19 da, bf                        10     yes         yes     10
+                                    1    2    2     2                                                                                    −4
+                    I.13.4     K=2m(v +u +w )                              22 da, bf                        10     yes         yes     10
+                                             1    1                                                                                      −4
+                    I.13.12    U =Gm1m2(r − r )                            20 da, bf                        10     yes         yes     10
+                                             2     1                                                                                     −2
+                    I.14.3     U =mgz                                      12 da                            10     yes         yes     10
+                                    k     x2
+                                     spring                                                                                              −2
+                    I.14.4     U =      2                                   9 da                            10     yes         yes     10
+                                    √x−ut                                                                                                −3
+                    I.15.3x    x1 =       2  2                             22 da, bf                        10     no          no      10
+                                      1−u /c
+                                     t−ux/c2                                                                  2                          −4
+                    I.15.3t    t1 = √    2  2                              20 da, bf                        10     no          no      10
+                                      1−u /c
+                                   √m0v                                                                                                  −4
+                    I.15.10    p =      2  2                               13 da, bf                        10     no          yes     10
+                                     1−v /c
+                                      u+v                                                                                                −3
+                    I.16.6     v1 =        2                               18 da, bf                        10     no          yes     10
+                                    1+uv/c
+                                   m1r1+m2r2                                                                                             −2
+                    I.18.4     r =   m +m                                  17 da, bf                        10     yes         yes     10
+                                       1   2                                                                                             −3
+                    I.18.12    τ = rF sinθ                                 15 da, bf                        10     yes         yes     10
+                                                                                                                                         −3
+                    I.18.16    L=mrvsinθ                                   17 da, bf                        10     yes         yes     10
+                                    1    2    2   2                                                                                      −4
+                    I.24.6     E= m(ω +ω )x                                22 da, bf                        10     yes         yes     10
+                                    4         0
+                                    q                                                                                                    −2
+                    I.25.13    Ve = C                                      10 da                            10     yes         yes     10
+                                                                                                              2                          −2
+                    I.26.2     θ =arcsin(nsinθ )                          530 da, bf-sin                    10     yes         yes     10
+                                1               2
+                                       1                                                                                                 −2
+                    I.27.6     ff = 1 + n                                  14 da, bf                        10     yes         yes     10
+                                     d   d
+                                   ω 1    2                                                                                              −2
+                    I.29.4     k = c                                        8 da                            10     yes         yes     10
+                                   q 2     2                                                                  3                          −4
+                    I.29.16    x= x +x −2x x cos(θ −θ )                  2135 da, sym–, bf-squared          10     no          no      10
+                                      1    2      1 2     1    2
+                                       sin2(nθ/2)                                                             2                          −3
+                    I.30.3     I∗ = I∗    2                               118 da, bf                        10     yes         yes     10
+                                      0 sin (θ/2)
+                                          λ                                                                   2                          −3
+                    I.30.5     θ = arcsin(nd)                             529 da, bf-sin                    10     yes         yes     10
+                                    q2a2                                                                                                 −2
+                    I.32.5     P = 6πc3                                   13 da                            10     yes         yes     10
+                                    1    2      2     4    2    2 2                                                                      −4
+                    I.32.17    P =( cE )(8πr /3)(ω /(ω −ω ) )            698 da, bf-sqrt                   10     no          yes     10
+                                    2    f                      0
+                                   qvB                                                                                                   −2
+                    I.34.8     ω = p                                       13 da                            10     yes         yes     10
+                                     ω0                                                                                                  −3
+                    I.34.10    ω = 1−v/c                                   13 da, bf                        10     no          yes     10
+                                   √1+v/c                                                                                                −3
+                    I.34.14    ω =           ω                             14 da, bf                        10     no          yes     10
+                                         2  2 0
+                                     1−v /c                                                                                              −2
+                    I.34.27    E=~ω           √                             8 da                            10     yes         yes     10
+                                                                                                              2                          −3
+                    I.37.4     I∗ = I1 +I2 +2 I1I2cosδ                   7032 da, bf                        10     yes         no      10
+                                   4π~2                                                                                                 −2
+                    I.38.12    r = mq2                                     13 da                            10     yes         yes     10
+                                    3                                                                                                    −2
+                    I.39.10    E=2pFV                                       8 da                            10     yes         yes     10
+                                     1                                                                                                   −3
+                    I.39.11    E=       p V                                13 da, bf                        10     yes         yes     10
+                                    γ−1 F
+                                     nk T                                                                                                −4
+                    I.39.22    PF =    b                                   16 da, bf                        10     yes         yes     10
+                                      V mgx
+                                      −k T                                                                                               −2
+                    I.40.1     n=n0e b                                     20 da, bf                        10     no          yes     10
+                                           ~ω3                                                                                           −5
+                    I.41.16    Lrad =        ~ω                            22 da, bf                        10     no          no      10
+                                       π2c2(ekbT −1)
+                                   µ     qV
+                                    drift  e                                                                                             −2
+                    I.43.16    v =     d                                   14 da                            10     yes         yes     10
+                                                                                                                                         −2
+                    I.43.31    D=µ k T                                     11 da                            10     yes         yes     10
+                                     e b
+                                    1  k v                                                                                               −3
+                    I.43.43    κ=       b                                  16 da, bf                        10     yes         yes     10
+                                   γ−1 A V2                                                                                              −3
+                    I.44.4     E=nk Tln( )                                 18 da, bf                        10     yes         yes     10
+                                      b     V
+                                  q          1
+                                     γpr                                                                                                 −2
+                    I.47.23    c =    ρ                                    14 da, bf                        10     yes         yes     10
+                                         2
+                                    √ mc                                                                      2                          −5
+                    I.48.20    E=        2  2                             108 da, bf                        10     no          no      10
+                                     1−v /c              2                                                                               −2
+                    I.50.26    x=x1[cos(ωt)+αcos(ωt) ]                     29 da bf                         10     yes         yes     10
+               TABLE IV: Tested Feynman Equations, part 1. Abbreviations in the “Methods used” column: “da” = dimensional analysis,
+               “bf”=bruteforce,“pf”=polyﬁt,“ev”=set2variablesequal,“sym”=symmetry,“sep”=separability. Suﬃxesdenotethetype
+               of symmetry or separability (“sym−” =translationa symmetry, ”sep*”=multiplicative separability, etc.) or the preprocessing
+               before brute force (e.g., “bf-inverse” means inverting the mystery function before bf).
+                                                                                                                                                  9
+                     Feynman Equation                                  Solution Methods                Data Solved        Solved   Noise
+                     eq.                                               time (s) used                 needed by Eureqa w/o DA tolerance
+                                     κ(T −T )A                                                                                        −3
+                     II.2.42    P= 2 1                                       54 da, bf                    10 yes          yes      10
+                                        Pd                                                                                            −2
+                     II.3.24    FE = 4πr2                                     8 da                        10 yes          yes      10
+                                       q                                                                                              −2
+                     II.4.23    Ve = 4πr                                    10 da                        10 yes          yes      10
+                                       1 p cosθ                                                                                       −3
+                     II.6.11    Ve =       d                                 18 da, bf                    10 yes          yes      10
+                                      4π   r2
+                                        3 p zp                                                             4                          −3
+                                           d     2     2
+                     II.6.15a   Ef = 4π r5     x +y                       2801 da, sm, bf               10 no            yes      10
+                                        3 p                                                                                           −2
+                     II.6.15b   Ef =       d cosθsinθ                        23 da, bf                    10 yes          yes      10
+                                       4π r3
+                                     3 q2                                                                                             −2
+                     II.8.7     E=54πd                                      10 da                        10 yes          yes      10
+                                         E2                                                                                          −2
+                     II.8.31    E     = f                                     8 da                        10 yes          yes      10
+                                  den     2
+                                       σden  1                                                                                        −2
+                     II.10.9    Ef =  1+χ                                   13 da, bf                    10 yes          yes      10
+                                        qEf                                                                                           −3
+                     II.11.3    x= m(ω2−ω2)                                  25 da, bf                    10 yes          yes      10
+                                         0   p E cosθ
+                                              d f                                                                                     −2
+                     II.11.17   n=n (1+               )                      28 da, bf                    10 yes          yes      10
+                                      0        k T
+                                         2      b
+                                      n p E
+                                       ρ d f                                                                                          −3
+                     II.11.20   P∗ = 3k T                                    18 da, bf                    10 yes          yes      10
+                                         b                                                                 2                          −3
+                     II.11.27   P∗ =    nα   E                             337 da bf-inverse            10 no            yes      10
+                                      1−nα/3    f
+                                            nα                                                             2                          −4
+                     II.11.28   θ = 1+ 1−(nα/3)                            1708 da, sym*, bf             10 no            yes      10
+                                       1   2I                                                                                         −2
+                     II.13.17   B=       2 r                                 13 da                        10 yes          yes      10
+                                     4πc
+                                         ρc                                                                2                          −4
+                     II.13.23   ρc = √     0                                 13 da, bf                   10 no            yes      10
+                                           2  2
+                                        1−v /c
+                                       ρc v                                                                                           −4
+                     II.13.34   j = √ 0                                      14 da, bf                    10 no           yes      10
+                                       1−v2/c2
+                                                                                                                                      −3
+                     II.15.4    E=−µ Bcosθ                                   14 da, bf                    10 yes          yes      10
+                                        M
+                                                                                                                                      −3
+                     II.15.5    E=−p E cosθ                                  14 da, bf                    10 yes          yes      10
+                                        d f
+                                           q                                                                                          −3
+                     II.21.32   Ve = 4πr(1−v/c)                             21 da, bf                    10 yes          yes      10
+                                     qω2     π2                                                                                       −5
+                     II.24.17   k =     2 − 2                                62 da bf                     10 no           yes      10
+                                       c     d
+                                          2                                                                                           −2
+                     II.27.16   FE =cE                                      13 da                        10 yes          yes      10
+                                          f
+                                           2                                                                                          −2
+                     II.27.18   Eden = Ef                                    9 da                        10 yes          yes      10
+                                     qv                                                                                               −2
+                     II.34.2a   I = 2πr                                      11 da                        10 yes          yes      10
+                                       qvr                                                                                            −2
+                     II.34.2    µM = 2                                       11 da                        10 yes          yes      10
+                                     g qB                                                                                             −4
+                     II.34.11   ω = 2m                                       16 da, bf                    10 yes          yes      10
+                                        qh                                                                                            −2
+                     II.34.29a µM = 4πm                                      12 da                        10 yes          yes      10
+                                     g µ  BJ                                                                                          −4
+                     II.34.29b E =      M z                                  18 da, bf                    10 yes          yes      10
+                                         ~          n                                                                                 −2
+                     II.35.18   n=                   0                       30 da, bf                    10 no           yes      10
+                                     exp(µmB/(k T))+exp(−µmB/(k T))
+                                                b µ B             b                                                                   −4
+                     II.35.21   M=nµ tanh( M )                             1597 da, halve-input, bf       10 yes          no       10
+                                       ρ M         k T
+                                     µ B     µ αM b                                                                                   −2
+                     II.36.38   f = m + m                                    77 da bf                     10 yes          yes      10
+                                     k T       2
+                                      b      c k T
+                                                 b                                                                                    −3
+                     II.37.1    E=µ (1+χ)B                                   15 da, bf                    10 yes          yes      10
+                                       M
+                                     YAx                                                                                              −3
+                     II.38.3    F = d                                        47 da, bf                    10 yes          yes      10
+                                         Y                                                                                            −3
+                     II.38.14   µS = 2(1+σ)                                  13 da, bf                    10 yes          yes      10
+                                        1                                                                                             −3
+                     III.4.32   n= ~ω                                        20 da, bf                    10 no           yes      10
+                                      k T
+                                     e b −1
+                                        ~ω                                                                                            −3
+                     III.4.33   E= ~ω                                        19 da, bf                    10 no           yes      10
+                                     ekbT −1
+                                     2µMB                                                                                             −2
+                     III.7.38   ω =    ~                                     13 da                        10 yes          yes      10
+                                          Et 2                                                                                        −3
+                     III.8.54   pγ = sin( ~ )                                39 da, bf                    10 no           yes      10
+                                      p E t sin((ω−ω )t/2)2                                                3                          −3
+                     III.9.52   p = d f             0                      3162 da, sym–, sm, bf         10 no            yes      10
+                                 γ      ~    ((ω−ω )t/2)2
+                                         p         0                                                       2                          −4
+                     III.10.19 E = µ       B2+B2+B2                         410 da, bf-squared           10 yes           yes      10
+                                       M     x     y     z
+                                                                                                                                      −3
+                     III.12.43 L = n~                                        11 da, bf                    10 yes          yes      10
+                                        2                                                                                             −4
+                     III.13.18 v = 2Ed k                                     16 da, bf                    10 yes          yes      10
+                                       ~ qV
+                                           e                                                                                          −3
+                     III.14.14 I = I (ekbT −1)                               18 da, bf                    10 no           yes      10
+                                     0
+                                                                                                                                      −4
+                     III.15.12 E = 2U(1−cos(kd))                             14 da, bf                    10 yes          yes      10
+                                        2                                                                                             −2
+                     III.15.14 m = ~                                         10 da                        10 yes          yes      10
+                                         2
+                                      2Ed                                                                                             −3
+                     III.15.27 k = 2πα                                       14 da, bf                    10 yes          yes      10
+                                     nd                                                                                               −3
+                     III.17.37 f = β(1+αcosθ)                                27 bf                        10 yes          yes      10
+                                       −mq4    1                                                                                      −5
+                     III.19.51 E =         2 2  2                            18 da, bf                    10 yes          yes      10
+                                     2(4π) ~ n
+                                     −ρc qAvec                                                                                        −2
+                     III.21.20 j =      0                                    13 da                        10 yes          yes      10
+                                         m
+                                       TABLEV:Tested Feynman Equations, part 2 (same notation as in Table IV)
+                                                                                                                                                    10
+                 Source                                 Equation                                  Solved Solved by Methods used
+                                                                                                          Eureqa
+                 Rutherford Scattering                  A=Z1Z2α~c 2                             yes     no          da, bf-sqrt
+                                                               4Esin2(θ)
+                                                             r        2
+                                                                            2
+                                                                         k c
+                 Friedman Equation                      H= 8πGρ− f                                yes     no          da, bf-squared
+                                                                 3       a2
+                                                                           f
+                 Compton Scattering                     U =         E                             yes     no          da, bf
+                                                             1+ E (1−cosθ)
+                                                                  2
+                                                                mc
+                                                                   4        2
+                                                               32 G (m m ) (m +m )
+                 Radiated gravitational wave power P = −               1  2    1    2             no      no          -
+                                                                5 c5       r5 
+                                                                       cosθ −v
+                 Relativistic aberration                θ =arccos         2  c                    yes     no          da, bf-cos
+                                                         1            1−v cosθ2
+                                                               h         c       i2
+                 N-slit diﬀraction                      I = I   sin(α/2) sin(Nδ/2)                yes     no          da, sm, bf
+                                                             0    α/2    sin(δ/2)
+                                                            q                  2
+                 Goldstein 3.16                         v =    2 (E −U − L )                      yes     no          da, bf-squared
+                                                               m      q 2mr2
+                                                             mk                  2
+                 Goldstein 3.55                         k =    G(1+ 1+2EL cos(θ −θ )) yes                 no          da, sym-, bf
+                                                               2                 2      1     2
+                                                              L               mk
+                                                                                G
+                                                                     2
+                 Goldstein 3.64 (ellipse)               r =     d(1−α )                           yes     no          da, sym-, bf
+                                                            1+αcos(θ −θ )
+                                                                     1  2
+                                                                  3/2
+                 Goldstein 3.74 (Kepler)                t = √ 2πd                                 yes     no          da, bf
+                                                              G(m +m )
+                                                            q 1 2
+                 Goldstein 3.99                         α= 1+ 22EL2                              yes     no          da, sym*, bf
+                                                                   m(Z1Z2q2)2
+                                                             p             2 2      2 4
+                 Goldstein 8.56                         E= (p−qA ) c +m c +qV                     yes     no          da, sep+, bf-squared
+                                                                        vec                  e
+                                                              1   2     2 2 2         x
+                 Goldstein 12.80                        E=2m[p +m ω x (1+αy)]                     yes     yes         da, bf
+                 Jackson 2.11                           F =    q   h4πV d−      qdy3   i         no      no          -
+                                                                 2       e       2  2 2
+                                                             4πy              (y −d )
+                 Jackson 3.45                           V =           q                           yes     no          da, bf-inv
+                                                         e                    1
+                                                               2   2          2
+                                                              (r +d −2drcosα)
+                 Jackson 4.60                           Ve = E cosθα−1d3 −r                     yes     no          da, sep∗, bf
+                                                               f        α+2 r2
+                                                               r1−v2
+                                                                    2
+                 Jackson 11.38 (Doppler)                ω =        c   ω                          yes     no          da, cos-input, bf
+                                                         0    1+v cosθ
+                                                                 c
+                                                                 c2k        2
+                 Weinberg 15.2.1                        ρ = 3         f +H                        yes     yes         da, bf
+                                                             8πG    a2
+                                                                     f
+                                                                     4                     
+                                                                      c k     2   2
+                 Weinberg 15.2.2                        p =− 1           f +c H (1−2α)            yes     yes         da, bf
+                                                         f      8πG    a2
+                                                                        f h                 i
+                                                                2 2 ω 2 ω                2
+                 Schwarz 13.132 (Klein-Nishina)         A=πα ~ ( 0)         0 + ω −sin θ          yes     no          da, sym/, sep*, sin-input, bf
+                                                               2 2   ω     ω     ω
+                                                              m c                 0
+                     TABLEVI: Tested bonus equations. Goldstein 8.56 is for the special case where the vectors p and A are parallel.
+                                B.    Method comparison                              solved 71% of the 100 basic mysteries, while AI Feynman
+                                                                                     solved 100%. Closer inspection of these tables reveal that
+                                                                                     the greatest improvement of our algorithm over Eureqa
+               We reviewed the symbolic regression literature for pub-
+               licly available software against which our method could
+               be compared. To the best of our knowledge, the best
+               competitor by far is the commercial Eureqa software sold                settings in Table II. For Eureqa, each mystery was run on 4 CPUs.
+               by Nutonian, Inc.4, implementing an improved version of                 The symbols used in trying to solve the equations were: +, −, ∗,
+               the generic search algorithm outlined in [27].                          /, constant, integer constant, input variable, sqrt, exp, log, sin,
+                                                                                       cos. To help Eureqa gain speed, we included the additional func-
+                                                                                       tions arcsin and arccos only for those mysteries requiring them,
+               WecomparedtheAI FeynmanandEureqaalgorithmsby                            and we used only 300 data points (since it does not use a neu-
+               applying them both to the Feynman Database for Sym-                     ral network, adding additional data does not help signiﬁcantly).
+               bolic Regression, allowing a maximum of 2 hours of CPU                  The time taken to solve an equation using our algorithm, as pre-
+               time per mystery 5. Tables IV and V show that Eureqa                    sented in Tables IV and V, corresponds to the time needed for
+                                                                                       an equation to be solved using a set of symbols that can actually
+                                                                                       solve it (see Table I). Equations 1.15.3t and 1.48.2 were solved
+                                                                                       using the second set of symbols, so the overall time needed for
+                                                                                       these two equations is one hour larger than the one listed in the
+               4 Eureqa can be purchased at https://www.nutonian.com/                  tables. Equations I.15.3x and II.35.21 were solved using the 3rd
+                 products/eureqa.                                                      set of symbols, so the overall time taken is two hours larger than
+               5 The AI Feynman algorithm was run using the hyperparameter             the one listed here.
+                                                                                                                                    11
+             is for the most complicated mysteries, where our neu-          a factor of 10 until our AI Feynman algorithm failed to
+             ral network enables eliminating variables by discovering       solve it. As seen in Tables IV and V, most equations are
+             symmetries and separability.                                   discovered by the polynomial ﬁt and brute force methods
+                                                                            using only 10 data points. 100 data points are needed in
+             The neural network becomes even more important when            some cases, because the algorithm may otherwise over-
+             we rerun AI Feynman without the dimensional analysis           ﬁt when the true equation is complex, “discovering” an
+             module: it now solves 93% of the mysteries, and makes          incorrect equation that is too simple.
+             very heavy use of the neural network to discover sepa-         As expected, equations that require the use of a neural
+             rability and translational symmetries. Without dimen-          network to be solved need signiﬁcantly more data points
+             sional analysis, many of the mysteries retain variables                    2        6
+                                                                            (between 10 and 10 ) for the network to be able to learn
+             that appear only raised to some power or in a multi-           the mystery function accurately enough (i.e. obtaining
+             plicative prefactor, and AI Feynman tends to recursively       r.m.s. accuracy better than 10−3). Note that expressions
+             discover them and factor them out one by one. For exam-        requiring the neural network are typically more complex,
+             ple, the neural network strategy is used six times when        so one might intuitively expect them to require larger
+             solving                                                        data sets for the correct equation to be discovered with-
+                                         Gm m                               out overﬁtting, even when using alternate approaches
+                     F =                     1  2                           such as genetic algorithms.
+                                    2            2             2
+                           (x −x ) +(y −y ) +(z −z )
+                             2    1       2    1       2     1
+             without dimensional analysis: three times to discover
+             translational symmetry that replaces x − x , y − y                         D. Dependence on noise level
+                                                       2     1   2     1
+             and z −z by new variables, once to group together G
+                   2    1
+             and m into a new variable a, once to group together
+                    1
+             a and m2 into a new variable b, and one last time to           Since real data is almost always aﬄicted with measure-
+             discover separability and factor out b. This shows that        ment errors or other forms of noise, we investigated
+             although dimensional analysis often provides signiﬁcant        the robustness of our algorithm. For each mystery, we
+             time savings, it is usually not necessary for successfully     added independent Gaussian random noise to its depen-
+                                                                            dent variable y, of standard deviation  y    , where y
+             solving the problem.                                                                                      rms         rms
+                                                                            denotes the r.m.s. y-value for the mystery before noise
+             Inspection of how AI Feynman and Eureqa make progress          has been added. We initially set the relative noise level
+             over time reveals interesting diﬀerences. The progress                −6
+                                                                             = 10   , then repeatedly multiplied  by 10 until the AI
+             of AI Feynman over time corresponds to repeatedly re-          Feynman algorithm could no longer solve the mystery.
+             ducing the number of independent variables, and every          As seen in Tables IV and V, most of the equations can
+             time this occurs, it is virtually guaranteed to be a step                                                      −4
+                                                                            still be recovered exactly with an -value of 10   or less,
+             in the right direction.   In contrast, genetic algorithms                                                           −2
+                                                                            while almost half of them are still solved for  = 10   .
+             such as Eureqa make progress over time by ﬁnding suc-
+             cessively better approximations, but there is no guaran-       For these noise experiments, we adjusted the threshold
+             tee that more accurate symbolic expressions are closer         for the brute force and polynomial ﬁt algorithms when
+             to the truth when viewed as strings of symbols. Speciﬁ-        the noise level changed, such that not ﬁnding a solution
+             cally, by virtue of being a genetic algorithm, Eureqa has      at all was preferred over ﬁnding an approximate solution.
+             the advantage of not searching the space of symbolic ex-       These thresholds were not optimized for each mystery
+             pressions blindly like our brute force module, but rather      individually, so a better choice of these thresholds might
+             with the possibility of a net drift toward more accurate       allow the exact equation to be recovered with an even
+             (“ﬁt”) equations. The ﬂip side of this is that if Eureqa       higher noise level for certain equations. In future work, it
+             ﬁnds a fairly accurate yet incorrect formula with a quite      will be also be interesting to quantify performance of the
+             diﬀerent functional form, it risks getting stuck near that     algorithm on data with noise added to the independent
+             local optimum. This reﬂects a fundamental challenge for        variables, as well as directly on real-world data.
+             genetic approaches symbolic regression: if the ﬁnal for-
+             mula is composed of separate parts that are not summed
+             but combined in some more complicated way (as a ratio,                           E.   Bonus mysteries
+             say), then each of the parts may be useless ﬁts on their
+             own and unable to evolutionarily compete.
+                                                                            The100basicmysteriesdiscussedaboveshouldbeviewed
+                                                                            as a training set for our AI Feynman algorithm, since we
+                          C. Dependence on data size                        made improvements to its implementation and hyper-
+                                                                            parameters to optimize performance.       In contrast, we
+                                                                            can view the 20 bonus mysteries as a test set, since we
+             To investigate the eﬀect of changing the size of the data      deliberately selected and analyzed them only after the
+             set, we repeatedly reduced the size of each data set by        AI Feynman algorithm and its hyper-parameter settings
+                                                                                                                                            12
+                                                                                                                               6
+              (Table II) had been ﬁnalized. The bonus mysteries are              on the mystery functions presented in [41] . Some equa-
+              interesting also by virtue of being signiﬁcantly more com-         tions appear twice; we included them only once. Our al-
+              plex and diﬃcult, in order to better identify the limita-          gorithm again outperformed Eureqa, discovering 66.7%
+              tions our our method.                                              of the equations while Eureqa discovered 48.9%. The
+              Table VI sbows that Eureqa solved only 15% of the                  fact that the AI Feynman algorithm performs less well
+              bonus mysteries, while AI Feynman solved 90%. The                  on this test set than on genuine physics formulas traces
+              fact that the success percentage diﬀers more between the           back to the fact that most of the equations presented
+              two methods for the bonus mysteries than for the ba-               in [41] are rather arbitrary compositions of elementary
+              sic mysteries reﬂects the increased equation complexity,           functions unlikely to occur in real-world problems, thus
+              which requires our neural network based strategies for a           lacking the symmetries, separability, etc. that the neural
+              larger fraction of the cases.                                      network part of our algorithm is able to exploit.
+              To shed light on the limitations of the AI Feynman algo-
+              rithm, it is interesting to consider the two mysteries for                           IV.   CONCLUSIONS
+              which it failed. The radiated gravitational wave power
+                                                              2
+              mystery was reduced to the form y = −32a (1+a) by di-
+                                                              5b5
+              mensional analysis, corresponding to the string “aaa >             Wehavepresented a novel physics-inspired algorithm for
+              ∗∗bbbbb∗∗∗∗/” in reverse Polish notation (ignoring the             solving multidimensional analytic regression problems:
+              multiplicative prefactor −32). This would require about            ﬁnding a symbolic expression that matches data from an
+                                            5
+              2 years for the brute force method, exceeding our allotted         unknown algebraic function. Our key innovation lies in
+              time limit. The Jackson 2.11 mystery was reduced to the            combining traditional ﬁtting techniques with a neural-
+              form a− 1        a    by dimensional analysis, correspond-         network-based approach that can repeatedly reduce a
+                                2 2
+                        4π b(1−a )                                               problem to simpler ones, eliminating dependent variables
+              ing to the string “aP0 >>>> ∗\abaa∗ < aa∗ < ∗∗/∗−”                 by discovering properties such as symmetries and sepa-
+              in reverse Polish notation, which would require about 100
+              times the age of our universe for the brute force method.          rability in the unknown function.
+              It is likely that both of these mysteries can be solved with       To facilitate quantitative benchmarking of our and other
+              relatively minor improvements of the our algorithm. The            symbolic regression algorithms, we created a freely down-
+              ﬁrst mystery would have been solved had the algorithm              loadable database with 100 regression mysteries drawn
+                                             2         5                         from the Feynman Lectures on Physics and a bonus set
+              not failed to discover that a (1+a)/b is separable. The
+              large dynamic range induced by the ﬁfth power in the               of an additional 20 mysteries selected for diﬃculty and
+              denominator caused the neural network to miss the sep-             fame.
+              arability tolerance threshold; potential solutions include
+              temporarily limiting the parameter range or analyzing
+              the logarithm of the absolute value (to discover additive                               A. Key ﬁndings
+              separability).
+              If we had used diﬀerent units in the second mystery,
+              where1/4πwasreplacedbytheCoulombconstantk,the                     Thepre-existingstate-of-the-art symbolic regression soft-
+              costly 4π-factor (requiring 7 symbols “PPPP +++” or                ware Eureqa [26] discovered 68% of the Feynman equa-
+              “P0>>>>∗”)wouldhavedisappeared. Moreover,ifwe                      tions and 15% of the bonus equations, while our AI Feyn-
+              hadusedadiﬀerentsetoffunction symbols that included                man algorithm discovered 100% and 90%, respectively,
+              “Q”forsquaring, then brute force could quickly have dis-           including Kepler’s ellipse equation mentioned in the in-
+              covered that a−       a     is solved by “aabaQ < Q∗/−”.           troduction (3rd entry in Table VI). Most of the 100 Feyn-
+                                      2 2
+                                 b(1−a )                                         man equations could be solved even if the data size was
+              Similarly, introducing a symbol ∧ denoting exponenti-              reduced to merely 102 data points or had percent-level
+                                                  b
+              ation, enabling the string for a to be shortened from              noise added, but the most complex equations needing
+              “aLb∗E” to “ab∧”, would enable brute force to solve                neural network ﬁtting required more data and less noise.
+              many mysteries faster, including Jackson 2.11.
+              Finally, a powerful strategy that could ameliorate both            ComparedwiththegeneticalgorithmofEureqa, themost
+              of these failures would be to add symbols corresponding            interesting improvements are seen for the most diﬃcult
+              to parameters that are numerically optimized over. This            mysteries where the neural network strategy is repeat-
+              strategy is currently implemented in Eureqa but not AI             edly deployed. Here the progress of AI Feynman over
+              Feynman, and could make a useful upgrade as long as                time corresponds to repeatedly reducing the problem to
+              it is done in a way that does not unduly slow down the             simpler ones with fewer variables, while Eureqa and other
+              symbolic brute force search. In summary, the two failures
+              of the AI Feynman algorithm signal not unsurmountable
+              obstacles, but motivation for further work.
+                                                                                 6 Wewanttothanktheanonymousreviewerwhobroughtthisdata
+              In addition, we tested the performance of our algorithm              set to our attention.
+                                                                                                                                   13
+             genetic algorithms are forced to solve the full problem by     that equal unity for a = 0, thus being likely to discover
+             exploring a vast search space, risking getting stuck in        the full formula much faster than an unrestricted brute
+             local optima.                                                  force search from scratch.
+                                                                            Last but not least, it is likely that marrying the best fea-
+                                                                            tures from both our method and genetic algorithms can
+                       B.   Opportunities for further work                  spawn a method that outperforms both. Genetic algo-
+                                                                            rithms such as Eureqa perform quite well even in presense
+             Boththesuccesses and failures of our algorithm motivate        of signiﬁcant noise, whether they output not merely one
+             further work to make it better, and we will now brieﬂy         hopefully correct formula, but rather a Pareto frontier, a
+             comment on promising improvement strategies.                   sequence of increasingly complex formulas that provide
+                                                                            progressively better accuracy. Although it may not be
+             Although we mostly used the same elementary func-              clear which of these formulas is correct, it is more likely
+             tion options (Table I) and hyperparameter settings (Ta-        that the correct formula is one of them than any particu-
+             ble II) for all mysteries, these could be strategically cho-   lar one that an algorithm might guess. When our neural
+             sen based on an automated pre-analysis of each mystery.        network identiﬁes separability, a so generate Pareto fron-
+             For example, observed oscillatory behaviour could sug-         tier could thus be used to generate candidate formulas
+             gest including sin and cos and lack thereof could suggest      for one factor, after which each one could be substituted
+             saving time by excluding them.                                 back and tested as above, and the best solution to the
+             Our code could also be straightforwardly integrated into       full expression would be retained. Our brute force algo-
+             a larger program discovering equations involving deriva-       rith can similarly be upgraded to return a Pareto frontier
+             tives and integrals, which frequently occur in physics         instead of a single formula.
+             equations. For example, if we suspect that our formula         In summary, symbolic regression algorithms are getting
+             contains a partial diﬀerential equation, then the user can     better, and are likely to continue improving. We look
+             simply estimate various derivatives from the data (or its      forward to the day when, for the ﬁrst time in the history
+             interpolation, using a neural network) and include them        of physics, a computer, just like Kepler, discovers a useful
+             in the AI Feynman algorithm as independent variables,          and hitherto unknown physics formula through symbolic
+             thus discovering the diﬀerential equation in question.         regression!
+             Wesawhow,evenifthemysterydatahasverylownoise,
+             signiﬁcant de facto noise was introduced by imperfect
+             neural network ﬁtting, complicating subsequent solution        Acknowledgements:         We thank Rustin Domingos,
+             steps. It will therefore be valuable to explore better neu-    Zhiyu Dong, Michael Skuhersky, Andrew Tan and Tailin
+             ral network architectures, ideally reducing ﬁtting noise       Wu for helpful comments, and the Center for Brains,
+             to the 10−6 level. This may be easier than in many other       Minds, and Machines (CBMM) for hospitality. Fund-
+             contexts, since we do not care if the neural network gen-      ing:   This work was supported by The Casey and
+             eralizes poorly outside the domain where we have data:         Family Foundation, the Ethics and Governance of AI
+             as long as it is highly accurate within this domain, it        Fund, the Foundational Questions Institute, the Roth-
+             serves our purpose of correctly factoring separable func-      berg Family Fund for Cognitive Science and the Tem-
+             tions, etc..                                                   pleton World Charity Foundation, Inc.       The opinions
+             Our brute-force method can be better integrated with a         expressed in this publication are those of the authors
+             neural network search for hidden simplicity. Our imple-        and do not necessarily reﬂect the views of the Tem-
+             mented symmetry search simply tests if two input vari-         pleton World Charity Foundation, Inc. Author con-
+             ables a and b can be replaced by a bivariate function of       tributions: Concept, supervision, project management:
+             them, speciﬁcally +, −, ∗ or /, corresponding to length-3      M.T. Design of methodology, programming, experimen-
+             strings “ab+”, “ab−”, “ab∗” and “ab/” in Reverse Pol-          tal experimental validation, data curation, data analysis,
+             ish Notation. This can be readily generalized to longer        validation, manuscript writing: S.U. and M.T. Com-
+             strings involving 2 or more variables, for example bivari-     peting interests: The authors declare that they have
+             ate functions ab2 or ea cosb.                                  no competing interests. Data and materials avail-
+                                                                            ability: All data needed to evaluate the conclusions
+             A second example of improved brute-force use is if the         in the paper are present in the paper, at https://
+             neural network reveals that the function can be exactly        space.mit.edu/home/tegmark/aifeynman.html
+             solved after setting some variable a equal to something        and at https://github.com/SJ001/AI-Feynman.
+             else (say zero, one or another variable). A brute force        Any additional datasets, analysis details, and material
+             search can now be performed in the vicinity of the dis-        recipes are available upon request.
+             covered exact expression: for example, if the expression
+             is valid for a = 0, the brute force search can insert addi-
+             tive terms that vanish for a = 0 and multiplicative terms
+                                                                                                                                         14
+                   Algorithm 1 AI Feynman: Translational
+                                      Symmetry
+                Require Dataset D = {(x,y)}
+                Require net: trained neural network
+                Require NNerror: the neural network validation error
+                a = 1
+                for i in len(x) do:
+                   for j in len(x) do:
+                      if i < j:
+                         x =x
+                          t
+                         x [i] = x [i] + a
+                          t       t
+                         x [j] = x [j] + a
+                          t       t
+                         error = RMSE(net(x),net(x ))
+                                                       t
+                         error = error/RMSE(net(x))
+                         if error < 7×NNerror:
+                            x [i] = x [i] − x [j]
+                              t      t      t
+                            x =delete(x ,j)
+                              t           t
+                            return x , i, j
+                                      t
+              Algorithm 2 AI Feynman: Additive Separability
+                Require Dataset D = {(x,y)}
+                Require net: trained neural network
+                Require NNerror: the neural network validation error
+                x   =x
+                 eq
+                for i in len(x) do:
+                   x [i] = mean(x[i])
+                    eq
+                for i in len(x) do:
+                   c = combinations([1,2,...,len(x)],i)
+                   for idx in c do:
+                          1
+                      x =x
+                       1
+                      x =x
+                       2
+                      idx = k in [1,len(x)] not in idx
+                         2                             1
+                      for j in idx :
+                                  1
+                         x [j] = mean(x[j])
+                          1
+                      for j in idx :
+                                  2
+                         x [j] = mean(x[j])
+                          2
+                      error = RMSE(net(x),net(x )+net(x )-net(x ))
+                                                    1        2        eq
+                      error = error/RMSE(net(x))
+                      if error < 10×NN         :
+                                           error
+                         x =delete(x ,index )
+                          1            1      2
+                         x =delete(x ,index )
+                          2            2      1
+                         return x , x , index , index
+                                   1  2       1       2
+               [1] A. Koyr´e, The Astronomical Revolution: Copernicus-             neering. Toward a Caring and Humane Technology (Cat.
+                  Kepler-Borelli (Routledge, 2013).                                No. 03CH37436) (IEEE, 2003), vol. 3, pp. 1597–1600.
+               [2] N. M. Amil, N. Bredeche, C. Gagn´e, S. Gelly, M. Schoe-      [8] B. Oh, Y. Na, J. Yang, S. Park, J. Nang, and J. Kim,
+                  nauer, and O. Teytaud, in European Conference on Ge-             Advances in Electrical and Computer Engineering 10, 81
+                  netic Programming (Springer, 2009), pp. 327–338.                 (2010).
+               [3] S. K. Pal and P. P. Wang, Genetic algorithms for pattern     [9] A. Ram, G. Boone, R. Arkin, and M. Pearce, Adaptive
+                  recognition (CRC press, 2017).                                   behavior 2, 277 (1994).
+               [4] J. D. Lohn, W. F. Kraus, and D. S. Linden, IEEEAn-          [10] B. Delman, Master’s thesis, Rochester Institute of Tech-
+                  tenna & Propagation Society Mtg. 3, 814 (2002).                  nology (2004).
+               [5] D. S. Linden, in Proceedings 2002 NASA/DoD Confer-          [11] P. Y. Lu, S. Kim, and M. Soljacic (????).
+                  ence on Evolvable Hardware (IEEE, 2002), pp. 147–151.        [12] R. J. Bauer Jr, R. J. Bauer, et al., Genetic algorithms
+               [6] H. Yu and N. Yu, The Pennsylvania State University,             and investment strategies, vol. 19 (John Wiley & Sons,
+                  University park pp. 1–9 (2003).                                  1994).
+               [7] S. Panthong and S. Jantarang, in CCECE 2003-                [13] R. Venkatesan and V. Kumar, International Journal of
+                  Canadian Conference on Electrical and Computer Engi-             Forecasting 18, 625 (2002).
+                                                                                                                                                        15
+               [14] W. L. Cava, T. R. Singh, J. Taggart, S. Suri, and                        tistical Physics 168, 1223 (2017).
+                    J. Moore, in International Conference on Learning Rep-              [30] T. Wu and M. Tegmark, Physical Review E 100, 033311
+                    resentations (2019), URL https://openreview.net/                         (2019).
+                    forum?id=Hke-JhA9Y7.                                                [31] L. N. Smith and N. Topin, Super-convergence: Very fast
+               [15] S. McAleer, F. Agostinelli, A. Shmakov, and P. Baldi,                    training of residual networks using large learning rates
+                    in International Conference on Learning Representations                  (2018), URL https://openreview.net/forum?id=
+                    (2019), URL https://openreview.net/forum?id=                             H1A5ztj3b.
+                    Hyfn2jCcKm.                                                         [32] L. N. Smith, A disciplined approach to neural network
+               [16] J. R. Koza and J. R. Koza, Genetic programming: on the                   hyper-parameters: Part 1 – learning rate, batch size, mo-
+                    programming of computers by means of natural selection,                  mentum, and weight decay (2018), 1803.09820.
+                    vol. 1 (MIT press, 1992).                                           [33] J.  Howard et al., fastai, https://github.com/
+               [17] M. D. Schmidt, R. R. Vallabhajosyula, J. W. Jenkins,                     fastai/fastai (2018).
+                    J. E. Hood, A. S. Soni, J. P. Wikswo, and H. Lipson,                [34] R. Feynman, R. Leighton, and M. Sands, The Feyn-
+                    Physical biology 8, 055011 (2011).                                       man Lectures on Physics: The New Millennium Edi-
+               [18] R. K. McRee, in Proceedings of the 12th Annual Confer-                   tion: Mainly Mechanics, Radiation, and Heat, v. 1 (Ba-
+                    ence Companion on Genetic and Evolutionary Computa-                      sic Books, 1963), ISBN 9780465040858, URL https:
+                    tion (ACM, New York, NY, USA, 2010), GECCO ’10,                          //books.google.com/books?id=d76DBQAAQBAJ.
+                    pp. 1983–1990, ISBN 978-1-4503-0073-5, URL http:                    [35] R. Feynman, R. Leighton, and M. Sands, The Feyn-
+                    //doi.acm.org/10.1145/1830761.1830841.                                   man Lectures on Physics, no. v. 2 in The Feynman Lec-
+               [19] S. Stijven, W. Minnebo, and K. Vladislavleva, in Proceed-                tures on Physics (Pearson/Addison-Wesley, 1963), ISBN
+                    ings of the 13th Annual Conference Companion on Ge-                      9780805390476, URL https://books.google.com/
+                    netic and Evolutionary Computation (ACM, New York,                       books?id=AbruAAAAMAAJ.
+                    NY,USA,2011), GECCO’11, pp. 623–630, ISBN 978-1-                    [36] R. Feynman, R. Leighton, and M. Sands, The Feyn-
+                    4503-0690-4, URL http://doi.acm.org/10.1145/                             man Lectures on Physics, no. v. 3 in The Feynman Lec-
+                    2001858.2002059.                                                         tures on Physics (Pearson/Addison-Wesley, 1963), ISBN
+               [20] W. Kong, C. Liaw, A. Mehta, and D. Sivakumar, in                         9780805390490, URL https://books.google.com/
+                    International Conference on Learning Representations                     books?id=_6XvAAAAMAAJ.
+                    (2019), URL https://openreview.net/forum?id=                        [37] H. Goldstein, C. Poole, and J. Safko, Classical Me-
+                    rkluJ2R9KQ.                                                              chanics (Addison Wesley, 2002), ISBN 9780201657029,
+               [21] T. McConaghy, in Genetic Programming Theory and                          URL         https://books.google.com/books?id=
+                    Practice IX (Springer, 2011), pp. 235–260.                               tJCuQgAACAAJ.
+               [22] I. Arnaldo, U.-M. O’Reilly, and K. Veeramachaneni, in               [38] J. D. Jackson, Classical electrodynamics (Wiley, New
+                    Proceedings of the 2015 Annual Conference on Genetic                     York, NY, 1999), 3rd ed., ISBN 9780471309321, URL
+                    and Evolutionary Computation (ACM, 2015), pp. 983–                       http://cdsweb.cern.ch/record/490457.
+                    990.                                                                [39] S. Weinberg, Gravitation and Cosmology: Principles and
+               [23] S. L. Brunton, J. L. Proctor, and J. N. Kutz, Proceedings                Applications of the General Theory of Relativity (New
+                    of the National Academy of Sciences 113, 3932 (2016).                    York: Wiley, 1972).
+               [24] M. Quade, M. Abel, J. Nathan Kutz, and S. L. Brunton,               [40] M. Schwartz, Quantum Field Theory and the Stan-
+                    Chaos: AnInterdisciplinary Journal of Nonlinear Science                  dard Model, Quantum Field Theory and the Stan-
+                    28, 063116 (2018).                                                       dard Model (Cambridge University Press, 2014), ISBN
+               [25] D. P. Searson, D. E. Leahy, and M. J. Willis, in Proceed-                9781107034730, URL https://books.google.com/
+                    ings of the International multiconference of engineers and               books?id=HbdEAgAAQBAJ.
+                    computer scientists (Citeseer, 2010), vol. 1, pp. 77–80.            [41] J. McDermott, D. R. White, S. Luke, L. Manzoni,
+               [26] R. Dubˇc´akov´a, Genetic programming and evolvable ma-                   M. Castelli, L. Vanneschi, W. Jaskowski, K. Krawiec,
+                    chines 12, 173 (2011).                                                   R. Harper, K. De Jong, et al., in Proceedings of the 14th
+               [27] M. Schmidt and H. Lipson, Science 324, 81 (2009).                        annual conference on Genetic and evolutionary computa-
+               [28] H. Mhaskar, Q. Liao, and T. Poggio, Tech. Rep., Center                   tion (ACM, 2012), pp. 791–798.
+                    for Brains, Minds and Machines (CBMM), arXiv (2016).
+               [29] H. W. Lin, M. Tegmark, and D. Rolnick, Journal of Sta-

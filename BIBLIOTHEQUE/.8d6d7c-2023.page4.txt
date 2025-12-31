@@ -1,0 +1,66 @@
+                            embeddings which are then averaged over a voxel to obtain voxel features. These voxel features are
+                            processed through four residual blocks with 3D sparse convolutions, each of which downsamples
+                            the feature map by 2×. Four additional residual blocks are then used to upsample the sparse feature
+                            maps back to the original resolution, thus yielding a set of D-dimensional voxel features at various
+                                                   N×D
+                            strides V = {V ∈ R i          | i = 1,2,4,8}, where N denotes the number of non-empty voxels
+                                             i                                        i
+                            at the i-th stride. At various stages in this network, point-level features are updated with image
+                            features via point-level fusion (as explained in the next paragraph). Moreover, we exploit point-
+                            to-voxel and voxel-to-point operations to fuse information between the point and voxel branches at
+                            different scales, as illustrated in Fig. 2. We denote the final point-level features as Z ∈ RN×D.
+                            Point-level fusion: We enrich the geometry-based LiDAR features with appearance-based image
+                            features by performing a fine-grained, point-level feature fusion. This is done by taking the point
+                            features Zlidar ∈ RN×D at intermediate stages inside the LiDAR backbone, and projecting their
+                            corresponding (x,y,z) coordinates to the highest resolution image feature map I . Note that this
+                                                                                                                 4
+                            canbedonesincetheimageandLiDARsensorsarecalibrated,whichistypicallythecaseinmodern
+                            self-driving vehicles. This yields a set of image features Zimg ∈ RM×D, where M ≤ N since
+                            generally not all LiDAR points have valid image projections. We use Z+        ∈RM×Dtodenotethe
+                                                                                                   − lidar
+                            subset of features in Zlidar which have valid image projections, and Zlidar ∈ R(N−M)×D for the rest.
+                            Wethenperformpoint-level fusion between image and LiDAR features as follows:
+                                           Z+ ←−MLP         ([Z+ ,Z      ])               Z− ←−MLP          (Z− )              (1)
+                                            lidar       fusion  lidar img                   lidar      pseudo  lidar
+                            where both MLPs contain 3 layers, and [·,·] denotes channel-wise concatenation.            Intuitively,
+                            MLPfusion performs pairwise fusion for corresponding image and LiDAR features. On the other hand,
+                            MLPpseudo updates the non-projectable LiDAR point features to resemble fused embeddings.
+                            3.2   Transformer-based Panoptic Decoder
+                            Weproposeanoveldecoderwhichpredictsper-pointsemanticandobjecttrackmaskswithaunified
+                            architecture. This stands in contrast with existing methods [9, 11, 48, 6] which generally have sepa-
+                            rate heads for each output. Our architecture is inspired by image-level object detection/segmentation
+                            methods [49, 28], but the key difference is that our decoder performs multimodal fusion.
+                            Weinitialize a set of queries Q ∈ RT×D randomly at the
+                            start of training where the number of queries (T) is as-                LiDAR to Image Projection
+                            sumed to be an upper-bound on the number of objects in                  z
+                            a given scene. The idea to use these queries to segment a
+                            varying number of objects as well as the non-instantiable                     y
+                            ‘stuff’ classes in the scene. The queries are input to a se-
+                                                                                                x
+                            ries of ‘fusion blocks’. Each block is composed of multi-     Figure 3: LiDAR to image projection.
+                            ple layers where the queries Q are updated by: (1) cross-
+                                                                   N×C
+                            attending to the voxel features Vi ∈ R i      at a given stride, (2) cross-attending to the set of image
+                            features Fi ∈ RMi×C which are obtained by projecting the (x,y,z) coordinates for the voxel fea-
+                            tures V into each of the multi-scale image feature maps 1 {I ,I } (see Fig. 3 for an illustration),
+                                   i                                                        4  8
+                            and (3) self-attending to each other twice intermittently, and also passing through 2× Feedforward
+                            Networks (FFN). The architecture of these fusion blocks is illustrated in Fig. 4.
+                            These queries distill information about the objects and
+                                                                                                  Cross-attention
+                                                                                                                 Cross-attention
+                                                                                                     Self-attention
+                            semantic classes present in the scene. To this end, self-                               Self-attention
+                                                                                                                       FFN
+                            attention enables the queries to exchange information be-                    FFN
+                            tween one another, and cross-attention allows them to
+                            learn global context by attending to the features from both
+                            modalities across the entire scene.     This mitigates the
+                            needfordensefeatureinteraction between the two modal-
+                            ities which, if done naively, would be computationally in-
+                            tractable since N and M are on the order of 104. Our           Figure 4: Fusion block architecture.
+                                              i        i
+                               1M ≤ 2N since each voxel feature is projected into 2 image feature maps (I , I ), but not all LiDAR
+                                   i      i                                                               4  8
+                            voxel features have valid image projections
+                                                                              4

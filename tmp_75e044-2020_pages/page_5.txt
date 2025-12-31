@@ -1,0 +1,58 @@
+                                                         REALM:Retrieval-AugmentedLanguageModelPre-Training
+                                                                                                 3.4. Injecting inductive biases into pre-training
+                                                                                                 In the process of developing REALM, we discovered sev-
+                                                                                                 eral additional strategies that further guide the model to-
+                                                                                                 wardsmeaningfulretrievals, described below.
+                  Figure 3. REALM pre-training with asynchronous MIPS re-
+                  freshes.                                                                       Salient span masking            During REALM pre-training, we
+                                                                                                 want to focus on examples x that require world knowledge
+                                                                                                 to predict the masked tokens. As explained in Section 2,
+                                                                                                 some MLMspans only require local context. To focus on
+                  below, the trainer sends the index builder a snapshot of its                   problems that require world knowledge, we mask salient
+                  parameters,θ′. Thetrainerthencontinuesto trainwhile the
+                                           ′                                                     spans such as “United Kingdom” or “July 1969”. We
+                  index builder uses θ to construct a new index in the back-                     use a BERT-based tagger trained on CoNLL-2003 data
+                  ground. As soon as the index builder is done, it sends the                     (Sang & De Meulder, 2003) to identify namedentities, and
+                  newindexbacktothetrainer,and the processrepeats.                               a regular expression to identify dates. We select and mask
+                  While asynchronous refreshes can be used for both pre-                         oneofthese salient spans within a sentence for the masked
+                  training and ﬁne-tuning, in our experiments we only use it                     language modeling task. We show that this signiﬁcantly
+                  for pre-training. For ﬁne-tuning, we just build the MIPS in-                   outperformsother masking strategies in Section 4.5.
+                  dexonce(usingthepre-trainedθ) forsimplicity and do not
+                  update Embed         .3 Note that we still ﬁne-tune Embed                ,
+                                    doc                                              input       Null document           Even with salient span masking, not all
+                  so the retrieval function is still updated from the query side.                masked tokens require world knowledge to predict. We
+                                                                                                 modelthis by adding an empty null document ∅ to the top
+                                                                                                 k retrieved documents, allowing appropriatecredit to be as-
+                  Whatdoestheretrieverlearn? Sincetheknowledgere-                                signed to a consistent sink when no retrieval is necessary.
+                  trieval of REALM is latent, it is not obvious how the train-
+                  ing objective encourages meaningful retrievals. Here, we
+                  show how it rewards retrievals that improve prediction ac-                     Prohibiting trivial retrievals            If the pre-training corpus
+                  curacy.                                                                        X and the knowledge corpus Z are the same, there exists
+                                                                                                 a trivial retrieval candidate z that is too informative: if the
+                  For a given query x and document z, recall that f(x,z) is                      maskedsentencexcomesfromdocumentz,theknowledge
+                  the “relevance score” that the knowledge retriever assigns                     augmentedencodercantrivially predicty by lookingat the
+                  to document z. We can see how a single step of gradient                        unmaskedversionof x in z. This results in a large positive
+                  descent during REALMpre-trainingalters this score by an-                       gradientforp(z|x). Ifthisoccurstoooften,theknowledge
+                  alyzing the gradient with respect to the parameters of the                     retriever ends up learning to look for exact string matches
+                  knowledgeretriever, θ:                                                         between x and z, which does not capture other forms of
+                                                                                                 relevance. For this reason, we excludethis trivial candidate
+                            ∇logp(y|x) = Xr(z)∇f(x,z)                                            during pre-training.
+                                                 z∈Z
+                                       r(z) = p(y|z,x) −1p(z|x).                               Initialization       Atthebeginningoftraining,iftheretriever
+                                                     p(y|x)                                      does not have good embeddings for Embedinput(x) and
+                                                                                                 Embeddoc(z), the retrieved documentsz will likely be unre-
+                                                                                                 lated to x. This causes the knowledge augmented encoder
+                  For each document z, the gradient encourages the retriever                     to learn to ignore the retrieved documents. Once this oc-
+                  to change the score f(x,z) by r(z) — increasing if r(z)                        curs, the knowledge retriever does not receive a meaning-
+                  is positive, and decreasing if negative. The multiplier r(z)                   ful gradient and cannot improve, creating a vicious cycle.
+                  is positive if and only if p(y |z,x) > p(y |x). The term                       Toavoidthiscold-startproblem,wewarm-startEmbed
+                  p(y|z,x)istheprobabilityofpredictingthecorrectoutput                                                                                               input
+                                                                                                 and Embeddoc using a simple training objective known as
+                  ywhenusingdocumentz. Thetermp(y|x)istheexpected                                the Inverse Cloze Task (ICT) where, given a sentence, the
+                  value of p(y|x,z) when randomly sampling a document                            model is trained to retrieve the document where that sen-
+                  from p(z|x). Hence, document z receives a positive up-                         tence came from. We defer to Lee et al. (2019) for de-
+                  date wheneverit performs better than expected.                                 tails.   For the knowledge-augmented encoder, we warm-
+                      3This works because pre-training already yields a good                     start it with BERT pre-training—speciﬁcally, the uncased
+                  Embed      function. However, it is possible that refreshing the in-           BERT-base model (12 layers, 768 hidden units, 12 atten-
+                         doc
+                  dex would further improve performance.                                         tion heads).

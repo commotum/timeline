@@ -1,0 +1,75 @@
+                                                  Agent57: Outperforming the Atari Human Benchmark
+               2. A meta-controller: an adaptive mechanism to select            has its own associated discount factor γ (for background
+                                                                                                                          j
+                  whichofthepolicies (parameterized by exploration rate         and notations on Markov Decision Processes (MDP) see
+                  and discount factors) to prioritize throughout the train-     App. A). Since the intrinsic reward is typically much more
+                                                                                                                            N−1
+                  ing process. This allows the agent to control the ex-         dense than the extrinsic reward, {(β ,γ )}       are chosen
+                                                                                                                     j   j  j=0
+                  ploration/exploitation trade-off by dedicating more re-       soastoallowforlongtermhorizons(highvaluesofγ )for
+                                                                                                                                       j
+                  sources to one or the other.                                  exploitative policies (small values of βj) and small term
+                                                                                horizons (low values of γ ) for exploratory policies (high
+               3. Finally, we demonstrate for the ﬁrst time performance                                    j
+                  that is above the human baseline across all Atari 57          values of βj).
+                  games. As part of these experiments, we also ﬁnd that         To learn the state-action value function Q∗ , NGU trains
+                                                                                                                            rj
+                  simply re-tuning the backprop through time window to          a recurrent neural network Q(x,a,j;θ), where j is a one-
+                  be twice the previously published window for R2D2             hot vector indexing one of N implied MDPs (in particular
+                  led to superior long-term credit assignment (e.g., in So-     (β ,γ )), x is the current observation, a is an action, and θ
+                                                                                  j   j
+                  laris) while still maintaining or improving overall per-      are the parameters of the network (including the recurrent
+                  formance on the remaining games.                              state). In practice, NGU can be unstable and fail to learn
+                                                                                                                   ∗
+                                                                                anappropriateapproximationofQ         for all the state-action
+                                                                                                                   rj
+               These improvements to NGU collectively transform it into         value functions in the family, even in simple environments.
+               the most general Atari 57 agent, enabling it to outperform       This is especially the case when the scale and sparseness
+               the human baseline uniformly over all Atari 57 games.            of re and ri are both different, or when one reward is more
+                                                                                    t      t
+               Thus, we call this agent: Agent57.                               noisythantheother. Weconjecturethatlearningacommon
+                                                                                state-action value function for a mix of rewards is difﬁcult
+               2. Background: Never Give Up (NGU)                               whentherewardsareverydifferentinnature. Therefore, in
+                                                                                Sec. 3.1, we propose an architectural modiﬁcation to tackle
+               OurworkbuildsontopoftheNGUagent,whichcombines                    this issue.
+               two ideas: ﬁrst, the curiosity-driven exploration, and sec-      Our agent is a deep distributed RL agent, in the lineage
+               ond, distributed deep RL agents, in particular R2D2.             of R2D2 and NGU. As such, it decouples the data col-
+               NGUcomputes an intrinsic reward in order to encourage            lection and the learning processes by having many actors
+               exploration.   This reward is deﬁned by combining per-           feed data to a central prioritized replay buffer. A learner
+               episode and life-long novelty.    The per-episode novelty,       can then sample training data from this buffer, as shown
+               repisodic, rapidly vanishes over the course of an episode, and   in Fig. 2 (for implementation details and hyperparameters
+                t                                                               refer to App. E). More precisely, the replay buffer con-
+               it is computed by comparing observations to the contents
+               of an episodic memory. The life-long novelty, αt, slowly
+               vanishes throughout training, and it is computed by using a
+               parametric model (in NGU and in this work Random Net-
+               work Distillation (Burda et al., 2018) is used to this end).
+               With this, the intrinsic reward ri is deﬁned as follows:
+                                               t
+                         ri = repisodic · min{max{α ,1},L},
+                           t    t                     t
+               where L = 5 is a chosen maximum reward scaling. This
+               leverages the long-term novelty provided by αt, while
+               repisodic continues to encourage the agent to explore within
+                t
+               an episode. For a detailed description of the computation
+               of repisodic and α , see (Puigdomènech Badia et al., 2020)
+                   t            t
+               or App. I. At time t, NGU adds N different scales of the
+               same intrinsic reward βjri (βj ∈ R+, j ∈ 0,...N − 1)
+                                          t
+               to the extrinsic reward provided by the environment, re, to      Figure 2. A schematic depiction of a distributed deep RL agent.
+                                                                       t
+               form N potential total rewards r      = re + β ri. Conse-
+                                                 j,t     t     j t
+               quently, NGU aims to learn the N different associated op-        tains sequences of transitions that are removed regularly
+                                                    ∗
+               timal state-action value functions Q   associated with each      in a FIFO-manner. These sequences come from actor pro-
+                                                    rj
+               reward function rj,t. The exploration rates βj are param-        cesses that interact with independent copies of the envi-
+               eters that control the degree of exploration. Higher val-        ronment, and they are prioritized based on temporal dif-
+               ues will encourage exploratory policies and smaller values       ferences errors (Kapturowski et al., 2018). The priorities
+               will encourage exploitative policies. Additionally, for pur-     are initialized by the actors and updated by the learner with
+                                                                         ∗
+               poses of learning long-term credit assignment, each Q            the updated state-action value function Q(x,a,j;θ). Ac-
+                                                                         rj

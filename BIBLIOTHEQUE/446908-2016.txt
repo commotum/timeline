@@ -1,0 +1,451 @@
+                     BlinkFill: Semi-supervised Programming By Example for
+                                                      Syntactic String Transformations
+                                                                                       Rishabh Singh
+                                                                         Microsoft Research, Redmond, USA
+                                                                                  risin@microsoft.com
+                  ABSTRACT                                                                             Excel 2013, is a Programming By Example (PBE) system
+                  The recent Programming By Example (PBE) techniques                                   for helping end-users perform such string transformations
+                  such as FlashFill have shown great promise for enabling                              using examples. The key idea in FlashFill is to learn pro-
+                  end-users to perform data transformation tasks using input-                          grams in a Domain-speciﬁc language (DSL) that is expres-
+                  output examples. Since examples are inherently an under-                             sive enough to encode the majority of real-world tasks, but
+                  speciﬁcation, there are typically a large number of hypothe-                         also restricted enough for eﬃcient learning. Since examples
+                  ses conforming to the examples, and the PBE techniques                               are often an under-speciﬁcation of the intended task, there
+                  suﬀer from scalability issues for ﬁnding the intended pro-                           are typically a large number of programs in the DSL that
+                  gram amongst the large space.                                                        conform to the examples. FlashFill uses version-space al-
+                     Wepresentasemi-supervisedlearningtechniquetosigniﬁ-                               gebra (VSA) [12, 13] to succinctly represent this large set
+                  cantly reduce this ambiguity by using the logical information                        of consistent programs and then uses ranking to identify
+                  present in the input data to guide the synthesis algorithm.                          the most likely program [27]. Since FlashFill only uses
+                  We develop a data structure InputDataGraph to succinctly                             the input-output examples and ignores the other spread-
+                  represent a large set of logical patterns that are shared across                     sheet data items, it needs to learn and maintain a large
+                  the input data, and use this graph to eﬃciently learn sub-                           set of programs that are consistent with the examples but
+                  string expressions in a new PBE system BlinkFill. We                                 may not perform the desired transformation on other data
+                  evaluate BlinkFill on 207 real-world benchmarks and show                             items. This, in turn, results in scalability issues of the syn-
+                  that BlinkFill is signiﬁcantly faster (on average 41x) and                           thesis algorithm on longer strings and also enforces larger
+                  requires fewer input-output examples (1.27 vs 1.53) to learn                         restrictions on the transformations supported in the DSL
+                  the desired transformations in comparison to FlashFill.                              (e.g.   FlashFill only supports a ﬁnite set of pre-deﬁned
+                                                                                                       regular expression tokens).
+                  1.     INTRODUCTION                                                                     In this paper, we present BlinkFill, a PBE system that
+                                                                                                       eﬃciently learns string transformations in spreadsheets from
+                     The IT revolution has resulted in massive digitization                            input-output examples by leveraging the logical information
+                  of data and in making this data accessible to millions of                            present in the spreadsheet data. We show that this semi-
+                  users. Despite signiﬁcant advances in technologies for help-                         supervised technique can signiﬁcantly reduce the inherent
+                  ing users perform data analysis, the process of transforming                         ambiguity in PBE, which in turn results in an eﬃcient learn-
+                  and cleaning data before any useful analysis is still challeng-                      ing algorithm. Moreover, learning from other spreadsheet
+                  ing and time consuming. Some studies have reported that                              data also enables a new class of transformations that use
+                  this step of data cleaning and reshaping (also called wran-                          regular expressions based on arbitrary constant strings.
+                  gling) can take up to 80% of the data analysts’ time [4].                               There are two key challenges in learning from spreadsheet
+                  These data analysts have myriad diverse backgrounds and                              data: 1) how to eﬃciently compute the set of all logical
+                  lack programming knowledge to automate data wrangling                                structures (and sub-structures) that are consistent with a
+                  steps [6]. Simpler speciﬁcation mechanisms such as exam-                             set of column values, and 2) how to use the logical structures
+                  ples [1, 7] and predictive interaction [10] are recently becom-                      in learning string transformation programs. BlinkFill con-
+                  ing more popular to cater to the needs of these users.                               structs a data structure InputDataGraph that succinctly en-
+                     An important subset of the data wrangling problem con-                            codes the set of all logical structures that are shared across a
+                  sists of regular expression based string transformation tasks.                       set of column values. It then uses the sub-paths in the graph
+                  FlashFill [7, 8], a recently introduced feature in Microsoft                         data structure to learn and disambiguate between a large
+                                                                                                       number of DSL expressions that are consistent with a given
+                                                                                                       set of input-output examples. The DSL for string transfor-
+                                                                                                       mation tasks in BlinkFill is similar to that of FlashFill
+                                                                                                       at the top-level, but consists of new substring extraction ex-
+                  This work is licensed under the Creative Commons Attribution-                        pressions based on the InputDataGraph nodes. We present
+                  NonCommercial-NoDerivatives 4.0 International License. To view a copy                a sound and complete synthesis algorithm to learn the set
+                  of this license, visit http://creativecommons.org/licenses/by-nc-nd/4.0/. For        of all expressions in the DSL that conform to a set of input-
+                  anyusebeyondthosecoveredbythislicense,obtainpermissionbyemailing                     output examples, and a ranking algorithm to select the most
+                  info@vldb.org.                                                                       likely program amongst them. Unlike FlashFill, the DSL
+                  Proceedings of the VLDB Endowment, Vol. 9, No. 10
+                  Copyright 2016 VLDB Endowment 2150-8097/16/06.
+                                                                                                 816
+               for BlinkFill does not support conditionals and loops, but                       Token                     Regex              Abbr.
+               supports a richer class of substring extraction tasks since                   ProperCase          rp ≡\p{Lu}(\p{Ll})+            p
+               it can learn arbitrary regular expression tokens based on                         CAPS                 rC ≡\p{Lu}+              C
+               the spreadsheet data. The substring extraction and merg-                       lowercase               rl ≡\p{Ll}+               l
+               ing tasks supported by BlinkFill account for the majority                       Digits                      \d+                  d
+               (more than 88%) of the real-word FlashFill tasks obtained                      Alphabets          rα ≡[\p{Lu}\p{Ll}]+           α
+               from the Excel product team.                                                 Alphanumeric          [\p{Lu}\p{Ll}0-9]+           αn
+                  The idea of using the data items other than input-output                   Whitespace              rws ≡\p{Zs}+              ws
+               examples to learn consistent programs is inspired from the                      StartT                        ∧                  ∧
+               work on Potter’s wheel [22].       Potter’s wheel is a precur-                    EndT                        ✩                  ✩
+               sor to Trifacta’s pioneering Data Wrangler system [11] for               ProperCaseWSpaces               rp(rwsrp)*             ps
+               interactive data wrangling. For column split transforma-                     CAPSWSpaces                rC(rwsrC)*              Cs
+               tions, Potter’s wheel learns the most suitable logical struc-             lowercaseWSpaces               rl(rwsrl)*             ls
+               ture consistent with the set of column strings based on the               AlphabetsWSpaces              rα(rwsrα)*              αs
+               Minimum Description Length metric [23]. Our technique
+               of semi-supervised learning in BlinkFill is diﬀerent from               Table 1: The set of base regular expression based
+               Potter’s wheel in three key ways. First, BlinkFill learns               tokens supported by BlinkFill.
+               the complete set of logical structures (and sub-structures)
+               that are consistent with a given set of column values in-
+               stead of learning only one structure as there might be mul-             starts at index i and ends at index j, where j ≥ i and length
+               tiple consistent sub-structures. Second, the learnt structures          of the substring is j − i + 1.
+               are represented succinctly using a VSA so that they can be                Tokens: BlinkFillsupportstwokindsoftokenpatterns
+               integrated in VSA-based program synthesis techniques such               at the base level of the DSL: (i) regular expression tokens
+               as FlashFill. Finally, the class of string transformations              and (ii) constant string tokens. The regular expression to-
+               supported by BlinkFill (concatenation of substrings and                 kens match a string with a predeﬁned regular expression
+               constant strings) is richer than the string transformations             pattern. There are 13 such tokens supported by BlinkFill,
+               supported by Potter’s wheel.                                            which are shown in Table 1. The constant string tokens
+                  Weevaluate BlinkFill on 207 benchmarks [27] obtained                 match a string with the corresponding constant string pat-
+               from the Excel team and online help forums. In comparison               tern and are learnt automatically by BlinkFill during the
+               to FlashFill, BlinkFill takes signiﬁcantly less time to                 synthesis process.
+               learn the desired transformations and requires fewer input-
+               outputexamples(inspiteofFlashFillusingahighly-tuned                        Definition 1      (Token Match). Let n be the number
+               machine learning based ranking technique). BlinkFill is                 of matches of the pattern deﬁned by a token τ in a given
+               on average 41× (median 11×) faster than FlashFill. It                   string s. We deﬁne a token match (τ,k) as the kth ((n+k)th
+               requires on average 1.27 examples per benchmark as opposed              if k < 0) match of token τ in s. We denote the set of
+               to 1.53 examples needed by FlashFill. This paper makes                  all token matches as τ  s, such that size(τ  s) = n,
+               the following key contributions:                                        (τ,k) ≡ (τ  s)[k] if k > 0, and (τ,k) ≡ (τ  s)[n + k + 1]
+                   • We present a new data structure InputDataGraph to                 if k < 0. We denote the start and end indices of a token
+                     succinctly represent the set of all logical structures in a       match as (τ  s)[k] ֒→ and (τ  s)[k] ←֓ respectively.
+                     DSLthatareconsistentwithagivensetofstrings, and
+                     present an eﬃcient algorithm to learn the structure.                For example, given a string s = "Mumbai, India", the
+                                                                                       token match (C,1) denotes the 1st match of the CAPS token
+                   • Wepresent a new PBE system BlinkFill, whose DSL                   (matching the substring "M"), where size(C  s) = 2, (C 
+                     consists of concatenated expressions of constant string           s)[1] ֒→= 1, (C  s)[1] ←֓= 1. The token match (C,-1)
+                     expressions and substring expressions (based on the               (matching the substring "I") is deﬁned by (C  s)[2] ֒→= 8,
+                     InputDataGraph). We present a sound and complete                  (C  s)[2] ←֓= 8. Similarly, the token match (p,2) matches
+                     synthesis algorithm to learn expressions in the DSL.              thesubstring "India", (l,1)matches"umbai", theconstant
+                   • Weevaluate BlinkFill on 207 real-world benchmarks                 token match ("M",1) matches "M", and the constant token
+                     obtained from the Excel product team and online help              match (", ", 1) matches the substring ", ".
+                     forums. BlinkFill is signiﬁcantly faster (41×) and                  Version space algebra: Version-space Algebra (VSA)
+                     requires fewer input-output examples (1.27 vs 1.53) in            was ﬁrst introduced by Mitchell [19] in the context of ma-
+                     comparison to FlashFill.                                          chine learning and was later used in Programming by Ex-
+                                                                                       amples/Demonstration systems such as SmartEdit [12] and
+               2.    PRELIMINARIES                                                     FlashFill [7]. The key idea in VSA is to succinctly repre-
+                                                                                       sent an exponential number of programs in polynomial space
+                  Withoutlossofgenerality, weassumethatthestringtrans-                 and can be intuitively viewed as a directed graph with three
+               formation task involves transforming a set of n input row               types of nodes: 1) leaf nodes with direct set of programs, 2)
+               strings {(v1,··· ,v1),··· ,(vn,··· ,vn)}, and the user has              intermediate union nodes representing a set-union of its chil-
+                           1        k         1        k
+               providedasetofminput-outputexamples{((v1,··· ,v1),o1),                  dren VSAs, and 3) intermediate join nodes with k children
+                                                                  1       k    s
+               · · · , ((vm, · · · , vm), om)}. A string s is considered as simply     VSAs annotated with a k-ary function F such that it rep-
+                       1        k     s
+               a sequence of characters, where s[1] denotes the ﬁrst charac-           resents all resulting application of F to the cross-product of
+               ter of the string and len(s) denotes the length of the string.          children values. More details about the VSA formalization
+               Weuse the notation s[i..j] to denote the substring of s that            and applications can be found in [21, 27].
+                                                                                  817
+              3.    MOTIVATINGEXAMPLES                                                                  Input v1              Output
+                 In this section, we present a few motivating scenarios that               1    Brandon Henry Saunders          B.S.
+              demonstrate the usefulness of semi-supervised learning for                   2          William Lee
+              string transformation tasks. BlinkFill eﬃciently learns the                  3         Dafna Q. Chen
+              set of all logical structures consistent with the input strings              4      Danelle D. Saunders
+              and uses it to learn the desired transformation from only 1                  5  Emilio William Concepcion
+              or 2 input-output examples for each of these scenarios.
+                 Example 1. An Excel user had a list of city and country                Figure 2: Abbreviating names to initials.
+              namesinacolumn,andneededtoextractthecountryname.
+              The user provided an input-output example (emphasized in            left index such as start of 1stCAPS, start of 1stProperCase,
+              bold) to express the intent as shown in Figure 1.                   end of StartT, etc. Machine learning based techniques can
+                                                                                  reasonably identify that 1stCAPS is a more commonly-used
+                                    Input v1                    Output            expression globally and can rank them higher than other
+                 1                Mumbai, India                  India            choices. But for the left index of the second substring "S",
+                 2   Los Angeles, United States of America                        identifying the correct logic is quite challenging as there
+                                                                                  are many equally likely hypotheses such as end of −1st
+                 3            Newark, United States                               Whitespace, end of 2nd Whitespace, start 3rd CAPS, end of
+                 4    New York, United States of America                          −1stProperCase◦Whitespace, etc. BlinkFill uses the log-
+                 5          Wellington, New Zealand                               ical patterns shared by the input column strings to learn the
+                 6              New Delhi, India                                  following index expressions:
+                                                                                     • For substring "B", left: start of 1stProperCaseWSpaces
+                Figure 1: Extracting country from input column.                         (end of StartT as context), right: end of 1stCAPS (end
+                                                                                                                st
+                                                                                        of StartT and start of 1 lowercase as contexts)
+                 Given the ﬁrst input-output example "Mumbai, India"                 • For substring "S", left: end of −1stWhitespace ( start
+              →"India", there are a large number of possible logical ex-                of −1stProperCase ◦ EndT as context), right: start of
+              pressions to extract the substring "India". The substring                 −1stlowercase (start of EndT as context)
+              expression in the DSL that extracts such substrings from the
+              input strings is deﬁned using two position expressions: one           Example 3. A user posted the following spreadsheet on
+              position expression for the left index of the substring and         an Excel help-forum consisting of a list of medical billing
+              the other for the right index. For example, some possible           codes, where some codes had a missing "]" at the end. The
+              logics to identify the left index of the substring "India"          user wanted to clean the data by adding the missing "]"
+              in the input string "Mumbai, India" are: i) start of 2nd            only for the strings where it was missing, and didn’t want
+              Alphabets token, ii) start of 2nd Alphanumeric, iii) end of         to duplicate "]" for the strings where it was already present.
+              1st Whitespace, iv) end of 1st comma followed by whites-
+              pace, etc. There are more than 103 diﬀerent logics in our
+              DSL that can identify this position. Similarly, there are                              Input v1         Output
+              more than 103 diﬀerent logics for identifying the right index                    1   [CPT-00350      [CPT-00350]
+              of the substring. Given just the input-output example, it is                     2   [CPT-00340
+              challenging to select the desired expression from more than                      3   [CPT-11536]
+              106 diﬀerent choices of conforming logics.                                       4    [CPT-115]
+                 BlinkFill uses semi-supervised learning to identify that
+              the most desirable logic for left index of substring "India"         Figure 3: Adding "]" to codes with a missing "]".
+              is the end of 1st ConstantStr(", ") (comma followed by a
+              whitespace), whereas the most desirable logic for the right           This is an interesting example as it requires FlashFill
+              index is the end of −1st lowercase (where negative values
+              denote match occurrences from the end). BlinkFill prefers           to learn a conditional program to insert "]" to only strings
+              token sequences that have larger contexts around them in            that do not already have "]" at the end. After the ﬁrst
+              input data as they are more likely to correspond to the de-         example, FlashFill learns the simplest program to insert
+              sired logic. For this example, it ﬁnds that the left index logic    "]" at the end of every input. The user needs to provide an
+              is preceded by the context StartT◦1stProperCaseWSpaces,             additional example corresponding to the distinct behavior
+              and the right index logic is followed by the context EndT.          to help FlashFill learn the conditional program. On the
+                                                                                  other hand, BlinkFill learns the desired transformation
+                 Example 2. An Excel user wanted to abbreviate a list of          from the ﬁrst example itself. Instead of selecting the sub-
+              names to the corresponding initials of First and Last names         string between the StartT and EndT (i.e. the complete in-
+              as showninFigure2. Thepresenceofoptionalmiddlenames                 put), it learns that the most common logical pattern shared
+              in diﬀerent formats made it challenging for the user.               by the input strings is: StartT◦1stConstantStr("[CPT-")◦
+                                                                                  1stDigits. It then learns the program that concatenates
+                 This example requires extraction of multiple substrings.         the substring between end of StartT and end of 1stDigits
+              Givenaninput-outputexample"Brandon Henry Saunders"                  with the constant string "]". For inputs without "]" at
+              →"B.S.", BlinkFill needs to learn substring expressions             the end, the substring expression extracts the complete sub-
+              to extract the substrings "B" and "S". For the substring            string. For inputs ending with "]", the substring expression
+              "B", there are again many diﬀerent possible logics for the          extracts only the substring before the last "]".
+                                                                             818
+                                                                     JConcat(f ,··· ,f )K      = Concat(Jf K ,··· ,Jf K )
+                     String expr e    := Concat(f ,··· ,f )                     1       n σ                    1 σ        n σ
+                                                     1       n          JConstantStr(s)K       = s
+                 Substring expr f     := ConstantStr(s)                                     σ
+                                                                       JSubStr(v ,p ,p )K      = s[Jp K ..Jp K ],where s = σ(v )
+                                       |   SubStr(v ,p ,p )                       i  l  r   σ           l s   r s                  i
+                                                     i  l  r            JConstantPos(k)K       = k>0?k:len(s)+k
+                                                                                            s
+                        Position p    :=    (τ,k,Dir)                       J(τ,k,Start)K      = k>0?(τ s)[k]֒→:(τ s)[len(s)+k]֒→
+                                                                                           s
+                                       |   ConstantPos(k)                     J(τ,k,End)K      = k>0?(τ s)[k]←֓:(τ s)[len(s)+k]←֓
+                    Direction Dir     :=    Start | End                                    s
+                                       (a)                                                                    (b)
+                    Figure 10:      The (a) syntax and (b) semantics of the string transformation language Ls of BlinkFill.
+                                                                        s  f ˜
+                                    s  f                       JDag(η˜,η ,η ,ξ,W)K    = {Concat(f1,··· ,fn)|fi ∈ JW(ξi)K           s      f
+                                          ˜                                                 ξ1   ξncorresponds to path between η and η }
+                  e˜  := Dag(η˜,η ,η ,ξ,W)
+                                                                               ′                                              ′
+                                                          JSubStr(v ,{p˜ } ,{p˜ } )K  = {SubStr(v ,p ,pr)|p ∈ Jp˜ K,pr ∈ Jp˜ K}
+                   ˜                             ′                  i   j j    k k                   i  l     l     j         k
+                  f   :=    SubStr(v ,{p˜ } ,{p˜ } )
+                                      i   j j    k k               JConstantStr(s)K   = {ConstantStr(s)}
+                       |   ConstantStr(s)                         JConstantPos(k)K    = {ConstantPos(k)}
+                  p˜  := ConstantPos(k)                                          e                           e
+                            e                                                   JVK   = {(τ,k,Start)|v ∈ V,∃vi ∈ V : (v,vi) ∈ E,(τ,k) ∈ L((v,vi))}
+                       |    V                                                                                e
+                                                                                           ∪{(τ,k,End)|v ∈ V,∃vi ∈ V : (vi,v) ∈ E,(τ,k) ∈ L((vi,v))}
+                                  (a)                                                                   (b)
+               Figure 11: The (a) syntax and (b) semantics of the Dag data structure used to succinctly represent a large
+               number of Ls expressions.
+                                                                                            LearnProgram        1       1         n        n
+               outgoing edge (v,vi) ∈ E, the resulting set consists of a to-                               ({(v1,··· ,vk),··· ,(v1,··· ,vk)},
+               ken match expression (τ,k,Start), where (τ,k) ∈ L((v,v )).                             {((v1,··· ,v1),o1),··· ,((vm,··· ,vm),om)})
+                                                                            i                             1       k    s          1        k     s
+               Similarly, it also consists of token matches (τ,k,End) for                1 G:=GenInpDataGraph({(v1,..,v1),··· ,(vn,..,vn)})
+                                                                                                                          1     k          1     k
+                         e                                                               2 Dag d := GenerateDag((v1,··· ,v1s),o1,G)
+               each v ∈ V, (v ,v) ∈ E, (τ,k) ∈ L((v ,v)).                                                                 1       k     s
+                               i                      i
+                  The Dag data structure that succinctly represents the set              3 for i = 2 to m:
+                                                                                         4      Dag d’ := GenerateDag((vi,··· ,vis),oi,G)
+               of all Ls expressions consistent with the input-output ex-                                                      1       k     s
+               ample "Mumbai, India" → "India" is shown in Figure 12,                    5      d := Intersect(d,d’)
+               where the set of nodes η˜ = {0,1,2,3,4,5}, the start node                 6 return TopRankExpr(d)
+                s                       f           ˜
+               η =0,theﬁnalnodeη =5,andξ ={(i,j)|0≤i<j ≤5}.                           Figure 13: The LearnProgram procedure for learning
+               Intuitively, the Dag nodes correspond to the indices of the
+               output string "India" and an edge from node i to node j                an expression that conforms to a set of m examples.
+               represents the set of substring expressions that can generate
+               the substring between indices i and j. The edge mapping
+                                                                                      put rows {(v1,··· ,v1),··· ,(vn,··· ,vn)} is shown in Fig-
+               function W is shown for one of the edges (0,5) (correspond-                           1       k          1       k
+               ing to the sub-string "India"), where W((0,5)) consists of             ure 13. The algorithm ﬁrst constructs the InputDataGraph
+               a set of substring expressions and a constant string expres-           G corresponding to the set of n input rows. It then con-
+               sion. The set of position expressions for the left index p˜            structs the Dag d denoting the set of all consistent Ls ex-
+                                                                               l
+               consists of a constant position expression and 4 nodes from            pressions that conform to the ﬁrst input-output example.
+               the InputDataGraph in Figure 14 :{v2,v7,v15,v25}.            The       Next, it iterates over other input-output examples and in-
+               node labeling function for these nodes contains the tuple              tersects the corresponding dags to compute the resulting dag
+               (id,9), where id is the unique identiﬁer for the input string          d that consists of Ls expressions that are consistent with all
+               "Mumbai, India"and9istheleftindexofsub-string"India"                   mexamples. Finally, the algorithm uses a ranking function
+               in the input string. Similarly, the set of position expressions        to ﬁnd the best expression path in the dag and returns it as
+               for the right index also consists of 4 input graph nodes and           the learnt program. We now describe each of the individual
+               a constant position expression.                                        algorithms GenSubStrExpr, GenerateDag, and TopRankExpr.
+               7.    SYNTHESISALGORITHM                                               7.1     Learning Substring Expressions
+                                                                                         The GenSubStrExpr algorithm, shown in Figure 15, takes
+                  The LearnProgram algorithm for learning an Ls expres-               as input an input string s, two integer positions l and r
+               sion that conforms to a given set of m input-output exam-              corresponding to the left and right indices of the desired
+               ples {((v1,··· ,v1),o1),··· ,((vm,··· ,vm),om)} and n in-              substring, and the InputDataGraph G, and returns the set of
+                         1       k    s          1        k     s
+                                                                                 822
+              Figure 14: The InputDataGraph for the set of input strings in Example 1. Note that some constant string edges
+              and the corresponding nodes are not shown here for brevity.
+                          GenSubStrExpr(s, l, r, G)                               7.2    Learning Dag Data Structure
+                        1 id = string2Id[s]                                         TheGenerateDagalgorithmforlearningtheDagdatastruc-
+                           e        e
+                        2 Vl = ∅, Vr = ∅                                          ture is similar to the Dag learning algorithm of FlashFill.
+                        3 foreach v ∈ V(G):          e    e                       The algorithm takes as input an input row {v1,··· ,vk}, an
+                        4      if (id,l) ∈ I(v):     Vl = Vl ∪{v}                 output string os, and an InputDataGraph G, and returns a
+                                                     e     e
+                        5      if (id,r) ∈ I(v):     Vr = Vr ∪{v}                 Dag that represents all string expressions in the language Ls
+                                e                                                 that can transform the input strings to the output string.
+                        6 p˜ = V ∪{ConstantPos(l)}
+                            l     l
+                                 e                                                The algorithm ﬁrst creates len(os) number of nodes with
+                        7 p˜ = V ∪{ConstantPos(r)}
+                            r     r                                               labels η˜ = {0,··· ,len(o )}, and sets the start node ηs to
+                        8 return SubStr(s,p˜,p˜ )                                                          s
+                                               l  r                                                                               f
+                                                                                  be the node with label 0 and the ﬁnal node η       with label
+              Figure 15: The GenSubStrExpr algorithm for gener-                   len(os). It then iterates over all substrings os[i..j] of the out-
+              ating a set of substring expressions given an input                 put string, and adds an edge (i,j) between the nodes with
+              string s, the left and right indices l and r of the                 labels i and j. For each edge (i,j), the algorithm learns
+              substring, and the InputDataGraphG.                                 the function W that maps the edge to a constant string
+                                                                                  expression ConstantStr(os[i..j]) and a set of substring ex-
+                                                                                  pressions obtained by calling GenSubStrExpr(vk,l,r,G) (for
+                                                                                  each (k,l,r) such that vk[l..(r − 1)] = os[i..j]).
+              substring expressions that can generate the corresponding             The Dag data structure learnt by GenerateDag algorithm
+              substring. It searches the graph G for all nodes v ∈ V(G)           for the input-output example v1 = "Mumbai, India" →
+                                                                   e              os = "India" is shown in Figure 12. The algorithm ﬁrst
+              such that (id,l) ∈ I(v) to create the set of nodes Vl corre-        creates len(o ) = 6 nodes labeled η˜ = {0,··· ,5}, with the
+              sponding to the left index l of the substring. Similarly, the                    s
+                                                   e                              starting node ηs = 0 and ﬁnal node ηf = len(o ) = 5. The
+              algorithm constructs the node set Vr corresponding to the                                                            s
+              right index r. It ﬁnally adds the constant position logics          algorithm then adds an edge (i,j) between nodes i and j,
+              ConstantPos(l) and ConstantPos(r) to the respective set of          and assigns the labeling function W((i,j)) to the set of con-
+              position expressions p˜ and p˜ , and returns the set of sub-        stant string expressions and substring expressions that can
+                                     l       r                                    generate the substring v [i..(j − 1)].
+              string expressions SubStr(s,p˜ ,p˜ ).                                                        1
+                                             l  r                                   Dag Intersection: Given two dags, the intersection al-
+                 An example substring extraction task from Example 1 is
+              to extract the substring "India" from s = "Mumbai, India"           gorithmcomputesadagthatconsistsofexpressionscommon
+              (GenSubStrExpr(s,9,14,G)), where 9 and 14 respectively de-          to both the dags. The main idea in the intersection proce-
+              note the left and right index nodes of the substring "India"        dure is to compute the Cartesian product of the nodes in the
+                                                                                  twodags,suchthatforanodeη1 ∈ Dag ,andaη2 ∈ Dag ,we
+              in the input graph, and G denotes the InputDataGraph                                                       1                2
+              shown in Figure 14. Let id denote the unique identiﬁer for          have a node (η1,η2) in the resulting dag. The set of labels on
+              the input string s. For the left index 9, the GenSubStrExpr         the edges between these nodes is computed by intersecting
+              algorithm adds all nodes in G to p˜ whose labeling function I       the corresponding pair of edges in the two dags. For inter-
+                                                l                                 secting two sets of substring expressions, the corresponding
+              contains the tuple (id,9). From the ﬁgure, we observe that
+              there are 4 such nodes in G: {v2,v7,v15,v25}. It also adds          sets of left and right position expressions are intersected in-
+                                                                                                                                             e
+              the constant position expression ConstantPos(9) to the set.         dependently. For intersecting the position expressions V1
+                                                                                       e
+              Similarly, for the right index 14, the algorithm adds all nodes     and V2, the intersection algorithm selects the set of nodes v
+              whoselabel contains the tuple (id,14) and ConstantPos(14)                                       e       e
+                                                                                  that are common to both V1 and V2. The worst-case com-
+              to the set p˜ . Finally, the algorithm returns the set of sub-      plexity of the LearnProgram algorithm is O((k|s|2)m), where
+                          r
+              string expression W05 as shown in Figure 12.
+                                                                             823
+                   RankInpGNodes(G)                                                eﬃcient modiﬁcation of Dijkstra’s shortest path algorithm
+                    foreach v ∈ V(G):                                              for DAGs (by considering nodes in topological order) to re-
+                        v.out := 0, v.in := 0, v.score := 0                        turn the maximum score path. A constant string expression
+                    foreach v ∈ V(G) in topological order:                         ConstantStr(s) is assigned a low score proportional to the
+                        foreach (v,vi) ∈ E(G):                                     length of the constant string: |s|2 ∗ ǫ, where we set ǫ = 0.1
+                           v.out := Max(v.out, vi.out + φη(v,vi))                  for our experiments. A substring expression corresponding
+                    foreach v ∈ V(G) in reverse topological order:                 to an output substring s is assigned a higher score: |s|2 ∗κ,
+                        foreach (vi,v) ∈ E(G):                                     where we set κ = 1.5 for our experiments.
+                           v.in := Max(v.in, vi.in + φη(vi,v))
+                    foreach v ∈ V(G):                                                Theorem 1       (Soundness).      The LearnProgram algo-
+                        v.score := v.in + v.out                                    rithm is sound, i.e. the program e learnt by the algorithm
+                    return v with the highest v.score                              from a set of input-output examples {(σ = (vi,··· ,vi),oi)}
+                                                                                                                           i     1       k   s   i
+                                                                                   always produces the corresponding output when evaluated on
+                φ (v ,v ) := Σ         |v [id] − v [id]|                           the example inputs: ∀i : JeK   =oi.
+                 η   1  2      id∈I(v )  2        1                                                            σi     s
+                                     1
+              Figure 16:      The ranking algorithm for assigning                    Theorem 2       (Completeness). The LearnProgram al-
+              scores to the nodes of an InputDataGraph G.                          gorithm is complete, i.e. if there exists an Ls string ex-
+                                                                                   pression that is consistent with the given set of input-output
+                                                                                   examples, the algorithm is guaranteed to learn the expression
+              |s| denotes the length of output string, k is the size of G,         given suﬃcient input-output examples.
+              which is bounded by O(|i|4n).                                        8.   EXPERIMENTS
+              7.3    RankingofDagExpressions                                         WenowpresenttheexperimentalevaluationofBlinkFill
+                 Wenowdescribe the ranking strategy used by BlinkFill              on 207 real-world string transformation tasks and compare
+              to select the desirable expression amongst the large num-            it with FlashFill. We then present an evaluation to show
+              ber of expressions represented by a Dag. The key idea is to          that the intersection of InputDataGraphs does not lead to
+              ﬁrst prefer token sequences that have larger contexts around         quadratic blowup in practice. Finally, we present the scala-
+              them as they are more likely to correspond to the desired            bility of learning InputDataGraphs with increasing number
+              transformation logic. The algorithm then computes the best           of input strings. The experiments were performed on a 6-
+              concatenation of substring expressions in a Dag using Dijk-          core Intel Xeon 3.5GHz processor with 32 GB RAM.
+              stra’s algorithm. There are several other alternative rank-            Implementation: We have implemented the inductive
+              ing strategies. One ranking strategy is to use Occam’s razor         synthesis algorithm for the string transformation language
+              principle to prefer shortest and simplest token sequences,           of BlinkFill in C# as an add-in for Microsoft Excel as well
+                                                                                   as a Web app1. The implementation also supports casing
+              which has previously been shown to perform quite poorly              transformations such as lowercase to propercase etc., but
+              on this dataset [27]. Another strategy is to use machine             we omit them from the technical section (➜6) for clarity of
+              learning techniques to learn a ranking function over features        the novel ideas in the semi-supervised learning technique.
+              of the expressions based on observed preferences. We com-              Benchmarks: The 207 benchmarks were obtained from
+              pare our ranking strategy with this machine learning based           the Excel product team and online help forums.          These
+              ranking in FlashFill in ➜8.2. It is important to note that           benchmarks constitute a super-set of the benchmarks used
+              ranking only aims to reduce the number of examples needed            for learning the ranking function in FlashFill [27] and
+              to learn the transformation and does not have any eﬀect              comefromthesuite of 235 FlashFill benchmarks. We cat-
+              on the completeness of the synthesis algorithm. Since our            egorize the 235 benchmarks into 5 categories: 1) Substring:
+              synthesis algorithm is complete, a user can always provide           88 benchmarks that require only the substring expressions,
+              additional examples to learn the intended transformation in          2) Concat: 92 benchmarks that need concatenation of mul-
+              case ranking fails to learn it from fewer examples.                  tiple substring and constant string expressions, 3) MulCol:
+                 Ranking Substring Expressions We now describe the                 27 benchmarks that need concatenation of substrings from
+              RankInpGNodes algorithm that assigns scores to nodes in              multiple columns, 4) Conditionals: 18 benchmarks that
+              an InputDataGraph G to ﬁnd token matches with longest                need conditionals, and 5) Loops: 10 benchmarks that need
+              contexts. The algorithm maintains two scores for each node           loops. Since BlinkFill currently does not support condi-
+              v ∈ V(G): v.in for incoming score and v.out for the outgoing         tional and loop learning, we only consider 207 benchmarks
+              score. The v.in score corresponds to the number of nodes             for the evaluation.   Each benchmark consists of 6 to 10
+              from which there exists a path to v, whereas the v.out score         input-output examples. We automate the user interaction
+              captures the numberofnodesthatarereachablefromv. The                 model by incrementally providing input-output examples to
+              algorithm also uses the node distance function φη to assign          the two systems until the learnt program generates the ex-
+              higher scores to nodes that are farther (in terms of string in-      pected output for all input strings.
+              dices) to prefer longer token matches. Finally, the algorithm          Baseline: We compare the performance of BlinkFill
+              returns the node v with the highest score v.in+v.out. For            with that of FlashFill. For a fair performance comparison,
+              the nodes in expressions p˜ and p˜ from Figure 12, the rank-
+                                         l       r                                 weremoveconditional and loop learning from FlashFill so
+              ing algorithm assigns highest score to node v25 (correspond-         that the two domain-speciﬁc languages are comparable and
+              ing to token match (”,”,1,End)) and v18 (corresponding to            only consists of concatenate expressions over constant string
+              token match ($,1,Start) ) respectively.                              expressions and substring expressions.
+                 RankingDagPathsTherankingalgorithmﬁrstassigns
+              a score to each individual edge of the DAG, and then uses an         1http://cleandata.azurewebsites.net/
+                                                                              824
+              10.    LIMITATIONSANDFUTUREWORK                                   [8] S. Gulwani, W. Harris, and R. Singh. Spreadsheet
+                BlinkFill currently supports only syntactic string trans-           data manipulation using examples. Communications
+              formations. We plan to also support semantic string trans-            of the ACM, 55(8):97–105, 2012.
+              formations by enabling DSL designers to declaratively spec-       [9] Y. He, K. Ganjam, and X. Chu. SEMA-JOIN: joining
+              ify the semantic knowledge [28] and by using the string cor-          semantically-related tables using big table corpora.
+              relation information from Web tables and forms [9, 20]. Al-           PVLDB, 8(12):1358–1369, 2015.
+              thoughBlinkFillisabletolearnthemajorityofFlashFill               [10] J. Heer, J. M. Hellerstein, and S. Kandel. Predictive
+              real-world benchmarks, it currently does not support con-             interaction for data transformation. In CIDR, 2015.
+              ditionals and loops.  A strategy similar to FlashFill of         [11] S. Kandel, A. Paepcke, J. Hellerstein, and J. Heer.
+              clustering input strings into diﬀerent clusters can be used           Wrangler: Interactive visual speciﬁcation of data
+              for learning conditionals. The combination of approximate             transformation scripts. In CHI, pages 3363–3372, 2011.
+              pattern inference techniques used in systems such as Data        [12] T. Lau, S. Wolfman, P. Domingos, and D. Weld.
+              Wrangler [11] and TEGRA [3] with our VSA based tech-                  Programming by demonstration using version space
+              nique can also provide a potential solution to learn condi-           algebra. Machine Learning, 53(1-2), 2003.
+              tional transformations. Other interesting extensions include     [13] T. A. Lau, P. Domingos, and D. S. Weld. Version
+              learning substring expressions based on relative logic (e.g.          space algebra and its application to programming by
+              the right position logic is not independent and depends on            demonstration. In ICML, pages 527–534, 2000.
+              the left position logic) and learning probabilistic transfor-    [14] V. Le and S. Gulwani. Flashextract: a framework for
+              mations to handle noise.                                              data extraction by examples. In PLDI, 2014.
+                                                                               [15] D. Mandelin, L. Xu, R. Bod´ık, and D. Kimelman.
+              11.    CONCLUSION                                                     Jungloid mining: helping to navigate the api jungle.
+                                                                                    In PLDI, pages 48–61, 2005.
+                PBE techniques are starting to reach mainstream com-           [16] N. Meng, M. Kim, and K. S. McKinley. Lase:
+              mercial markets for making programming accessible to a                Locating and applying systematic edits by learning
+              much wider audience. FlashFill is one such system for                 from examples. In ICSE, pages 502–511, 2013.
+              enabling Excel users to perform string transformations us-       [17] R. C. Miller and B. A. Myers. Outlier ﬁnding:
+              ing examples. Since examples are an under-speciﬁcation,               focusing user attention on possible errors. In UIST,
+              FlashFill needs to learn the desired transformation from              pages 81–90, 2001.
+              a large space of ambiguous choices. In this paper, we pre-       [18] R. C. Miller and B. A. Myers. LAPIS: Smart editing
+              sented a semi-supervised learning technique to learn logical          with text structure. In CHI, pages 496–497, 2002.
+              patterns present in the input data to guide the synthesis
+              algorithm, which signiﬁcantly reduces this ambiguity. We         [19] T. M. Mitchell. Generalization as search. Artif. Intell.,
+              have implemented this technique in the BlinkFill system.              18(2), 1982.
+              Our extensive evaluation shows that BlinkFill is signif-         [20] J. Morcos, Z. Abedjan, I. F. Ilyas, M. Ouzzani,
+              icantly faster and learns the desired transformation using            P. Papotti, and M. Stonebraker. Dataxformer: An
+              fewer input-output examples in comparison to FlashFill.               interactive data transformation tool. In SIGMOD,
+                                                                                    pages 883–888, 2015.
+              12.    REFERENCES                                                [21] A. Polozov and S. Gulwani. Flashmeta: A framework
+                                                                                    for inductive program synthesis. In OOPSLA, pages
+                                                                                    107–126, 2015.
+               [1] Z. Abedjan, J. Morcos, M. N. Gubanov, I. F. Ilyas,          [22] V. Raman and J. M. Hellerstein. Potter’s wheel: An
+                   M. Stonebraker, P. Papotti, and M. Ouzzani.                      interactive data cleaning system. In VLDB, pages
+                   Dataxformer: Leveraging the web for semantic                     381–390, 2001.
+                   transformations. In CIDR, 2015.                             [23] J. Rissanen. Paper: Modeling by shortest data
+               [2] D. Barowy, S. Gulwani, T. Hart, and B. Zorn.                     description. Automatica, 14(5):465–471, 1978.
+                   Flashrelate: Extracting relational data from                [24] C. Scaﬃdi, B. A. Myers, and M. Shaw. Topes:
+                   semi-structured spreadsheets using examples. In                  reusable abstractions for validating data. In ICSE,
+                   PLDI, pages 218–228, 2015.                                       pages 1–10, 2008.
+               [3] X. Chu, Y. He, K. Chakrabarti, and K. Ganjam.               [25] C. Scaﬃdi, B. A. Myers, and M. Shaw. Intelligently
+                   TEGRA: table extraction by global record alignment.              creating and recommending reusable reformatting
+                   In SIGMOD, pages 1713–1728, 2015.                                rules. In IUI, pages 297–306, 2009.
+               [4] T. Dasu and T. Johnson. Exploratory Data Mining             [26] R. Singh and S. Gulwani. Learning semantic string
+                   and Data Cleaning. John Wiley & Sons, Inc., New                  transformations from examples. PVLDB,
+                   York, NY, USA, 1 edition, 2003.                                  5(8):740–751, 2012.
+               [5] H. Elmeleegy, J. Madhavan, and A. Y. Halevy.                [27] R. Singh and S. Gulwani. Predicting a correct
+                   Harvesting relational tables from lists on the web.              program in programming by example. In CAV, pages
+                   VLDB J., 20(2):209–226, 2011.                                    398–414, 2015.
+               [6] M. Gualtieri. Deputize end-user developers to deliver       [28] R. Singh and S. Gulwani. Transforming spreadsheet
+                   business agility and reduce costs. Forrester Report for          data types using examples. In POPL, pages 343–356,
+                   Program Management Professionals, 2009.                          2016.
+               [7] S. Gulwani. Automating string processing in
+                   spreadsheets using input-output examples. In POPL,
+                   pages 317–330, 2011.
+                                                                          827

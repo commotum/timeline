@@ -1,0 +1,77 @@
+                                            transformer module                                                         Ì†µ„åµ          classification loss           segmentation module
+                                                                                transformer                        MLP             Ì†µ„åµ class predictions       semantic segmentation
+                                                                                  decoder                  Ì†µ„åµ mask embeddings          Ì†µ„åµ√ó(Ì†µ„åµ + 1)            inference only
+                                                                                   Ì†µ„åµ queries                                                                      drop ‚àÖ       semantic
+                                            pixel-level module                                                ‚Ñ∞       Ì†µ„åµ √óÌ†µ„åµ        binary mask loss                         segmentation
+                                                                                    pixel                  ‚Ñ∞ '()*       ‚Ñ∞                                                       Ì†µ„åµ√óÌ†µ„åµ√óÌ†µ„åµ
+                                              backbone                           decoder                     "#$%&                Ì†µ„åµ mask predictions
+                                                                                                         Ì†µ„åµ √óÌ†µ„åµ√óÌ†µ„åµ
+                                                             image features ‚Ñ±                              ‚Ñ∞                            Ì†µ„åµ√óÌ†µ„åµ√óÌ†µ„åµ
+                                                                                           per-pixel embeddings
+                                          Figure 2: MaskFormer overview. We use a backbone to extract image features F. A pixel decoder
+                                          gradually upsamples image features to extract per-pixel embeddings E                                               . A transformer decoder
+                                                                                                                                                       pixel
+                                          attendstoimagefeaturesandproducesN per-segmentembeddingsQ. Theembeddingsindependently
+                                          generate N class predictions with N corresponding mask embeddings E                                              . Then, the model predicts
+                                                                                                                                                     mask
+                                          Npossiblyoverlapping binary mask predictions via a dot product between pixel embeddings E
+                                                                                                                                                                                             pixel
+                                          and mask embeddings E                       followed by a sigmoid activation. For semantic segmentation task we
+                                                                                mask
+                                          can get the Ô¨Ånal prediction by combining N binary masks with their class predictions using a simple
+                                          matrix multiplication (see Section 3.4). Note, the dimensions for multiplication N are shown in gray.
+                                          Note, that most existing mask classiÔ¨Åcation models use auxiliary losses (e.g., a bounding box
+                                          loss [19, 3] or an instance discrimination loss [38]) in addition to L                                             . In the next section we
+                                                                                                                                                   mask-cls
+                                          present a simple mask classiÔ¨Åcation model that allows end-to-end training with L                                                       alone.
+                                                                                                                                                                       mask-cls
+                                          3.3      MaskFormer
+                                          WenowintroduceMaskFormer,thenewmaskclassiÔ¨Åcationmodel,whichcomputesN probability-
+                                                                                     N
+                                          mask pairs z = {(p ,m )}                        .  The model contains three modules (see Fig. 2): 1) a pixel-level
+                                                                          i     i    i=1
+                                          modulethat extracts per-pixel embeddings used to generate binary mask predictions; 2) a transformer
+                                          module, where a stack of Transformer decoder layers [37] computes N per-segment embeddings;
+                                                                                                                                                       N
+                                          and 3) a segmentation module, which generates predictions {(p ,m )}                                                from these embeddings.
+                                                                                                                                            i      i   i=1
+                                          During inference, discussed in Sec. 3.4, p and m are assembled into the Ô¨Ånal prediction.
+                                                                                                          i           i
+                                          Pixel-level module takes an image of size H √ó W as input. A backbone generates a (typically)
+                                                                                                           C √óH√óW
+                                          low-resolution image feature map F ‚àà R F                                 S     S , where CF is the number of channels and S
+                                          is the stride of the feature map (CF depends on the speciÔ¨Åc backbone and we use S = 32 in this
+                                          work). Then, a pixel decoder gradually upsamples the features to generate per-pixel embeddings
+                                                         C √óH√óW
+                                          E        ‚ààR E                 , where C is the embedding dimension. Note, that any per-pixel classiÔ¨Åcation-
+                                            pixel                                      E
+                                          based segmentation model Ô¨Åts the pixel-level module design including recent Transformer-based
+                                          models [34, 47, 27]. MaskFormer seamlessly converts such a model to mask classiÔ¨Åcation.
+                                          Transformer module uses the standard Transformer decoder [37] to compute from image features
+                                          FandN learnablepositional embeddings (i.e., queries) its output, i.e., N per-segment embeddings
+                                          Q‚ààRCQ√óN ofdimensionCQ that encode global information about each segment MaskFormer
+                                          predicts. Similarly to [3], the decoder yields all predictions in parallel.
+                                          Segmentation module applies a linear classiÔ¨Åer, followed by a softmax activation, on top of the
+                                                                                                                                                         K+1 N
+                                          per-segment embeddings Q to yield class probability predictions {p ‚àà ‚àÜ                                                }       for each segment.
+                                                                                                                                                i                 i=1
+                                          Note, that the classiÔ¨Åer predicts an additional ‚Äúno object‚Äù category (‚àÖ) in case the embedding does
+                                          not correspond to any region. For mask prediction, a Multi-Layer Perceptron (MLP) with 2 hidden
+                                          layers converts the per-segment embeddings Q to N mask embeddings E                                                 ‚ààRCE√óN ofdimension
+                                                                                                                                                       mask
+                                                                                                                                           H√óW
+                                          C . Finally, we obtain each binary mask prediction m ‚àà [0,1]                                               via a dot product between the
+                                             E                                                                               i
+                                          ith mask embedding and per-pixel embeddings E                                     computedbythepixel-level module. The dot
+                                                                                                                     pixel
+                                                                                                                                                                   T
+                                          product is followed by a sigmoid activation, i.e., m [h,w] = sigmoid(E                                             [:, i]   ¬∑ E      [:, h, w]).
+                                                                                                                        i                              mask               pixel
+                                          Note, we empirically Ô¨Ånd it is beneÔ¨Åcial to not enforce mask predictions to be mutually exclusive to
+                                          each other by using a softmax activation. During training, the Lmask-cls loss combines a cross entropy
+                                          classiÔ¨Åcation loss and a binary mask loss L                             for each predicted segment. For simplicity we use the
+                                                                                                           mask
+                                          sameL             as DETR[3], i.e., a linear combination of a focal loss [25] and a dice loss [30] multiplied
+                                                     mask
+                                          byhyper-parameters Œªfocal and Œªdice respectively.
+                                                                                                                     4

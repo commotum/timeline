@@ -1,0 +1,649 @@
+                   LIFT:Learning4DLiDARImageFusionTransformerfor3DObjectDetection
+                                                                   1                      2                              1                             2
+                                                Yihan Zeng                DaZhang               ChunweiWang                     Zhenwei Miao
+                                                                        2                     2                          2                    1*
+                                                          Ting Liu            Xin Zhan              DayangHao                  ChaoMa
+                                1 MoEKeyLabofArtificial Intelligence, AI Institute, Shanghai Jiao Tong University
+                                                                              2 Alibaba DAMOAcademy
+                                 {zengyihan, weiwei0224, chaoma}@sjtu.edu.cn, zhangda.zhang@alibaba-inc.com
+                                                  Abstract                                                    s
+                                                                                                              t                                                                      L
+                                                                                                              n                                                                      i
+                     LiDAR and camera are two common sensors to collect                                       i                                                                      DAR P
+                 data in time for 3D object detection under the autonomous                                                                                                           o
+                                                                                                                                                                                     i
+                                                                                                                                                                                     n
+                                                                                                              DAR Po                                                                 t
+                 driving context.         Though the complementary information                                i
+                 across sensors and time has great potential of benefiting                                 )  L                                      MissingPoints
+                 3D perception, taking full advantage of sequential cross-                                 (a
+                                                                                                                                                                                     GT
+                 sensor data still remains challenging. In this paper, we pro-                                                                                          Occlusion     B
+                                                                                                             age                                                                     o
+                                                                                                                                                                                     x
+                                                                                                                                                                                     e
+                 pose a novel LiDAR Image Fusion Transformer (LIFT) to                                       a Im                                                                    s
+                 model the mutual interaction relationship of cross-sensor                                   r
+                                                                                                             e                                                                       L
+                                                                                                                                                                                     i
+                 dataovertime. LIFTlearnstoaligntheinput4Dsequential                                         am                                                                      DAR F
+                 cross-sensor data to achieve multi-frame multi-modal infor-                                 C
+                                                                                                                                                                                     e
+                                                                                                                                                                                     a
+                                                                                                                                                                                     t
+                 mation aggregation. To alleviate computational load, we                                                                                                             u
+                                                                                                            Fusion Scheme                                                            r
+                 project both point clouds and images into the bird-eye-view                                                                                                         e
+                 mapstocomputesparsegrid-wise self-attention. LIFT also                                                                                                              C
+                                                                                                           )                                                                         a
+                                                                                                           b                                                                         m
+                 benefits from a cross-sensor and cross-time data augmen-                                  (                                                                         era
+                                                                                                                                                                                      F
+                 tation scheme. We evaluate the proposed approach on the                                                                                                             ea
+                                                                                                                                                                                     t
+                                                                                                                                                                                     u
+                 challengingnuScenesandWaymodatasets,whereourLIFT                                               (i) Separate Interaction             (ii) Mutual Interaction         re
+                 performswelloverthestate-of-the-artandstrongbaselines.
+                 1. Introduction                                                                        Figure 1. Illustration of the information interaction between se-
+                                                                                                        quential cross-sensor data. (a) The misaligned complementary in-
+                     3D object detection plays the primary role in scene un-                            formation cross sensors over time. (b) Information fusion scheme:
+                 derstanding for autonomous driving, where cameras and                                  (i) Integrating the cross-sensor data at the corresponding times-
+                 LiDAR are two standard complementary sensors for au-                                   tamp, then combining the sequential information within sensor
+                 tonomous vehicles to perceive environments in time. Cam-                               streams.     (ii) Aggregating information from all timestamps in
+                 eras provide sequential 2D images with rich texture and                                cross-sensor data streams. Mutual interaction can better connect
+                                                                                                        misaligned complementary information across sensors and time.
+                 color cues, while LiDAR specializes in distance sensing via
+                 continuous sparse 3D points. Successfully detecting 3D ob-
+                 jects in the environments hinges on the best exploitation                              synchronized images and point clouds.
+                 of all available data across sensors and time to cooperate                                 Due to the challenges of jointly processing sequen-
+                 complementary information. However, we observe that the                                tial cross-sensor data, existing 3D object detection algo-
+                 cross-sensor information may be misaligned over time, as                               rithms independently perform information fusion over time
+                 illustrated in Figure 1(a). The reasons lie in two aspects.                            or across sensors.          On one hand, a large portion of ap-
+                 First, there may exist asynchronous timelines between Li-                              proaches attempt to exploit the valuable temporal infor-
+                 DARandcameras. Second,thedifferentcoordinatesystems                                    mation from multiple frames or a longer sequential in-
+                 across sensors introduce spatial misalignment even between                             put [18,35,41,42]. In addition to the straight-forward point
+                     * Corresponding author.                                                            concatenation [20,35] to produce denser point cloud, con-
+                                                                                                    17172
+             volution layers [18], recurrent networks [8,42], and object-         ‚Ä¢ To our knowledge, we first propose the Transformer-
+             centric fusion module [24,36,41] have shown favorable re-              based end-to-end 3D detection framework that ex-
+             sults on modeling temporal information. On the other hand,             plores the integrated utilization of sequential multi-
+             many approaches make use of cross-sensor data, which                   modal data. The proposed method is capable to align
+             contains richer textures and broader context than single-              the 4D spatiotemporal cross-sensor information.
+             modal input especially for small objects or instances at far         ‚Ä¢ We propose a simple yet effective data augmentation
+             range.   The typical cross-sensor fusion schemes include               technique to preserve both the cross-sensor and cross-
+             proposal-level feature concatenation [11, 22], feature pro-            time consistency to facilitate training 3D detectors.
+             jection [15,20] and point-wise concatenation [27,31]. How-           ‚Ä¢ We conduct extensive experiments on the challenging
+             ever, existing approaches do not take full advantage of in-            large-scale nuScenes and Waymo datasets. The pro-
+             formation fusion across sensors and time simultaneously,               posed LIFT performs well over the state-of-the-art.
+             whichpotentiallylimitstheperformanceofmulti-modal3D
+             object detection. Though the very recent work [20] makes          2. Related Work
+             anearly trial of learning a 4D network, in fact, it uses a pre-
+             processingschemetoconcatenatepointsastemporalfusion,              PointCloudObjectDetection. LiDAR-based3Ddetectors
+             which treats the information interaction as separate parts.       localize and classify objects from point clouds, which can
+             By contrast, as shown in Figure 1(b), we propose to ex-           be broadly grouped into two categories: point-based and
+             plicitly model the mutual correlations between cross-sensor       grid-based. The point-based methods [26,39,40] take raw
+             data over time, aiming at the full utilization of misaligned      pointsasinputandapplyPointNet[23]toextractpoint-wise
+             complementary information.                                        features and generate proposals for each point. The grid-
+                Recent advances in sequential modeling [1,30,34] and           based methods [12, 35, 37, 38, 43, 48] propose to convert
+             audio-visual fusion [7,29] demonstrates that Transformer,         point clouds into regular grids as input. PointPillars [12]
+             as an emerging powerful architecture, is very competent           typically transfers point clouds into a BEV pseudo image,
+             in modeling the information interaction for sequential data       while Voxelization [25,35,48] maps point clouds into reg-
+             or cross-modal data. That is mainly because that the mu-          ular 3D voxels. Compared to point-based methods, grid-
+             tual relationship can be easily encoded by the intrinsic self-    based methods are computationally efficient, accelerating
+             attention module in Transformer. However, it is not feasi-        the training on large-scale datasets such as nuScenes [2] and
+             ble to directly apply the standard Transformer architecture       Waymo[28]withstate-of-the-art detection performance. In
+             for sensor-time fusion in 3D object detection, owing to two       this work, wefollowPointPillars[12]totransferpointcloud
+             facts: 1) The massive amount of 3D points as a sequence in-       into a BEV feature map.
+             put is computationally prohibitive for Transformer. 2) The        Temporal Fusion.       A straight-forward temporal fusion
+             mutual interaction across sensors and time is beyond the          scheme is to concatenate points from adjacent frames [2,
+             scope of Transformer.                                             20,35], which yields denser point representation but with-
+                To address the above issues, we present a novel LiDAR          out explicit consideration of temporal correlation. Instead,
+             Image Fusion Transformer, short for LIFT, to learn the 4D         some recent approaches [8,24,41,42] make further explo-
+             spatiotemporal information fusion across sensor and time.         ration to model the temporal information interaction at the
+             Specifically, LIFT contains a grid feature encoder and a          featurelevel, includingobject-centricdesign[24,36,41]and
+             sensor-time 4D attention network. In the grid feature en-         scene-centric design [8,18,42]. For the object-centric de-
+             coder, we fetch camera features for corresponding points          sign, temporal feature fusion is conducted on top of object
+             and conduct pillar feature extraction to project both LiDAR       proposals. This helps to aggregate information efficiently
+             points and point-wise camera features into the Bird-Eye-          over a long temporal span but depends on the quality of
+             View (BEV) space. By keeping a relatively small number            proposal generation. For the scene-centric design, feature
+             of grids, we are able to efficiently compute the inter-grid       fusion is performed based on the whole scene. Fast-and-
+             mutualinteractionsandtheintra-gridfine-grainedattention.          Furious [18] uses convolution layers to fuse middle-level
+             The grid-wise sensor-time relations naturally reside in 4D        features. Furthermore, recurrent networks [8,42] show im-
+             and thus can be encoded by an attention network. In more          provements when modeling temporal correlation.         How-
+             detail, we design a 4D positional encoding module to locate       ever, the RNN-based methods are computationally inten-
+             the tokens across sensors and time, and further reduce com-       sive given the high dimensional features. In this work, we
+             putational overhead by sparse window partition and pyra-          propose a novel Transformer-based module to encode the
+             mid context structure with enlarged receptive fields. Ad-         interaction relationships across frames. Compared to early
+             ditionally, we equip our detector with a novel sensor-time        works [46], our method explores the spatiotemporal corre-
+             consistent data augmentation scheme.                              lation in a unified module. In addition, our network is de-
+                Inbrief, our contributions can be summarizedasfollows:         signed with cross-sensor fusion together.
+                                                                            17173
+                                                                                                                   e          Grid Feature Encoder                           Sensor-Time Attention
+                                                                                                                   r
+                                                                                                                   u
+                                                                                                   ‚Ä¶               t                Camera Feature Fetching                         Sparse Window Partition
+                                                                                                                   a
+                                                                                                                   e                                                                                                                      d        x
+                                                                                                                                    Pillar Feature Extraction                        4DPositionalEncoding                                          o
+                                                                                                                   DAR F                                                                                                                  ea       B
+                                                                                                                   i                  Point-wise Attention                              Pyramid Context                                            n 
+                                                                                                                   L
+                                                                                  Ì†µÌ∞ø
+                                          Ì†µÌ∞ø
+                                                                                    Ì†µÌ±°
+                                            Ì†µÌ±°      LiDAR Sequence
+                                                                                     2
+                                            1                                                                                                                                                                                     PN      n H      io
+                                                                                                                   e                                                            n                                                 R       io       ect
+                                                                                                                   r                                                            o                                                         ect
+                                                                                                                   u                                                            i
+                                                                                                                   t                                                            ct  f                    n     )
+                                                                                                                                                                                                               Ì†µÌ≤á
+                                                                                                                   ea             s   Ì†µÌ±á                                            √ó                    o     √ó
+                                                                                                                                  d                                                 )                    ti                               Det
+                                                                                                                                  i                                             era Ì†µÌøê
+                                                                                                   ‚Ä¶                F                                                           t   √ó                    n     Ì†µÌøê                                  D Det
+                                                                                                                                                                                                               √ó
+                                                                                                                                   Gr                                            In T                                                              3
+                                                                                                                                                                                    √ó                    tte   ( T
+                                                                                                                   era                                   Ì†µÌ∞ª                                                    √ó
+                                                                                                                                  V                                             se  Â†µÌ≤ò                   A     )
+                                                                                                                                                                                i
+                                                                                                                                                                                                               Â†µÌ≤ò
+                                                                                                                                                                                    Â†µÌ±æ
+                                                                                                                                  E         Â†µÌ±§                                                           -
+                                                                                                                                           Ì†µÌ∞ª
+                                                                                                                   m                       Ì†µÌ∞ª
+                                                                                                                                            Â†µÌ±§
+                                                                                                                                                                                    √ó                    f     Â†µÌ±æ
+                                                                                                                                                            Ì†µÌ±ì                  w
+                                                                                                                   a              B                          Â†µÌ∞∂                                   ‚Ä¶            √ó
+                                                                                                                                                         W                      -   Â†µÌ≤ò                   el
+                                                                                                                                                                                                               Â†µÌ≤ò
+                                                                                                                                                                                    Ì†µÌ±Ø
+                                                                                                                   C                    Â†µÌ±§                                      d   (
+                                                                                                                                       Â†µÌ±ä
+                                                                                                                                                                                i                        S     Ì†µÌ±Ø
+                                                                                                                                                  Ì†µÌ∞ª                                         ‚Ä¶                 (
+                                                                                                                                                     Ì†µÌ±ì                         Gr
+                                                                                                                                                 W    Ì†µÌ∞ø
+                                          Â†µÌ∞º
+                                           Ì†µÌ±°
+                                                    Camera Sequence               Â†µÌ∞º
+                                            1
+                                                                                   Ì†µÌ±°
+                                                                                    2
+                       Figure2. ArchitectureofLiDARImageFusionTransformer(LIFT).LIFTtakesbothsequentialLiDARpointcloudsandsequentialcamera
+                       images as input, which are processed into BEV grids by Grid Feature Encoder and fused with Sensor-Time 4D Attention.
+                       Cross-Sensor Fusion. Cross-sensor fusion between cam-                                                                 images as input and aims at exploiting their mutual inter-
+                       eras and LiDAR has shown great advantages for 3D object                                                               actions. Figure 2 illustrates the overall architecture of our
+                       detection. Some approaches perform fusion based on 2D                                                                 proposed method, which consists of two main components:
+                       detectionresults [22]orobjectregionproposals[3,11]. An-                                                               (1) Grid Feature Encoder (Section 3.1) to process the input
+                       other line of attempts [14,15,44] fuse cross-modal features                                                           sequential cross-sensor data into grid features. (2) Sensor-
+                       at the BEV space [15,44]. From a different perspective,                                                               Time4DAttention(Section3.2)tolearnthe4Dsensor-time
+                       other methods [9,27,31,47] perform fusion at point level.                                                             interaction relations given the grid-wise BEV representa-
+                       For example, PointPainting [31] and PointAugmenting [32]                                                              tions. Furthermore, we equip our LIFT with sensor-time
+                       respectively fetch segmentation scores and image features                                                             data augmentation (Section 3.3).
+                       for each LiDAR points by project points into camera im-                                                               3.1. Grid Feature Encoder
+                       ages. Despite the demonstrated success, those projection-
+                       based approaches are easily affected by projection errors,                                                                 Compared to a typical point cloud detectors, which
+                       resulting in ambiguous fusion with misaligned information.                                                            learns to classify and localize objects based on single-frame
+                       In this work, we build a Transformer-based architecture to                                                            LiDARpointcloud,LIFTtakesbothsequentialpointclouds
+                       rethink the cross-modal information interaction problem in                                                            and camera images as input. Specifically, the point clouds
+                       the time stream.                                                                                                      can be presented as a sequence of frames L = {L }T ,
+                                                                                                                                                                                                                                            ti   i=1
+                       Transformer. Transformers were first proposed for the                                                                 where L = {l ,...,l                             } consists of N                  LiDAR points
+                                                                                                                                                             t            1            NL                                 L
+                       sequence-to-sequence machine translation task [30]. The                                                               l     ‚àà Rd scattered over the 3D coordinate space.                                                   Be-
+                                                                                                                                              i
+                       core mechanism of Transformers, self-attention, makes                                                                 sides, camera images are presented in time stream I =
+                                                                                                                                                      T                     U√óV√ó3√óNC
+                       it particularly suitable for modeling sequential relation-                                                            {I }           , I     ‚àà R                            , where U and V denotes the
+                                                                                                                                                 t              t
+                                                                                                                                                  i   i=1
+                       ship [5, 10, 13, 19]. The self-attention operation also pro-                                                          original image size, and N                            is the number of images per
+                                                                                                                                                                                               C
+                       vides a natural potential for cross-modal information fu-                                                             scan. For sequential data processing, we use the prior of
+                       sion. Examples include fusing audio and visual signals for                                                            vehicle pose to remove the effects of ego-motion between
+                       audio enhancement [29], speech recognition [7] and video                                                              different point clouds, then we process each frame follow-
+                       retrieval [4]. In the context of autonomous driving, several                                                          ing the feature generation pipeline as shown in Figure 3.
+                       works apply the attention mechanism to fuse global cross-                                                             Camera Feature Fetching.                                  For perspective alignment
+                       modal signals for motion forecasting and planning [21,33].                                                            between modalities, we first align the representations for
+                       In this work, we apply the self-attention in sparse 4D win-                                                           cross-sensor data input.                        Specifically, for the camera in-
+                       dows, considering both the spatiotemporal and cross-sensor                                                            put, we use the off-the-shelf 2D object detector [45] to ex-
+                       interaction at the same time.                                                                                         tract image features. Then we project point clouds onto
+                       3. LiDARImageFusionTransformer                                                                                        the image plane by a prior homogeneous transformation
+                                                                                                                                             G‚ààR4√ó4forfetchingthecorresponding point-wise image
+                             In this work, we present LiDAR Image Fusion Trans-                                                              features. There are two benefits. First, the point-level rep-
+                       former (LIFT), an end-to-end single-stage 3D object detec-                                                            resentation aligns images and points in the same 3D coor-
+                       tion approach, which takes both sequential point clouds and                                                           dinate, enabling fine-grained interaction across sensor fea-
+                                                                                                                                      17174
+                                                                                                                Ì†µ„åµ   points within pillar                                                   across two modalities at the fine-grained level with negli-
+                                                                                                                  !                                                                         gible extra cost.
+                                        N points         x
+                                                   y
+                                          LiDAR Points                                                                      Ì†µ„åµ                                                              3.2. Sensor-Time 4D Attention
+                                                                                                                              Ì†µ„åµ                                         Ì†µ„åµ
+                                                                                               Ì†µ„åµ                                                                         "
+                                          Homogeneous                                            !     Ì†µ„åµ
+                                        Transformation       G                                  P       "                  ‚Ä¶                                         P                             To model the mutual correlations of sequential point
+                                                      u                                                                     Ì†µ„åµ                                                              clouds and camera features, our key motivation is to exploit
+                                               v                                                                               Ì†µ„åµ                                        Ì†µ„åµ                 the self-attention mechanism in Transformer to aggregate
+                                                                                               Ì†µ„åµ                                                                         #                 complementary information. The classic transformer archi-
+                                                                                                 !     Ì†µ„åµ                                                            P
+                                     Camera Feature Map                                         P       #                                          Grid Feature                             tecture [30] takes a sequence as input consisting of discrete
+                                 Camera Feature Fetching                       Pillar Extraction              Point-wise Attention                   Feature Scatter                        tokens, each represented by a feature vector. In this work,
+                                                                                                                                                                                            the input sequence consists of sequential point cloud and
+                               Figure 3. Pipeline of Grid Feature Encoder. We fetch the corre-                                                                                              image features. Formally, we assign the grid-wise features
+                                                                                                                                                                                                                                               L            C T
+                                                                                                                                                                                            from BEV maps {M ,M }                                                            as input tokens. To adapt
+                               spondingcamerafeaturesforLiDARpointsandthencapturepillar                                                                                                                                                        t           t       i=1
+                                                                                                                                                                                                                                                i            i
+                               features for each modality respectively. Besides, point-wise atten-                                                                                          to 3D object detection, we present three critical designs on
+                               tion is conducted between two modalities within stacked pillars.                                                                                             top of the classic transformer to model the information in-
+                               Finally, the pillar features are scattered into 2D BEV grids.                                                                                                teraction across sensors and time, including Sparse Window
+                                                                                                                                                                                            Partition, Pyramid Context, and 4D Positional Encoding.
+                               tures. Second, the fetched image feature involves a specific                                                                                                 SparseWindowPartition. Althoughthenumberoftokens
+                               range of receptive field in the image, which helps to allevi-                                                                                                has been sufficiently reduced via the grid feature encoder,
+                               ate the projection biases between two modalities.                                                                                                            a small grid size usually results in a high-resolution map
+                                                                                                                                                                                            for favorable performance. Directly computing the token-
+                               Pillar Feature Extraction. The number of raw LiDAR                                                                                                           wise relations on the whole grip map is still not manage-
+                               points is huge and directly computing point-wise relations                                                                                                   able. Thus, can we further reduce the network complex-
+                               is a heavy load to bear. In contrast, the number of BEV                                                                                                      ity while maintaining the detection accuracy? Motivated by
+                               grids is small. As such, we encode both point clouds and                                                                                                     the window partition mechanism [16], we constrain the lo-
+                               camera images into the BEV maps separately. Though the                                                                                                       cal self-attention computation within partitioned windows,
+                               projection from 3D points to the 2D space yields informa-                                                                                                    which largely reduces the number of input tokens. Com-
+                               tion loss of the height dimension, such a loss hardly affects                                                                                                pared to 2D vision tasks that take pixels in images as input,
+                               the intrinsic geometry of 3D objects in autonomous-driving                                                                                                   our BEV map in 3D vision is highly sparse, where the pro-
+                               scenes. Finally, the point-wise correlations are translated                                                                                                  portion of blank areas without any points is much larger
+                               to grid-wise correlations in the BEV. Also note that the im-                                                                                                 than that of non-blank areas. To leverage the sparsity, we
+                               age feature extraction is independent of point cloud feature                                                                                                 drop out the windows that only contain blank areas to fur-
+                               extraction, thus the modality differences are well preserved                                                                                                 ther alleviate the computational load. Let the window size
+                                                                                                                                                                                            be Hw √óWw,weobtainS[ H , W ] non-overlapping win-
+                               for further processing.                                                                                                                                                                                                          Hw Ww
+                                      In more detail, we follow PointPillars [12] to quantize                                                                                               dows, where S denote the selected sparse non-blank win-
+                                                                                                                                                                                            dows. Given the input sequence F                                                                 ‚àà RNF√óf, where
+                               point clouds into P vertical pillars on fixed-size 2D grids.                                                                                                                                                                                           in
+                                                                                                                                                                                            N =Hw√óWw√óT√ómisthetotalnumberoftokens,
+                               Then we perform linear transformation and max-pooling                                                                                                             F
+                               on each pillar as grid features, which are further scattered                                                                                                 T denotes the number of frames and m is the number of
+                                                                                                      L                    H√óW√óf                                                            modalities. we use dot-product attention to model the mu-
+                               into BEV representation M                                                      ‚àà R                             L, where H                                    tual correlations among input tokens. We formally have:
+                               and W denote the BEV map size and fL denotes the fea-
+                               ture dimension. Similarly, we obtain the camera features                                                                                                                              Q=F M ,K=F M ,V =F M ,
+                                                                                                                                                                                                                                     in       q                      in       k                      in       v
+                               MC‚ààRH√óW√ófC intheBEVaswell.                                                                                                                                                                                                                        QKT                                                (1)
+                                                                                                                                                                                                                     A(Q,K,V)=softmax( ‚àö )V,
+                               Point-wise Attention. Inside each pillar, we propose to en-                                                                                                                                                                                               d
+                               hance the pillar encoding via learning a fine-grained corre-                                                                                                 where Q,K,V are the query, key and value features ob-
+                               lation among points. Namely, we use two separate learn-                                                                                                      tained by a linear transformation on the input sequence, and
+                               able linear layers both with N                                                     outputs to learn weights                                                  M,M ,M ‚ààRf√ódarethetransformationmatrix. Anon-
+                                                                                                           P                                                                                     q          k          v
+                               w ‚ààRNP andw ‚àà RNP. Theweightsw andw is                                                                                                                       linear transformation is applied to the attention weights to
+                                    L                                        C                                                                 L                    C
+                               learnedfromthecombinationofpointcloudfeatureandim-                                                                                                           produce the output features:
+                               agefeatureandfollowedbythesigmoidactivationfunction.                                                                                                                                                    F =MLP(A)+F .                                                                                (2)
+                               Thentwoweightsareappliedtothepointcloudandtheim-                                                                                                                                                            out                                            in
+                               age features over the N                                          points within the pillar, respec-
+                                                                                          P                                                                                                 Therefore the grid features are aggregated over all tokens
+                               tively.            This allows for dynamic information aggregation                                                                                           with learnable attention weights.
+                                                                                                                                                                                   17175
+                                                                                 Ì†µ„åµ!          Ì†µ„åµ!                                                    R(2Hw‚àí1)√ó(2Ww‚àí1)√ó(2T‚àí1)√ó(2m‚àí1) andthevaluesinB are
+                                                                                                                                                                             ÀÜ
+                                                 Blank grid                                                                                          taken from B. Specifically, the relative position along the
+                                                 Non-blank grid                                                                                      spatial dimension lies in the range of [‚àíHw + 1,Hw ‚àí 1]
+                                                 Valid window of non-blank area                                                                      and [‚àíWw +1,Ww ‚àí1]. The temporal dimension range
+                                                 Invalid window of blank area      Ì†µ„åµ
+                                                                                     !                                                               and cross-sensor dimension range are respectively [‚àíT +
+                                                                                                                                                     1,T ‚àí1]and[‚àím+1,m‚àí1]. Thusthelearnableposition
+                                                             Ì†µ„åµ                                                                                      encoder contributes to locating each token with a position
+                                        Ì†µ„åµ                     !/#                                                                                   embedding, which takes the 4D relative relationship of in-
+                                          !/$                    Ì†µ„åµ                                                                                  formation into account.
+                                          Ì†µ„åµ                       !/#
+                                            !/$                                               Ì†µ„åµ                                                     3.3. Sensor-Time Data Augmentation
+                                                                                                 !
+                                                                                                                                                           GT-Paste [35] currently serves as a popular augmenta-
+                                                                                                                                                     tion techniqueforsingle-framepointclouddetection,which
+                         Figure 4. An illustration of pyramid context structure based on                                                             pastes virtual 3D objects in the forms of point cloud and
+                         sparse windows with NM = 3. We sparsify the attention win-                                                                  its corresponding ground-truth box from other scenes to the
+                         dowonBEVmapsaccordingtowhetherthe partitioned windows                                                                       current training frame. This operation largely improves the
+                         include only blank areas. Besides, we adapt the map scale in a                                                              performancebyalleviatingtheclassimbalanceproblemand
+                         pyramidstructure, where the down-sampled map provides a larger                                                              accelerating convergence. However, the naive GT-paste is
+                         receptive field.                                                                                                            not applicable in our work due to the destruction of data
+                                                                                                                                                     consistency across sensors and time. To address this issue,
+                         Pyramid Context. Another issue with the window-based                                                                        we propose a sensor-time data augmentation scheme that
+                         attention is that the limited local regions may not be suffi-                                                               extends the vanilla augmentation pipeline to preserve both
+                         cient to cover dynamic objects with large motions in adja-                                                                  cross-sensor and cross-time consistency.
+                         cent frames. An intuitive solution is to enlarge the size of                                                                      AsthenaiveGT-pasteschemerandomlypicksupthevir-
+                         localwindows. However,thiswouldlargelyincreasethepa-                                                                        tual LiDARobjectpatternO ‚Ä≤ fromitsoriginalsourcescene
+                         rameter volume of attention QKT, yielding heavy compu-                                                                                                                            t
+                                                                                                                                                     S‚Ä≤ and then paste into current training scene S , it treats
+                                                                                                                                                        t                                                                                           t
+                         tational load. To enlarge the receptive field with light com-                                                               the selected object as independent individuals.                                                   By con-
+                         putation, we consider to resize BEV maps instead, where                                                                     trast, we extend those candidates as a temporal consistent
+                         smaller resolution corresponds to larger receptive regions                                                                  sequence to maintain cross-time consistency for sequential
+                         with fixed window size as demonstrated in Figure 4. In par-                                                                 input.          Concretely, with the training sequence of scenes
+                         ticular, we downsample the original BEV map {M} with                                                                        {S             }                            , we expand the virtual LiDAR pat-
+                                                                                                                                                           t‚àí‚àÜt ‚àÜt=0,1,...,T‚àí1
+                         the factor j, and then apply the aforementioned window-                                                                     tern candidate as a sequence {O ‚Ä≤                                          } by searching from
+                                                                                                                   j‚àà{ 1 }NM                                                                                         t ‚àí‚àÜt
+                         based attention on the packed input {{M} }                                                       2i‚àí1 i=1                   the past scenes {St‚Ä≤‚àí‚àÜt}. Notably, it is necessary to main-
+                                                                                                               j                                     tain the relative motion relationship within sequence, which
+                         with shared parameters, where N                                      is the number of scales.
+                                                                                        M                                                            serves as part of supervisory signal for training. Since the
+                         Consequently, the attention computation is adapted to:
+                                                                                                                                                     ego-motion between adjacent frames are different in source
+                                                                                                  Q KT                                               scenes and training scenes, we first transfer the virtual pat-
+                                                                                                      j     j
+                                           A (Q ,K ,V ) = softmax( ‚àö                                            )V ,
+                                               j       j       j      j                                              j                               terns in history source scene S ‚Ä≤                                     into the original source
+                                                         X                                               d                           (3)                                                                       t ‚àí‚àÜt
+                                                                                                                                                     scene S ‚Ä≤ with homogeneous transformation K ‚Ä≤                                                                  ‚Ä≤ ,
+                                           F =                   Up(MLP(A ))+F ,                                                                                     t                                                                           (t ‚àí‚àÜt)‚Üít
+                                              out                                       j              in                                            and then transform them into corresponding history train-
+                                                            j                                                                                        ing scene S                         with transformation K                                          .     Thus
+                                                                                                                                                                              t‚àí‚àÜt                                                    t‚Üí(t‚àí‚àÜt)
+                         where the upsample operation Up(¬∑) is used to recover the                                                                   the pasted sequential patterns preserve its original motion
+                         original resolution. With linear computing complexity, the                                                                  states. To further maintain the cross-sensor consistency, we
+                         proposed pyramid context is scalable.                                                                                       paste the corresponding image patches {IO ‚Ä≤                                                    } into the
+                                                                                                                                                                                                                                          t ‚àí‚àÜt
+                                                                                                                                                     training image frames {I                                    }. Following [32], we cal-
+                         4D Positional Encoding.                               As vanilla self-attention is un-                                                                                        t‚àí‚àÜt
+                         ordered, it is crucial to encode the locations of tokens in                                                                 culate the occlusion perspective to filter out the occluded
+                         the input sequence. A common practice of positional en-                                                                     point. Leveraging the above designs, we propose a general-
+                         coding is to supplement the feature vector with positional                                                                  use augmentation scheme that is feasible to any sequential
+                         priors. In this work, the candidate tokens in the input se-                                                                 cross-sensor training data input.
+                         quences are across both sensors and time, which requires                                                                    4. Experiments
+                         4-Dimensional positional encoding. Thus we introduce a
+                         4D relative position encoder B ‚àà R(Hw)2√ó(Ww)2√óT2√óm2,                                                                              Weevaluate the proposed method on both the nuScenes
+                                                                                                                                ÀÜ
+                         where the positional matrix is parameterized as B                                                             ‚àà             dataset and Waymodatasets,andconductextensiveablation
+                                                                                                                                               17176
+                               Method                 Information        mAP NDS Car Truck C.V. Bus Trailer Barrier Motor. Bicycle                                                   Ped.     T.C.
+                          PointPillars [12]                  L           30.5       45.3     68.4      23.0       4.1     28.2       23.4        38.9        27.4          1.1       59.7     30.8
+                            3DVID[42]                      L+T           45.4         -      79.7      33.6      18.1     47.1       43.0        48.8        40.7          7.9       76.5     58.8
+                         PointPainting [31]                L+I           46.4       58.1     77.9      35.8      15.8     36.2       37.3        60.2        41.5         24.1       73.3     62.4
+                              TCT[46]                      L+T           50.5         -      83.2      51.5      15.6     63.7       33.0        53.8        54.0         53.8       74.9     52.5
+                                           ‚àó
+                     PointAugmenting [32]                  L+I           61.5       67.2     86.0      50.9      26.4     58.9       55.8        68.9        64.4         40.7       83.9     79.0
+                            LIFT(Ours)                    L+I+T          65.1       70.2     87.7      55.1      29.4     62.4       59.3        69.3        70.8         47.7       86.1     83.2
+                   Table 1. Performance comparisons on the nuScenes test set. We report the overall mAP, NDS and mAP for each detection category, where
+                   Ldenotes Lidar modality, I denotes Image modality and T denotes Temporal input. ‚àó: reproduced results based on PointPillars.
+                             Method              Vehicle      Pedestrian      Cyclist        Overall             of non-empty pillars is limited to 32000. Following Cen-
+                                                L 1    L 2    L 1    L 2    L 1     L 2    L 1    L 2            terPoint [43], we use the adamW [17] optimizer with the
+                           PointPillars        66.0   61.3    67.4   62.3   62.8   62.4    65.4   62.0
+                        PointPainting [31]     66.6   61.9    63.5   61.2   63.5   61.2    64.5   61.4           one-cycle policy [6]. During training, additional to our pro-
+                     PointAugmenting‚àó [32]     68.1   63.3    66.9   62.1   65.4   63.0    66.8   62.8           posed sensor-time data augmentation, we use random flip-
+                           LIFT(Ours)          69.0   64.2    69.9   65.3   69.2   66.5    69.4   65.3
+                                                                                                                 ping, global scaling, global rotation and global translation.
+                   Table 2. Performance comparisons on the Waymo validation set.                                 Models are trained for 20 epochs on 8 V100 GPUs.
+                   We report LEVEL 1 and LEVEL 2 mAP(%) for all categories                                       4.2. Main Results
+                   (L 1 and L 2). All models are built on the PointPillars backbone.                             nuScenes Results.                  We compare our algorithm with
+                                                                                                                 the state-of-the-art approaches as illustrated in Table 1.
+                   studies to validate our design choices.                                                       For fair comparison, all the presented methods are pillar-
+                   4.1. Experimental Setup                                                                       based detectors. In particular, PointPillars [12] is a single-
+                   Datasets. We apply two widely used auto-driving datasets                                      frame point cloud detector that is used as the baseline of
+                   including nuScenes [2] and Waymo [28]. The nuScenes                                           our model. 3DVID [42] uses a ConvGRU module to ex-
+                   dataset is collected by six cameras and a 32-beam LiDAR,                                      ploit the temporal information from sequential point clouds.
+                   consisting of 700, 150 and 150 scenes for training, valida-                                   TCT [46] applies a channel-wise transformer network to
+                   tion and test respectively. Each scene is 20 seconds long                                     integrate the information of multiple point cloud frames.
+                   with 20 Hz frequency. 3D bounding boxes are annotated                                         PointPainting [31] and PointAugmenting [32] are typical
+                   at 2 Hz with 10 categories in 360 degree field of view. We                                    methods that fuse camera features with LiDAR points. Our
+                   follow the official evaluation protocol [2] and use mAP and                                   method outperforms these approaches by large margins,
+                   NDS as the evaluation metrics on nuScenes. The Waymo                                          boosting the original PointPillars by 34.6% and the cur-
+                   dataset uses five cameras and five 64-beam LiDAR and con-                                     rent best PointAugmenting method by 3.6%. Table 1 shows
+                   tains 798 training scenes and 202 validation scenes. Data                                     that, although 3D object detectors generally benefit from
+                   collection and 3D annotation are both at 10 Hz frequency.                                     cross-sensor or cross-time information fusion, our proposed
+                   We follow the official evaluation metrics mAP and report                                      method makes the best of all available data across sen-
+                   two difficulty levels: LEVEL 1 and LEVEL 2.                                                   sors and time by modeling the mutual correlation, and thus
+                                                                                                                 achieves state-of-the-art performance.
+                   Network Architecture and Training Details. For the se-                                        Waymo Results.                  We also make comparisons on the
+                   quential cross-sensor input, we use T = 2 different key                                       Waymodataset in Table 2. We reproduce all models based
+                   frames and m = 2 different modalities.                             For network                on PointPillars as well.               Note that the camera configu-
+                   design, we use Hw = Ww = 4 as the window size                                                 rations in Waymo are different from nuScenes, covering
+                   and each window takes as input N                          = 64 tokens with                    only around 250 degree field. In contrast to applying two
+                                                                        F                                        models on camera FOV and LiDAR FOV separately as in
+                   feature dimension f = 64.                     We apply N               = 3 dif-
+                                                                                     M                           PointAugmenting [32], we apply a unified model on full
+                   ferent scales and set the number of attention heads to 2
+                   in all experiments.            We limit the max number of points                              view as adaption to real application. Results show that pre-
+                   within each pillar to 20. For nuScenes data, we set the                                       vious cross-modal detectors fail to achieve consistent im-
+                   detection range to [‚àí51.2m,51.2m] for X and Y axis,                                           provements on pedestrian and cyclist categories. However,
+                   and [‚àí5m,3m] for the Z axis, which is voxelized with                                          our method generalizes and scales well, which consistently
+                   (0.2m,0.2m,8m) grid size. We utilize 10 sweeps for Li-                                        outperforms previous methods, especially boosts the origi-
+                   DARenhancementandlimitthemaxnumberofnon-empty                                                 nal LiDAR-only detector on the challenging pedestrian and
+                   pillars to 30000. For Waymo data, the detection range is set                                  cyclist categories by large margins.
+                   to [‚àí71.68m,71.68m] for X and Y axis, [‚àí2m,4m] for Z                                          QualitativeResults. WequaliatitvelycomparewithPoint-
+                   axis, with (0.32m,0.32m,6m) grid size. The max number                                         Pillars and PointAugmenting on the nuScenes dataset in
+                                                                                                           17177
+                 Method      Scheme        Information                                         Naive     Cross       I     T     mAP        NDS
+                                          L      I     T     mAP      NDS              (a)                                       24.83      40.36
+                                          ‚úì                 24.83     40.36            (b)       ‚úì                               27.64      43.09
+                                          ‚úì           ‚úì 26.74         42.97            (c)                                 ‚úì 27.75          43.71
+                   (I)        Concat      ‚úì ‚úì               41.59     48.60            (d)                 ‚úì               ‚úì 32.11          47.51
+                                          ‚úì ‚úì ‚úì 44.57 52.19                            (e)                          ‚úì ‚úì 47.04 54.40
+                                          ‚úì           ‚úì 27.75         43.71            (f)                 ‚úì        ‚úì ‚úì 51.78 58.96
+                   (II)      Self-Attn    ‚úì ‚úì               43.22     49.49
+                                          ‚úì ‚úì ‚úì 47.04 54.40                         Table 5. Effectiveness of data augmentation. Naive [35]: origi-
+              Table 3. Analysis of information fusion and fusion schemes. Con-      nal copy-and-paste scheme on point cloud only. cross: our cross-
+              cat: concatenate the grid-wise BEV features between different in-     sensor and cross-time augmentation. T: the sequential input of
+              puts and fuse with convolution layers. Self-Attn: treat grid fea-     point cloud. I+T: the sequential input of both images and points.
+              tures as separate tokens and fuse with self-attention. Inputs: Lidar             PA     PE      PC     Sparse      mAP        NDS
+              points (L), images (I), and sequential information in time (T).
+                                                                                       (g)                                       49.76      57.84
+                    Length         Ours        ‚àÜ        Cat [20]       ‚àÜ               (h)     ‚úì                                 50.25      57.95
+                     T=1           24.83        -        24.83          -              (i)     ‚úì       ‚úì                         50.50      58.44
+                     T=2           27.75     +2.92       26.60       +1.57             (j)     ‚úì       ‚úì      ‚úì                  51.30      58.51
+                     T=3           30.37     +5.54       25.64       +0.81             (k)     ‚úì       ‚úì      ‚úì         ‚úì        51.78      58.96
+                     T=4           30.77     +5.94       25.52       +0.69          Table 6. Ablation results on architecture components. PA: the
+                     T=5           30.97     +6.14       26.07       +1.24          point-wise attention operation in grid feature encoder. PE: our
+                 T=2(+Img)         47.04    +22.21       43.74      +19.91          proposed 4D relative positional encoding . PC: the pyramid con-
+              Table4. Comparisonsoftheinputsequencelengths. Cat: thepoint           text. Sparse: the sparse window partition for 4D attention.
+              concatenation scheme [20] for sequential point clouds. Ours: the
+              proposed fusion method using self-attention.                              (2) Benefits of fusion scheme (I, II): On top of the single-
+                                                                                    frame point cloud detector, our proposed sensor-time 4D
+              Figure 5. By introducing the cross-sensor information in              attention module (last line) achieves an overall +22.21%
+              camera features, the 3D detector can better perceive small            performance gain. Besides, the proposed attention fusion
+              objects and eliminate false detections. Besides, our method           scheme (II) consistently achieves better detection accu-
+              can further enhance the 3D perception by exploiting the               racy than the simple concatenation fusion scheme (I), i.e.
+              complementaryinformation across sensors and time, which               43.22 vs 41.59 for L+I input and 27.75 vs 26.74 for L+T
+              is beneficial to more accurate and stable predictions.                input. The information misalignment is a crucial problem
+                                                                                    for feature fusion, and cannot be well handled by straight-
+              4.3. Ablation Studies                                                 forward concatenation. The superior performance demon-
+                 Weconduct ablation studies on the nuScenes dataset to              strates the capability of our proposed attention mechanism
+              validate each proposedcomponent. Forefficiency, weapply               to effectively model the information interaction across sen-
+              1/8 subset of the training set to train the network and test on       sors and time.
+              the whole validation set.                                                 In Table 4, we further illustrate the ability of our method
+                                                                                    to model temporal correlations. As shown in the last line,
+              Effects of informationfusion. Wecomparedifferentinfor-                replacing our attention mechanism with the point concate-
+              mation fusion settings and fusion schemes in Table 3. We              nation scheme for temporal fusion [20] yields a 3.3% mAP
+              summarize the following observations:                                 drop. Comparing Ours (second column) with Cat (fourth
+                 (1) Benefits of information fusion (I): Based on a single-         column), we consistently observe larger discrepancy when
+              frame point cloud detector (first line), the introduction of          increasing the length of the input sequence, which suggests
+              camera feature (second line) and sequential point cloud               the superiority of our method to aggregate information over
+              (third line) yields considerable improvements of +16.76%              a longer time period. Note that we set T = 2 throughout
+              and +1.91% mAP respectively, illustrating the valuable                experiments to alleviate computational load.
+              complementary information from cross-sensor and tempo-                Effects of sensor-time data augmentation. We validate
+              ral data. Furthermore, combining the LiDAR and image                  theeffectivenessofourproposeddataaugmentationscheme
+              streams together leads to a large gain of +19.74% mAP.                in Table 5. As illustrated in (a) and (b), the original copy-
+              This motivates us to take the full advantage of all available         and-paste operation yields an improvement of +2.81%
+              data across sensors and time.                                         mAP, indicating the importance of data augmentation on
+                                                                                17178
+                        GT          Trailer        Pedestrian         Bicycle       Traffic Cone        Motorcycle         Car       Construction Vehicle
+                  Ì†µÌ≤ï                    Ì†µÌ≤ï
+                                                                Ì†µÌ≤ï                    Ì†µÌ≤ï                    Ì†µÌ≤ï                     Ì†µÌ≤ï
+                   Â†µÌøè                    Ì†µÌøê
+                r                                               Â†µÌøè                    Ì†µÌøê                     Â†µÌøè                    Ì†µÌøê
+                illa
+                P
+                t
+                n
+                i
+                o
+                P
+                *
+                  Ì†µÌ≤ï                    Ì†µÌ≤ï
+                                                               Ì†µÌ≤ï                    Ì†µÌ≤ï                     Ì†µÌ≤ï                    Ì†µÌ≤ï
+                   Â†µÌøè                    Ì†µÌøê
+                ng                                              Â†µÌøè                    Ì†µÌøê                     Â†µÌøè                    Ì†µÌøê
+                i
+                nt
+                e
+                m
+                ug
+                A
+                nt
+                i
+                o
+                P
+                  Ì†µÌ≤ï                    Ì†µÌ≤ï
+                                                               Ì†µÌ≤ï                    Ì†µÌ≤ï                     Ì†µÌ≤ï                    Ì†µÌ≤ï
+                  Â†µÌøè                    Ì†µÌøê
+                s                                               Â†µÌøè                    Ì†µÌøê                     Â†µÌøè                    Ì†µÌøê
+                ur
+                O
+                                     (a)                                           (b)                                          (c)
+              Figure 5. Qualitative results. We compare with LiDAR-only PointPillars [12] and cross-modal PointAugmenting [32]. (a) illustrates the
+              superiority of temporal fusion, where our method can alleviate false positive detection on human-like objects in t2 to preserve temporal
+              consistency with t1. In (b), cross-sensor information helps reduce detection errors, and our method consistently detects the traffic cone in
+              adjacent frames. The night-view images in (c) introduces ambiguous features that result in false negative car detection in PointAugmenting,
+              while our method successfully utilizes the mutual information across sensors and time to recall the car object. Best viewed in color.
+                       Method           mAP      Image     Fusion      Total          resulting in an end-to-end runtime of 315 ms on par with
+                  LIFT(448√ó800)         51.78    151ms     164ms      315ms           the recent state-of-the-art detectors [25, 36]. We also ob-
+                  LIFT(w/oSparse)       51.30    151ms     201ms      352ms           serve a large runtime jump (i.e. 878 ms) using a larger
+                 LIFT(896√ó1600)         51.83    714ms     164ms      878ms           896√ó1600imageresolution,andasignificantperformance
+                  LIFT(224√ó400)         44.20    46ms      167ms      213ms           drop (i.e. 44.2 mAP) with a smaller 224 √ó 400 resolution.
+              Table 7. Run-time comparison on the nuScenes dataset. We report         Thus, we choose the final design based on the tradeoffs be-
+              the runtime for image backbone (Image), encoder and attention           tween speed and accuracy.
+              fusion (Fusion) and end-to-end inference (Total).                       5. Conclusion
+              sequential cross-modal input. By comparing (c) vs (d) and                  Wehavepresented LIFT, a LiDAR Image Fusion Trans-
+              (e) vs (f), our augmentation consistently achieves +4.36%               former that simultaneously aligns the spatiotemporal cross-
+              mAPand+4.74%mAPgainsonsequentialpointcloudand                           sensor 4D information for 3D object detection in real-world
+              sequential cross-sensor data respectively, showing that our             autonomous-driving scenarios.         Particularly, we encode
+              schemeiscapabletopreservethecross-modalandtemporal                      both the LiDAR frames and camera images as sparsely-
+              data consistency.                                                       located BEV grid features and propose a sensor-time 4D
+              Effects of architecture designs. We report the ablation re-             attention module to effectively and efficiently capture the
+              sults of the proposed architecture components in Table 6.               mutual correlations. Furthermore, we devise a general yet
+              Note that all experiments are conducted with the proposed               simple data augmentation technique to enhance the train-
+              sensor-time data augmentation scheme. From (g) to (k),                  ing dynamics while persevering the data consistency. With
+              we observe progressive performance gains with the pro-                  the proposedend-to-endsingle-stage3Dobjectdetector,we
+              posed point-wise attention (PA), 4D positional encoding                 improved strong baselines by large margins and achieved
+              (PE), pyramid context (PC) and sparse window partition                  state-of-the-art performance on the challenging nuScenes
+              (Sparse). Comparing (g) and (k), the proposed network                   and Waymobenchmarkdatasets.
+              components further improve mAP by 2.02%.                                Acknowledgements. This work was supported in part by
+                                                                                      NSFC (61906119, U19B2035), Shanghai Municipal Sci-
+              Run-time efficiency. We report the runtime efficiency in                ence and Technology Major Project (2021SHZDZX0102),
+              Table 7. As the Transformer design inevitably introduces                the National Key Research and Development Program of
+              extra computational load, our sparse window design can ef-              China (2020AAA0108104), Alibaba Innovative Research
+              fectively reduce the Fusion time from 201 ms to 164 ms,                 (AIR) Program and Alibaba Research Intern Program.
+                                                                                  17179
+               References                                                              [18] Wenjie Luo, Bin Yang, and Raquel Urtasun. Fast and furi-
+                [1] Gedas Bertasius, Heng Wang, and Lorenzo Torresani. Is                    ous: Real time end-to-end 3d detection, tracking and motion
+                    space-time attention all you need for video understanding?               forecasting with a single convolutional net. In CVPR, pages
+                    arXiv preprint arXiv:2102.05095, 2021. 2                                 3569‚Äì3577, 2018. 1, 2
+                [2] Holger Caesar, Varun Bankiti, Alex H Lang, Sourabh Vora,           [19] Jean Mercat, Thomas Gilles, Nicole Zoghby, El, Guillaume
+                    Venice Erin Liong, Qiang Xu, Anush Krishnan, Yu Pan,                     Sandou, Dominique Beauvois, and Guillermo Pita Gil.
+                    Giancarlo Baldan, and Oscar Beijbom. nuscenes: A mul-                    Multi-head attention for multi-modal joint vehicle motion
+                    timodal dataset for autonomous driving. In CVPR, pages                   forecasting. In ICRA, pages 9638‚Äì9644, 2020. 3
+                    11621‚Äì11631, 2020. 2, 6                                            [20] AJ Piergiovanni, Vincent Casser, Michael S Ryoo, and
+                [3] Xiaozhi Chen, Huimin Ma, Ji Wan, Bo Li, and Tian Xia.                    Anelia Angelova. 4d-net for learned multi-modal alignment.
+                    Multi-view 3d object detection network for autonomous                    In ICCV, pages 15435‚Äì15445, 2021. 1, 2, 7
+                    driving. In CVPR, pages 1907‚Äì1915, 2017. 3                         [21] AdityaPrakash,KashyapChitta,andAndreasGeiger. Multi-
+                [4] Valentin Gabeur, Chen Sun, Karteek Alahari, and Cordelia                 modal fusion transformer for end-to-end autonomous driv-
+                    Schmid. Multi-modal transformer for video retrieval. In                  ing. In CVPR, pages 7077‚Äì7087, 2021. 3
+                    ECCV,pages214‚Äì229,2020. 3                                          [22] Charles R Qi, Wei Liu, Chenxia Wu, Hao Su, and Leonidas J
+                [5] Francesco Giuliari, Irtiza Hasan, Marco Cristani, and Fabio              Guibas. Frustumpointnetsfor3dobjectdetectionfromrgb-d
+                    Galasso. Transformer networks for trajectory forecasting.                data. In CVPR, pages 918‚Äì927, 2018. 2, 3
+                    arXiv preprint arXiv:2003.08111, 2020. 3                           [23] Charles R Qi, Hao Su, Kaichun Mo, and Leonidas J Guibas.
+                                                                                             Pointnet: Deep learning on point sets for 3D classification
+                [6] Sylvain Gugger. The 1cycle policy, 2018. 6                               and segmentation. In CVPR, pages 652‚Äì660, 2017. 2
+                [7] David Harwath, Antonio Torralba, and James R Glass. Un-            [24] Charles R Qi, Yin Zhou, Mahyar Najibi, Pei Sun, Khoa Vo,
+                    supervised learning of spoken language with visual context.              Boyang Deng, and Dragomir Anguelov. Offboard 3d object
+                    In NeurIPS, 2017. 2, 3                                                   detectionfrompointcloudsequences. InCVPR,pages6134‚Äì
+                [8] Rui Huang, Wanyue Zhang, Abhijit Kundu, Caroline Panto-                  6144, 2021. 2
+                    faru, David A Ross, Thomas Funkhouser, and Alireza Fathi.          [25] Shaoshuai Shi, Chaoxu Guo, Li Jiang, Zhe Wang, Jianping
+                    An lstm approach to temporal 3d object detection in lidar                Shi, Xiaogang Wang, and Hongsheng Li. PV-RCNN: Point-
+                    point clouds. In ECCV, pages 266‚Äì282, 2020. 2                            voxel feature set abstraction for 3d object detection.     In
+                [9] Tengteng Huang, Zhe Liu, Xiwu Chen, and Xiang Bai. Ep-                   CVPR,pages10529‚Äì10538,2020. 2, 8
+                    net: Enhancing point features with image semantics for 3d          [26] Shaoshuai Shi, Xiaogang Wang, and Hongsheng Li. Pointr-
+                    object detection. In ECCV, pages 35‚Äì52, 2020. 3                          cnn: 3D object proposal generation and detection from point
+               [10] Yingfan Huang, HuiKun Bi, Zhaoxin Li, Tianlu Mao, and                    cloud. In CVPR, pages 770‚Äì779, 2019. 2
+                    Zhaoqi Wang. Stgat: Modeling spatial-temporal interactions         [27] Vishwanath A Sindagi, Yin Zhou, and Oncel Tuzel. Mvx-
+                    for human trajectory prediction. In ICCV, pages 6272‚Äì6281,               net: Multimodal voxelnet for 3d object detection. In ICRA,
+                    2019. 3                                                                  pages 7276‚Äì7282, 2019. 2, 3
+               [11] Jason Ku, Melissa Mozifian, Jungwook Lee, Ali Harakeh,             [28] Pei Sun, Henrik Kretzschmar, Xerxes Dotiwalla, Aurelien
+                    and Steven L Waslander. Joint 3d proposal generation and                 Chouard, Vijaysai Patnaik, Paul Tsui, James Guo, Yin Zhou,
+                    object detection from view aggregation. In IROS, pages 1‚Äì8,              YuningChai,BenjaminCaine,etal. Scalabilityinperception
+                    2018. 2, 3                                                               for autonomous driving: Waymo open dataset. In CVPR,
+               [12] Alex H Lang, Sourabh Vora, Holger Caesar, Lubing Zhou,                   pages 2446‚Äì2454, 2020. 2, 6
+                    Jiong Yang, and Oscar Beijbom. Pointpillars: Fast encoders         [29] Efthymios Tzinis, Scott Wisdom, Aren Jansen, Shawn Her-
+                    for object detection from point clouds.     In CVPR, pages               shey, Tal Remez, Daniel PW Ellis, and John R Hershey. Into
+                    12697‚Äì12705, 2019. 2, 4, 6, 8                                            thewildwithaudioscope: Unsupervisedaudio-visualsepara-
+               [13] Lingyun Li, Luke, Bin Yang, Ming Liang, Wenyuan Zeng,                    tion of on-screen sounds. arXiv preprint arXiv:2011.01143,
+                    Mengye Ren, Sean Segal, and Raquel Urtasun. End-to-end                   2020. 2, 3
+                    contextual perception and prediction with interaction trans-       [30] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszko-
+                    former. arXiv preprint arXiv:2008.05927, 2020. 3                         reit, Llion Jones, Aidan N Gomez, ≈Åukasz Kaiser, and Illia
+               [14] MingLiang,BinYang,YunChen,RuiHu,andRaquelUrta-                           Polosukhin. Attention is all you need. In NeurIPS, pages
+                    sun. Multi-task multi-sensor fusion for 3d object detection.             5998‚Äì6008, 2017. 2, 3, 4
+                    In CVPR, pages 7345‚Äì7353, 2019. 3                                  [31] Sourabh Vora, Alex H Lang, Bassam Helou, and Oscar Bei-
+               [15] MingLiang,BinYang,ShenlongWang,andRaquelUrtasun.                         jbom. Pointpainting: Sequential fusion for 3d object detec-
+                    Deepcontinuousfusionformulti-sensor3dobjectdetection.                    tion. In CVPR, pages 4604‚Äì4612, 2020. 2, 3, 6
+                    In ECCV, pages 641‚Äì656, 2018. 2, 3                                 [32] Chunwei Wang, Chao Ma, Ming Zhu, and Xiaokang Yang.
+               [16] Ze Liu, Yutong Lin, Yue Cao, Han Hu, Yixuan Wei,                         Pointaugmenting: Cross-modal augmentation for 3d object
+                    Zheng Zhang, Stephen Lin, and Baining Guo. Swin trans-                   detection. In CVPR, pages 11794‚Äì11803, 2021. 3, 5, 6, 8
+                    former: Hierarchical vision transformer using shifted win-         [33] Bob Wei, Mengye Ren, Wenyuan Zeng, Ming Liang, Bin
+                    dows. arXiv preprint arXiv:2103.14030, 2021. 4                           Yang, and Raquel Urtasun.      Perceive, attend, and drive:
+               [17] Ilya Loshchilov and Frank Hutter. Decoupled weight decay                 Learning spatial attention for safe self-driving.  In ICRA,
+                    regularization. arXiv preprint arXiv:1711.05101, 2017. 6                 pages 4875‚Äì4881, 2021. 3
+                                                                                   17180
+             [34] Chao-YuanWuandPhilippKrahenbuhl. Towardslong-form
+                   video understanding. In CVPR, pages 1884‚Äì1894, 2021. 2
+             [35] Yan Yan, Yuxing Mao, and Bo Li. Second: Sparsely embed-
+                   ded convolutional detection. Sensors, 18(10):3337, 2018. 1,
+                   2, 5, 7
+             [36] BinYang,MinBai,MingLiang,WenyuanZeng,andRaquel
+                   Urtasun. Auto4d: Learning to label 4d objects from sequen-
+                   tial point clouds. arXiv preprint arXiv:2101.06586, 2021. 2,
+                   8
+             [37] Bin Yang, Ming Liang, and Raquel Urtasun. HDNet: Ex-
+                   ploiting hd maps for 3D object detection. In CoRL, pages
+                   146‚Äì155, 2018. 2
+             [38] Bin Yang, Wenjie Luo, and Raquel Urtasun. Pixor: Real-
+                   time 3D object detection from point clouds. In CVPR, pages
+                   7652‚Äì7660, 2018. 2
+             [39] Zetong Yang, Yanan Sun, Shu Liu, and Jiaya Jia. 3DSSD:
+                   Point-based 3D single stage object detector. In CVPR, pages
+                   11040‚Äì11048, 2020. 2
+             [40] ZetongYang,YananSun,ShuLiu,XiaoyongShen,andJiaya
+                   Jia. Std: Sparse-to-dense 3D object detector for point cloud.
+                   In ICCV, pages 1951‚Äì1960, 2019. 2
+             [41] Zetong Yang, Yin Zhou, Zhifeng Chen, and Jiquan Ngiam.
+                   3d-man: 3d multi-frame attention network for object detec-
+                   tion. In CVPR, pages 1863‚Äì1872, 2021. 1, 2
+             [42] Junbo Yin, Jianbing Shen, Chenye Guan, Dingfu Zhou, and
+                   Ruigang Yang. Lidar-based online 3d video object detection
+                   with graph-based message passing and spatiotemporal trans-
+                   former attention. In CVPR, pages 11495‚Äì11504, 2020. 1, 2,
+                   6
+                                                          ¬®    ¬®
+             [43] Tianwei Yin, Xingyi Zhou, and Philipp Krahenbuhl. Center-
+                   based 3d object detection and tracking.   arXiv preprint
+                   arXiv:2006.11275, 2020. 2, 6
+             [44] Jin Hyeok Yoo, Yeocheol Kim, Ji Song Kim, and Jun Won
+                   Choi. 3d-cvf: Generating joint camera and lidar features us-
+                   ing cross-view spatial feature fusion for 3d object detection.
+                   arXiv preprint arXiv:2007.08856, 2020. 3
+             [45] Fisher Yu, Dequan Wang, Evan Shelhamer, and Trevor Dar-
+                   rell. Deep layer aggregation. In CVPR, pages 2403‚Äì2412,
+                   2018. 3
+             [46] Zhenxun Yuan, Xiao Song, Lei Bai, Zhe Wang, and Wanli
+                   Ouyang. Temporal-channel transformer for 3d lidar-based
+                   video object detection for autonomous driving.  TCSVT,
+                   2021. 2, 6
+             [47] Yihan Zeng, Chao Ma, Ming Zhu, Zhiming Fan, and Xi-
+                   aokang Yang. Cross-modal 3d object detection and tracking
+                   for auto-driving. In IROS, 2021. 3
+             [48] Yin Zhou and Oncel Tuzel. Voxelnet: End-to-end learning
+                   for point cloud based 3d object detection. In CVPR, pages
+                   4490‚Äì4499, 2018. 2
+                                                                             17181

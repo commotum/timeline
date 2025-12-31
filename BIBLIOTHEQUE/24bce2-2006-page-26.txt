@@ -1,0 +1,41 @@
+       1552               G.Hinton,S.Osindero,andY.-W.Teh
+       \% PERFORM A BOTTOM-UP PASS TO GET WAKE/POSITIVE PHASE
+       \% PROBABILITIES AND SAMPLE STATES
+       wakehidprobs = logistic(data*vishid + hidrecbiases);
+       wakehidstates = wakehidprobs > rand(1, numhid);
+       wakepenprobs = logistic(wakehidstates*hidpen + penrecbiases);
+       wakepenstates = wakepenprobs > rand(1, numpen);
+       wakeopprobs = logistic(wakepenstates*pentop + targets*labtop +
+         topbiases);
+       wakeopstates = wakeopprobs > rand(1, numtop);
+       \% POSITIVE PHASE STATISTICS FOR CONTRASTIVE DIVERGENCE
+       poslabtopstatistics = targets’ * waketopstates;
+       pospentopstatistics = wakepenstates’ * waketopstates;
+       \% PERFORM numCDiters GIBBS SAMPLING ITERATIONS USING THE TOP LEVEL
+       \% UNDIRECTED ASSOCIATIVE MEMORY
+       negtopstates = waketopstates; \% to initialize loop
+       for iter=1:numCDiters
+         negpenprobs = logistic(negtopstates*pentop’ + pengenbiases);
+         negpenstates = negpenprobs > rand(1, numpen);
+         neglabprobs = softmax(negtopstates*labtop’ + labgenbiases);
+         negtopprobs = logistic(negpenstates*pentop+neglabprobs*labtop+
+          topbiases);
+       negtopstates = negtopprobs > rand(1, numtop));
+       end;
+       \% NEGATIVE PHASE STATISTICS FOR CONTRASTIVE DIVERGENCE
+       negpentopstatistics = negpenstates’*negtopstates;
+       neglabtopstatistics = neglabprobs’*negtopstates;
+       \% STARTING FROM THE END OF THE GIBBS SAMPLING RUN, PERFORM A
+       \% TOP-DOWN GENERATIVE PASS TO GET SLEEP/NEGATIVE PHASE
+       \% PROBABILITIES AND SAMPLE STATES
+       sleeppenstates = negpenstates;
+       sleephidprobs = logistic(sleeppenstates*penhid + hidgenbiases);
+       sleephidstates = sleephidprobs > rand(1, numhid);
+       sleepvisprobs = logistic(sleephidstates*hidvis + visgenbiases);
+       \% PREDICTIONS
+       psleeppenstates = logistic(sleephidstates*hidpen + penrecbiases);
+       psleephidstates = logistic(sleepvisprobs*vishid + hidrecbiases);
+       pvisprobs = logistic(wakehidstates*hidvis + visgenbiases);
+       phidprobs = logistic(wakepenstates*penhid + hidgenbiases);
+       \% UPDATES TO GENERATIVE PARAMETERS
+       hidvis = hidvis + r*poshidstates’*(data-pvisprobs);

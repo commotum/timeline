@@ -1,0 +1,1072 @@
+                   Component-basedSynthesisAppliedtoBitvectorPrograms
+                       Sumit Gulwani                       Susmit Jha                    Ashish Tiwari               RamarathnamVenkatesan
+                      Microsoft Research                   UCBerkeley                    SRI International                  Microsoft Research
+                       sumitg@microsoft.com             jha@eecs.berkeley.edu             tiwari@csl.sri.com                 venkie@microsoft.com
+                ABSTRACT                                                                   base/constituent components in isolation, and then assum-
+                We deﬁne component-based synthesis to be the problem of                    ing these speciﬁcations to verify speciﬁcation of the higher-
+                synthesis of (straight-line) programs from appropriate com-                level system made up of these components.
+                position of base components from a speciﬁed library of soft-                  In this paper, we push the above-mentioned two appli-
+                warecomponents. Thefunctionalspeciﬁcationofthedesired                      cations of composition to another dimension, that of auto-
+                program and the library components is provided in the form                 matedsynthesisofsystemsfromsimplyaspeciﬁcationofthe
+                of logical formulas that relate the respective input and out-              desired system and speciﬁcations of base components. For
+                put variables. This has applications in design of intricate                technical reasons, we restrict ourselves to a circuit-style com-
+                circuits or algorithms, superoptimization, and API mining.                 position of these components, or equivalently, a straight-line
+                Furthermore, automated synthesis provides the promise of                   program built out of these components. This is already a
+                correctness by construction, generation of eﬃcient systems,                large and useful class of systems. Note that loop-free control-
+                and improvement in developer’s productivity.                               ﬂow can be encoded by providing the ite (if-then-else) oper-
+                  We solve the component-based synthesis problem using                     ator as a base component. As part of future work, we plan
+                a constraint-based approach that involves ﬁrst generating a                to study even loopy composition of these components.
+                synthesis constraint, and then solving the constraint. The                    Automated component-based synthesis is attractive for
+                synthesis constraint is a ﬁrst-order logic formula whose size              many reasons. First, the designed system is correct by con-
+                is quadratic in the number of components, but has quanti-                  struction, which obviates the need for veriﬁcation. Second,
+                ﬁer alternation. We present a novel algorithm for solving                  the designed system can be guaranteed to be optimal in
+                such constraints. Our algorithm is based on counterexam-                   terms of using the fewest possible number of components.
+                ple guided iterative synthesis paradigm and uses oﬀ-the-shelf              Third, automation improves developer’s productivity, since
+                SMTsolvers.                                                                ﬁnding the correct components and the correct composition
+                  Wepresent experimental results on synthesizing a variety                 manually can be a daunting task, especially when the base
+                of bitvector algorithms that involve unintuitive composition               component library is huge.
+                of standard bitvector operations and are diﬃcult to synthe-                   While we foresee several applications of component-based
+                size manually. We also compare our technique with existing                 program synthesis, in this paper we consider a speciﬁc ap-
+                synthesis approaches based on sketching and superoptimiza-                 plication – discovering intricate bitvector programs, which
+                tion. Our tool Brahma can eﬃciently synthesize highly non-                 combine arithmetic and bitwise operations. Bitvector pro-
+                trivial 10-20 line loop-free programs. These programs repre-               grams can be quite unintuitive and extremely diﬃcult for
+                sent a state space of approximately 2010 programs, and are                 average, or sometimes even expert, programmers to dis-
+                beyond the reach of the other tools.                                       cover methodically. Consider, for example, the problem of
+                                                                                           turning-oﬀ the rightmost 1-bit in a bitvector x. This can be
+                1.    INTRODUCTION                                                         achieved by computing x&(x − 1), which involves compos-
+                                                                                           ing the bitwise & operator and the arithmetic subtraction
+                  Compositionhasplayedakeyroleinenablingconﬁgurable                        operator in an unintuitive manner. In fact, the upcoming
+                andscalable design and development of eﬃcient hardware as                  4th volume of the classic series art of computer programming
+                well as software systems. Hardware developers ﬁnd it useful                by Knuth has a special chapter on bitwise tricks and tech-
+                to design specialized hardware using some base components,                 niques [15]. In this paper, we demonstrate how to automate
+                such as adders and multiplexers, rather than having to de-                 the discovery of small, but intricate, bitvector programs us-
+                sign everything using universal gates at bit-level. Similarly,             ing the currently available formal veriﬁcation technology.
+                software developers prefer to use library features and frame-                 The ability to automatically synthesize correct programs
+                works.                                                                     that accomplish a certain task can be used in at least two dif-
+                  Composition has also played a key role in enabling scal-                 ferent ways. First, software development environments can
+                able veriﬁcation of systems that have been designed in a                   provide this capability to help programmers write correct
+                modularfashion. This involves verifying speciﬁcations of the               and eﬃcient code. Alternatively, compilers can use the syn-
+                                                                                           thesis procedure to optimize implementations or make them
+                                                                                           more secure. Superoptimizers, for example, perform auto-
+                                                                                           matic translation of a given sequence of instructions into an
+                                                                                           optimal sequence of instructions for performing aggressive
+                                                                                           peephole optimizations [5] or binary translation [6]. Rather
+                Copyright is held by Microsoft Research.                      Pub-         than achieve eﬃciency, the goal of the translation could be
+                lished Feb 2010. Technical Report Number MSR-                              reducing vulnerability in software. For example, any piece
+                TR-2010-12. Permission to make digital or hard copies of all or part       of code that computes the average of two numbers, x and
+                of this work for personal or classroom use is granted without fee provided
+                that copies are not made or distributed for proﬁt or commercial advantage  y, by evaluating (x + y)/2 is inherently ﬂawed and vulner-
+                and that copies bear this notice and the full citation on the ﬁrst page.
+               able since it can overﬂow.      However, using some bitwise               encoding yields a constraint that is guaranteed quadratic
+               tricks, the average can be computed without overﬂowing                    in the number of components.
+               (e.g., (x∣y) − ((x ⊕ y)>>1)). Compilers can automatically                In the constraint solving phase, we use a reﬁned form of
+               replace vulnerable snippets of code by the automatically dis-          the classic counterexample guided iterative synthesis tech-
+               covered equivalent secure code.                                        nique [10, 22] built on top of oﬀ-the-shelf SMT solvers. The
+                 The number of straight-line programs that can be con-                synthesis constraint obtained from our encoding is an ∃∀ for-
+               structed using a given set of base library components is               mula, which cannot be eﬀectively solved using oﬀ-the-shelf
+               exponential in the number of base components.            Rather        SMTsolvers directly. The counterexample guided iterative
+               than performing a naive exponential search for ﬁnding the              synthesis technique involves choosing some initial set of test
+               correct program, our synthesis algorithm relegates all ex-             values for the (∀) universally quantiﬁed variables and then
+               ponential reasoning to tools that have been engineered for             solving for the (∃) existentially quantiﬁed variables in the
+               eﬃciently performing exponential search, namely the Sat-               resulting constraint using SMT solvers. If the solution for
+               isﬁability (SAT) and Satisﬁability Modulo Theory (SMT)                 the existentially quantiﬁed variables works for all choices
+                      1
+               solvers . SMTsolvers use intelligent backtracking and learn-           of universally quantiﬁed variables, then a solution has been
+               ing to overcome the complexity barrier. SMT solvers can be             found. Else, a counterexample is discovered and the process
+               used to verify that a given (loop-free) system meets a given           is repeated after adding the counterexample to the set of test
+               speciﬁcation. In this paper, we show how to use the same               values for the universally quantiﬁed variables. This method
+               SMT solving technology to synthesize systems that meet a               works great for certain classes of constraints, but not for our
+               given speciﬁcation.                                                    synthesis constraint.
+                 Existingsynthesistechniquesbasedonsuperoptimizers[20,                  Ourreﬁnement to the iterative synthesis strategy involves
+               11, 14] and sketching [25, 26] can also be used to solve the           workingwithtworepresentationsofthesynthesisconstraint.
+               component-based synthesis problem. Superoptimizers ex-
+               plicitly perform an exponential search. Sketching solves a             ∙ The original ∃∀ representation.
+               moregeneralprogramsynthesisproblem,andisnotdesigned                       This is used to check whether a solution to the existen-
+               for solving the component-based synthesis problem. When                   tially quantiﬁed variables found using only a few test
+               they are used to solve the component-based synthesis prob-                cases (for the universally quantiﬁed variables) is, in fact,
+               lem, both superoptimizers and sketching were empirically                  a correct solution.
+               found to not scale.     In contrast, our technique leaves the          ∙ Analternate∃∀∃representation, wheretheuniversalquan-
+               inherent exponential nature of the problem to the underly-                tiﬁcation is only over input variables of the system.
+               ing SMT solver, whose engineering advances over the years                 This is used to ﬁnd a solution to the existentially quan-
+               have made them eﬀective to deal with problem instances                    tiﬁed variables that works for a set of test cases.
+               that arise in practice, which are usually not hard, and hence          At a high level, it is quite counter-intuitive how such an
+               end up not requiring exponential reasoning.                            alternate representation helps since an extra level of quanti-
+                 Oursynthesis algorithm is based on a constraint-based ap-            ﬁer alternation makes it even more diﬃcult to reason about
+               proach that involves reducing the synthesis problem to that            the constraint. However, it helps by reducing the universal
+               of solving a constraint. This involves the two key steps of            quantiﬁcation to be only over the “true inputs” of the sys-
+               constraint generation and constraint solving.                          tem. This enables us to solve for the existentially quantiﬁed
+                 In the constraint generation phase, the synthesis problem            variables by using a few choices for only the true inputs (and
+               is encoded as a constraint, referred to as synthesis constraint.       making copies of the inner existentially quantiﬁed variables
+               Our synthesis constraint has two interesting aspects.                  for each such choice). We experimentally validate this strat-
+                ∙ The synthesis constraint is a ﬁrst-order logic formula.             egy for our application domain of bitvector program synthe-
+                  The synthesis problem can be viewed as a generalization             sis. Furthermore, the classic result on learning AC0 circuits
+                  of the veriﬁcation problem. It is well known that veriﬁca-          from a few test inputs [16] provides an excellent theoretical
+                  tion of a straight-line program can be reduced to proving           justiﬁcation for the eﬀectiveness of this strategy. The result
+                  validity of a ﬁrst-order logic formula, and hence the syn-          relies on a theorem that states that AC0 circuits can be ap-
+                  thesis problem can be reduced to ﬁnding satisﬁability of            proximated well by low-degree polynomials, which in turn
+                  a second-order logic formula. But, the non-trivial aspect           are known to be identiﬁable by their behavior on few inputs.
+                  of our encoding is that it generates a ﬁrst-order logic for-          Wehave implemented our constraint generation and con-
+                  mula. This is signiﬁcant because oﬀ-the-shelf constraint            straint solving technique in a tool called Brahma. We have
+                  solvers cannot eﬀectively solve second-order formulas.              applied Brahma to the domain of bitvector program synthe-
+                ∙ The size of the synthesis constraint is quadratic in the            sis using a set of components that implement basic bitvec-
+                  number of components.                                               tor operations. These programs typically involve unintuitive
+                  One way to generate a ﬁrst-order logic constraint would             composition of the bitvector operations, and are quite chal-
+                  be to use the constraint generation methodology used in-            lenging to synthesize manually. Brahma is able to synthe-
+                  side the sketching technique, which is also a constraint-           size (equivalent variants of) a variety of bitvector programs
+                  based technique. However, the size of the constraint gen-           picked up from a classic book [28] in time ranging from 1.0
+                  erated by the sketching technique could potentially be ex-          to 2778.7 seconds. In contrast, the Sketch and AHA tools,
+                  ponential in the number of components. In contrast, our             basedrespectivelyonsketchingandsuper-optimization, time-
+               1                                                                      out on 9 and 12 of the 25 examples respectively where time-
+                SMT solving is an extension of SAT solving technology                 out was set to 3600 seconds. Sketch is slower by an average
+               to work with theory facts, rather than just propositional              factor of 20 on the remaining examples.
+               facts. In fact, there is a SMT solving competition that is
+               now held every year, and it has stimulated improvement in
+               solver implementations [1].                                            Contributions and Organization.
+               ∙ We deﬁne the problem of component-based synthesis us-               Of these the programs shown in 1(e) and 1(f) provide the
+                  ing a set of base components (Section 3).                          desired functionality. There is a major problem with this
+               ∙ We present an encoding that reduces the synthesis prob-             explicit enumeration approach; it is too expensive. In fact,
+                  lem to that of ﬁnding a satisfying assignment to a ﬁrst-           superoptimizers[20]dosuchanexhaustiveenumeration, and
+                  order logic constraint with quantiﬁer alternation, whose           hence fail to scale beyond composition of 4 components.
+                  size is at most quadratic in the number of base compo-               In contrast, our technique encodes (instead of explicitly
+                  nents. (Section 5).                                                enumerating) the space of all (six) possible straight-line pro-
+               ∙ We present a novel technique for solving ﬁrst-order logic           grams for composing the two operations f1 and f2 using a
+                                                                                     logical formula      .  The formula         uses (ﬁve) integer
+                  constraints with quantiﬁer alternation using oﬀ-the-shelf                            wfp                   wfp
+                  SMTsolvers (Section 6).                                            variables, each corresponding to an input or output of some
+               ∙ Weapplyourconstraintgenerationandsolvingtechnique                   component. Intuitively, the integer variable corresponding
+                  to synthesis of bitvector programs using standard bitvec-          to the output of some component denotes the line number
+                  tor operators (Section 7). We also experimentally com-             at which the component is used. The integer variable cor-
+                  pareourtechniquewithotherexistingtechniques, namely                responding to an input of some component denotes the line
+                  sketching and superoptimization, that can be used to syn-          number from where the actual parameter corresponding to
+                                                                                     that input is deﬁned. The formula            is such that the
+                  thesize bitvector programs (Section 8). Tools based on                                                       wfp
+                  othertechniqueseitherperformorderofmagnitudeslower                 satisfying assignments to the integer variables have a one-
+                  or timeout and fail to yield a solution.                           to-one correspondence with the diﬀerent straight-line pro-
+                                                                                     grams that can be obtained from composition of these op-
+               2.   RUNNINGEXAMPLE                                                   erators.  In conjunction with some other constraints that
+                                                                                     encode the functional speciﬁcations of the base component
+                 First, we introduce a small example to give a high-level            programs and the desired program, our technique generates
+               overview of our technique. We also use this example as a              a formula that we refer to as the synthesis constraint. A sat-
+               running example to illustrate several details of our technique        isfying assignment to the integer variables that satisﬁes the
+               in following sections.                                                synthesis constraint corresponds to the desired straight-line
+                 Consider the task of designing a bitvector program that             program. The synthesis constraint is a ﬁrst-order logic con-
+               masks oﬀ the right-most signiﬁcant 1-bit in an input bitvec-          straint with quantiﬁer alternation, and is not amenable to
+               tor.  More formally, the bitvector program takes as input             solving directly using oﬀ-the-shelf constraint solvers. One of
+               one bitvector I and outputs a bitvector O such that O is ob-          the key technical contributions of the paper is an algorithm
+               tained from I by setting the right-most signiﬁcant 1-bit in I         to ﬁnd satisfying assignments to such synthesis constraints
+               to 0. For example, the bitvector program should transform             by using an oﬀ-the-shelf SMT solver.
+               the bitvector 01100 into 01000.                                         Even though there is no provable polynomial time guar-
+                 A simple method to accomplish this would be to iterate              antee associated with our technique, there is a crucial diﬀer-
+               over the input bitvector starting from the rightmost end              ence between the exponential exhaustive enumeration tech-
+               until a 1 bit is found and then set it to 0. However, this            niqueandourtechniquebasedonsynthesis-constraintgener-
+               algorithm is worst-case linear in the number of bits in the           ation and solving. The number of variables in the synthesis
+               input bitvector. Furthermore, it uses undesirable branching           constraint is linear in the number of components and the
+               code inside a loop.                                                   size of the synthesis constraint is quadratic in the number
+                 There is a non-intuitive, but elegant, way to achieving the         of components. The winning advantage comes from the fact
+               desired functionality in constant time by using a tricky com-         that we ride over the recent engineering advances made in
+               position of the standard subtraction operator and the bitwise         SMT solving technology to solve a constraint with a linear
+               logical & operator, which are supported by almost every ar-           number of unknowns as opposed to explicitly performing an
+               chitecture. The desired functionality can be achieved using           exhaustive enumeration over an exponential search space.
+               the following composition:
+                                         I & (I −1)                                  3.   PROBLEMDEFINITION
+               The reason why we can do this seemingly worst-case linear               Thegoal of this paper is to synthesize a program by using
+               task in unit time using the subtraction operator and the              a given set of base software components. The program as
+               logical bitwise-and operator is because the hardware imple-           well as the base components are speciﬁed using their func-
+               mentations of these operators manipulate the constituent              tional description. This description is given in the form of a
+               bits of the bitvectors in parallel in constant time.                  logical formula that relates the inputs and the outputs.
+                 One way to discover the above tricky composition would                For simplicity of presentation, we assume that all com-
+               be exhaustive enumeration. Let f1 denote a unary compo-               ponents have exactly one output. We also assume that all
+               nent that implements the subtract-one operation, and let              inputs and the output have the same type. These restrictions
+               f2 denote a binary component that implements a binary                 can be easily removed.
+               bitwise-and operation. Suppose we knew that the desired                 Formally, the synthesis problem requires the user to pro-
+               functionality can be achieved by some unknown composition             vide:
+               of these two components f1 and f2. We can then simply enu-                                 ⃗          ⃗
+                                                                                     ∙ A speciﬁcation ⟨I,O,        (I,O)⟩ of the program, which
+               merate all diﬀerent ways of composing a unary operator and                                       spec
+                                                                                        includes
+               a binary operator, and then verify which one of them meets                                             ⃗
+               the functional speciﬁcation with the help of an SMT solver               ∙ a tuple of input variables I and an output variable O.
+                                                                                                                ⃗                          ⃗
+                                                                                        ∙ an expression       (I,O) over the variables I and O
+               (using the process described in Section 4). Figure 1 shows                                   spec
+               the six diﬀerent straight-line-programs that can be obtained                that speciﬁes the desired input-output relationship.
+                                                                                                                  ⃗         ⃗
+               from composition of one unary and one binary operator.                ∙ A set of speciﬁcations {⟨I ,O , (I ,O )⟩ ∣ i = 1,...,N},
+                                                                                                                   i  i   i  i  i
+                          f     (I):               f     (I):                f     (I):               f     (I):                    f     (I):                  f     (I):
+                             impl                      impl                       impl                      impl                           impl                         impl
+                       1    O :=f (I,I);1             O :=f (I,I);1              O :=f (I); 1 O :=f (I);                             1    O :=f (I);              1   O :=f (I);
+                               2       2                 2       2                 1       1                 1       1                      1       1                    1       1
+                       2    O :=f (O ); 2             O :=f (I); 2 O :=f (I,I);2 O :=f (O ,O );2 O :=f (O ,I);2 O :=f (I,O );
+                               1       1    2            1       1                 2       2                 2       2    1     1           2       2    1               2       2       1
+                            return O ;                return O ;                 return O ;                return O ;                     return O ;                  return O ;
+                                          1                         1                         2                         2                               2                           2
+                        lI   =1 lO =2 lI =0 lO =2 lI =0 lO =1 lI = 0                                                   lO    = 1 lI = 0 lO = 1 lI = 0 lO = 1
+                           1           1             1           1             1            1            1               1              1              1             1              1
+                        lI   =0 lO =1 lI =0 lO =1 lI =0 lO =2 lI = 1 lO = 2 lI = 1 lO = 2 lI = 0 lO = 2
+                           2            2            2            2            2            2            2                2             2              2             2              2
+                        lI′ = 0                    lI′ = 0                   lI′ = 0                   lI′  = 1                       lI′ = 0                      lI′  =1
+                           2                         2                         2                         2                              2                            2
+                                   (a)                         (b)                         (c)                        (d)                         (e)                         (f)
+                   Figure 1: The ﬁrst row shows six diﬀerent ways of composing a unary component f1 and a binary component
+                   f2 to synthesize a straight-line program f                              with one input I. Second row shows an integer encoding of the
+                                                                                       impl
+                   corresponding program using location variables.
+                                                          ⃗
+                       called a library, where  (I ,O ) is a speciﬁcation for base                               Weuse b to denote the total number of bits in the bitvec-
+                                                        i   i    i
+                                                               ⃗                                                  tors, and I[j] to denote the bit at jtℎ position in bitvector
+                       component f . All variables I ,O are assumed distinct.
+                                         i                      i    i
+                      Thegoalofthesynthesis problem is to discover a program                                      I, when viewed as an array of bits.
+                   f impl that correctly implements the speciﬁcation                             us-                                           b                        b               !
+                                                                                            spec                                               ^                        ^
+                   ing only the components provided in the library[17]. The                                             (I,O)        :=                I[t] = 1 ∧            I[j] = 0      ⇒
+                                                                                                                     spec
+                   program f impl is essentially a straight-line program that                                                                 t=1     ⎛               j=t+1                ⎞⎞
+                                         ⃗
+                   takes as input I and uses the set {O ,...,O } as tempo-
+                                                                        1          N                                                                                    ^
+                   rary variables in the following form:                                                                                              ⎝                                    ⎠⎠
+                                                                                                                                                        O[t] = 0 ∧          O[j] = I[j]
+                                       ⃗                                                                                                                               j∕=t
+                            f_impl(I):
+                                                 ⃗                                   ⃗
+                                 O :=f (V ); ...; O                       := f      (V     );
+                                                                                                         ∙ The number of base components in the library is N = 2.
+                                     1        1     1                  N          N      N
+                                 return O         ;
+                                                                                                                 One of them is a unary component f that implements
+                                                N                                                                                                                       1
+                   where                                                                                          the subtract-one operation, and its formal speciﬁcation is
+                                              ⃗                                                 ⃗                 given by the following relationship                   between its input
+                    ∙ each variable in V is either an input variable from I, or                                                                                      1
+                                                 i
+                       a temporary variable O               such that j < i,                                      parameter I and output O .
+                                                                                                                                 1                     1
+                                                         j
+                    ∙  ,...,         is a permutation of 1,...,N, and                                                             (I ,O )         :=       O =(I −1)
+                         1         N                                                                                                1    1    1                 1       1
+                    ∙ the following correctness criteria holds:                                                   The other component is a binary component that imple-
+                     ⃗                            ⃗                             ⃗                               ments the bitwise-and operation, and its formal speciﬁca-
+                   ∀I,O ,...,O :  (V ,O )∧⋅⋅⋅∧ (V ,O )
+                          1          N                                                
+                                                1     1      1                N      N      N                     tion is given by the following relationship  between its
+                                                                                                                                                                               2
+                                                           ⃗                                                      input parameters I ,I′ and output O .
+                                               ⇒  (I,O )                                         (1)                                       2   2                    2
+                                                      spec       
+                                                                  N                                                              (I ,I′,O )           :=      O =(I &I′)
+                                                                                                                                  2   2   2    2                 2        2      2
+                   The last formula above is called the veriﬁcation constraint.
+                   It states the correctness criterion for the output program: for                            4.     REVISITINGVERIFICATIONCONSTRAINT
+                                 ⃗                                                                  ⃗
+                   all inputs I, if O         is the output of the implementation on I,
+                                         
+                                           N                                                                     Before we describe our approach for solving the synthesis
+                                                                                                    ⃗
+                   then O        should also be the output of the speciﬁcation on I;
+                             
+                              N                                                                               problem – consisting of the synthesis constraint generation
+                   that is, the implementation should imply the speciﬁcation.
+                      Wenote that the implementation above is using all com-                                  phase and the constraint solving phase – we will perform two
+                   ponents from the library. We can assume this without any                                   steps in this section to support the transition to these two
+                   loss of generality. Even when there is a correct implemen-                                 phases. First, we will rewrite the veriﬁcation constraint in
+                   tation using fewer components, that implementation can al-                                 Eq. 1 so that it resembles the synthesis constraint. Second,
+                   ways be extended to an implementation that uses all com-                                   we discuss solving of the veriﬁcation constraint, which is a
+                   ponents by adding dead code. Dead code can be easily iden-                                 small part of the process of solving the synthesis constraint.
+                   tiﬁed and removed in a post-processing step.                                                  Consider the veriﬁcation constraint in Eq. 1. We can re-
+                                                                                                                                                      ⃗
+                                                                                                              place each atomic fact  (V ,O ) in the antecedent by
+                                                                                                                                                            
+                      Wealso note that the implementation above is using each                                                                      i     i      i
+                                                                                                                    ⃗                ⃗         ⃗
+                                                                                                               (I ,O ) ∧ I               = V . We can also replace the fact
+                   base component only once. If there is an implementation                                                                  
+                                                                                                                  i    i      i        i          i
+                                                                                                                      ⃗                                                 ⃗
+                   usingmultiplecopiesofthesamebasecomponent,weassume                                               (I,O      ) in the consequent by                 (I,O) provided we
+                                                                                                                spec       N                                     spec
+                   thattheuserprovidesmultiplecopiesexplicitlyinthelibrary                                    add O = O              in the antecedent. Hence, the veriﬁcation
+                                                                                                                               
+                                                                                                                                 N
+                   (discussed further in Section 8.3). Such a restriction of using                            constraint can be rewritten as:
+                   each base component only once is interesting in two regards:                               ⃗      ⃗        ⃗
+                                                                                                             ∀I,O,I ,..,I ,O ,..,O                :
+                   It can be used to enforce eﬃcient or minimal designs. This                                       1          n     1        N                         !
+                                                                                                                                        N
+                   restriction also prunes down the search space of possible                                                            ^ ⃗                  ⃗      ⃗                   ⃗
+                                                                                                                    (O =O )∧               ( (I ,O ) ∧ I = V )             ⇒  (I,O)
+                                                                                                                                              i  i    i       i      i           spec
+                   designs making the problem ﬁnite and tractable.                                                              N
+                      Informally, the synthesis problem seeks to come up with                                                          i=1
+                   an implementation – using only the base components in the                                     We now split the antecedent in the above formula into
+                                                                                                              two parts           and        . We also group together the formal
+                   given library – that implies the given speciﬁcation.                                                       lib          conn
+                                                                                                              inputs and outputs of the base components into two sets P
+                       Example 1           (Problem Definition). Theproblemdef-                               and R to rewrite the above veriﬁcation constraint as:
+                   inition for the running example in Sec. 2 can be stated as:                                  ⃗                                          ⃗                            ⃗
+                                                                                                              ∀I,O,P,R:( (P,R)∧                         (I,O,P,R)) ⇒                (I,O) (2)
+                                                                                                                                   lib                conn                        spec
+                    ∙ The formal speciﬁcation of the desired program to be syn-                                                     N                                                     N
+                       thesized is given by the following relationship                           be-                              ^ ⃗                                                   ^⃗ ⃗
+                                                                                            spec              where          := (       (I ,O )),             := (O = O         ) ∧ (      I =V ),
+                                                                                                                         lib              i  i    i        conn                               i      i
+                       tween the input bitvector I and the output bitvector O.                                                                                                   N
+                                                                                                                                   i=1                                                   i=1
+                 PandRdenotetheunionofallformal inputs (Parameters)                               input) does it get its input arguments. This information can
+                 and formal outputs (Return variables) of the components:                         be described by a set of location variables L
+                              S                      S                                                                   L:={lx ∣ x ∈ P∪R}
+                                N ⃗                    N
+                     P :=           I       R :=           {O } = {O ,...,O }
+                                i=1 i                  i=1    i           1         N             that contains one new variable lx for each variable x in P∪R
+                    Note that          represents the speciﬁcations of the base
+                                   lib                                                            with the following        interpretation associated with each of
+                 components, and             represents the interconnections that
+                                         conn                                                     these variables.
+                 includes the mappings from formals to actuals and from the                        ∙ If x is the output variable O of component f , then l
+                 return variable of some component to the output of the pro-                                                               i                    i          x
+                 gram. Observe that              is a conjunction of equalities be-                  represents the line in the program where the component
+                                             conn                                                     fi is used.
+                                                                                  ⃗
+                 tween a variable in P ∪ {O} and a variable in R ∪ I. The                          ∙ If x is the jtℎ input parameter of component fi, then lx
+                 connectivity constraint            determines:
+                                                conn                                                  represents the location“from where component f gets its
+                                                                                                                                                                  i
+                  ∙ theorderinwhichbasecomponentsoccurintheprogram.                                   jtℎ input”.
+                  ∙ the value of each input parameter of each base compo-                            A location above refers to either a line of the program,
+                     nent.                                                                        or to some program input. To represent diﬀerent possible
+                    Example 2         (Verification Constraint). The veriﬁ-                       locations, we use integers in the set {0,..,M −1}, where M
+                 cation constraint for the program in Figure 1(e) when re-                        is the sum of the number N of components in the library
+                                                                                                                         ⃗                                               ⃗
+                 garded as a solution to the running example formally de-                         and the number ∣I∣ of program inputs, i.e., M = N + ∣I∣,
+                 scribed in Example 1 is the following formula.                                   with the following interpretation.
+                                         ′                                                         ∙ The jtℎ input is identiﬁed with the location j − 1.
+                        ∀I,O,I ,I ,I ,O ,O (              ∧       ⇒ )
+                                 1   2   2    1   2    lib     conn      spec                                tℎ
+                                                                       ′                           ∙ The j      line or the assignment statement in the program
+                 where              :=      (I ,O ) ∧  (I ,I ,O )                                                                             ⃗
+                             lib              1  1    1        2   2  2    2                          is identiﬁed with the location j + ∣I∣ − 1.
+                   and              :=     I =I ∧ I =O ∧ I′ =I ∧ O=O
+                            conn             1            2      1      2                   2         Example 3         (Location Variables). For our running
+                  and  , ,          are as deﬁned in Example 1.                                example formally described in Example 1, the set L of loca-
+                         1    2   spec
+                    We now brieﬂy discuss the process of solving the veriﬁ-                       tion variables consists of 5 integer variables. L = {lO ,lO ,lI ,
+                                                                                                                                                                   1    2   1
+                 cation constraint, which is a universally quantiﬁed formula.                     lI ,lI′ }.   The variables lO       and lO denote the location at
+                                                                                                    2    2                         1          2
+                 The complexity of deciding the validity of the formula in                        which the components f1 and f2 are used respectively. The
+                 Eq. 2 depends on the expression language used for deﬁning                        variable lI denotes the location of the deﬁnition of the input
+                                                                                                               1
+                       and  ’s. If this expression language is a subset of the                  to the unary component f1. The variables lI and l ′ denote
+                   spec        i                                                                                                                         2       I
+                                                                                                                                                                  2
+                 language that can be handled by Satisﬁability Modulo The-                        the locations of the deﬁnitions of the ﬁrst and the second in-
+                 ory (SMT)solvers, then we can use oﬀ-the-shelf SMT solvers                       put respectively of the binary component f2. Since there are
+                 to decide the formula in Eq. 2 and thus solve the veriﬁcation                    two components and one input, we have N = 2 and M = 3.
+                 problem. Speciﬁcally, we can check validity of a (universal)                     The variables lO ,lO take values from the set {1,2}, while
+                                                                                                                       1    2
+                 formula by asking an SMT solver for checking satisﬁability                       the variables lI ,lI ,lI′ take values from the set {0,1,2}.
+                                                                                                                     1   2    2
+                 of the negation of that formula.
+                                                                                                     Thesynthesis constraint, which uses the location variables
+                 5.     SYNTHESISCONSTRAINT                                                       L, is given in Eq. 4 in Section 5.3. We next discuss the
+                                                                                                  key constituents of the synthesis constraint. For notational
+                    In this section, we show how to reduce the problem of                         convenience (for the discussion below), we also deﬁne lx for
+                 straight-line-program synthesis to that of ﬁnding a satisfy-                                           ⃗
+                                                                                                  the global inputs I and output O. We deﬁne lO to be equal
+                 ing assignment to a ﬁrst order logic constraint. Given a li-                     to M − 1, denoting that the output O of the program is
+                 brary of base components, and a speciﬁcation for the desired                     deﬁned on the last line of the program. For the jtℎ input x
+                 program, we show how to generate a formula that encodes                          to the program, we deﬁne lx to be j−1, which is the integer
+                 the existence of a program that is constructed using the base                    location that we associated with the jtℎ program input.
+                 components and that meets the given speciﬁcation.                                5.1      Encoding Well-formedness of Programs:
+                    Consider the veriﬁcation constraint in Eq. 2. We are given
+                       and       as part of the synthesis problem. However, we                            
+                   spec        lib                                                                           wfp
+                 do not know the interconnections                 between the inputs
+                                                              conn                                   We noted above that every straight-line program can be
+                 and outputs of the base components. Hence, the synthesis                         encodedbyassigningappropriatevaluesfromtheset{0,..,M−
+                 problem is equivalent to solving the following constraint:                       1} to variables in L. On the other hand, any possible as-
+                                  ⃗
+                       ∃      : ∀I,O,P,R :
+                          conn                                                                    signment to variables in L from the set {0,..,M − 1} does
+                                                      ⃗    ′                     ⃗                notnecessarily correspond to a well-formed straight-line pro-
+                              (    (P,R)∧          (I,O ,P,R)) ⇒             (I,O)
+                                 lib             conn                      spec
+                                                                                                  gram. We require the variables in L to satisfy certain con-
+                 where we have a second-order existential quantiﬁer over the                      straints to guarantee that they deﬁne well-formed programs.
+                 set of all possible interconnections.                                            The following two constraints guarantee this.
+                    In the remaining part of this section, we show how to con-
+                 vert the second-order existential quantiﬁer into a ﬁrst-order                    Consistency Constraint : Every line in the program has
+                 existential quantiﬁer. The basic idea is to introduce new                               at most one component. In our encoding, lOi encodes
+                 ﬁrst-order integer-valued variables, referred to as location                            the line number where component fi is used. Hence
+                 variables, whose values decide the interconnections between                             for diﬀerent i, lOi should be diﬀerent. Thus we get the
+                                                                                                         following consistency constraint.
+                 the various components. To describe a program, we have                                                       :=       ^ (l ∕=l )
+                 to determine which component goes on which location (line-                                              cons                    x     y
+                 number), and from which location (line-number or program                                                          x,y∈R,x∕≡y
+                     Acyclicity Constraint : In a well-formed program, every                                              The constraint                   will play the role of                  later.
+                                                                                                                                                     conn                                   conn
+                              variable is initialized before it is used. In our encoding,                                 5.3        Putting it all together
+                              component fi is used at location lO and its inputs are
+                                                                                    i
+                                                                                ⃗                                             We are now ready to present the (ﬁrst-order) synthesis
+                              coming from locations {l ∣ x ∈ I }. Thus, we get the
+                                                                    x            i
+                              following acyclicity constraint.                                                            constraint that encodes the synthesis problem.
+                                                             N
+                                                      := ^(           ^ l <l )                                                We showed how the set of all valid programs can be de-
+                                               acyc                              x       y                                scribed by valuations of the location variables L. Hence, the
+                                                           i=1       ⃗
+                                                                 x∈I ,y≡O
+                                                                      i       i                                           synthesis problem reduces to ﬁnding a value for the variables
+                              The acyclicity constraint says that, for every compo-                                       Lsuch that
+                              nent, if x is an input of that component and y is an                                        (1) this valuation corresponds to a well-formed program and
+                              output of that component, then the location lx where                                        (2) the corresponding well-formed program is correct, as de-
+                              the input is deﬁned, should be earlier than the loca-                                       scribed by the veriﬁcation constraint (Eq. 2).
+                              tion ly where the component is used and its output is                                       In other words, we get the following synthesis constraint:
+                                                                                                                                                    ⃗
+                              deﬁned.                                                                                     ∃L:(  (L)∧∀I,O,P,R:
+                                                                                                                                     wfp
+                                                                                                                                                                   ⃗                                  ⃗
+                         Wenowdeﬁne  (L)tobefollowing constraint that en-                                                            (P,R) ∧                     (I,O,P,R,L)⇒                      (I,O)) (3)
+                                                  wfp                                                                                  lib                   conn                               spec
+                     codes the interpretation of the location variables lx along                                          We will merge the (temporary) variables P and R and call
+                     with the consistency and acyclicity constraints.                                                     it the set T. We can rewrite the formula in Eq. 3 by pulling
+                                            ^                                      ^ ⃗                                    out the universal quantiﬁer to get the following synthesis
+                       (L) :=                    (0 ≤ l ≤ M −1) ∧                      (∣I∣ ≤ l      ≤M−1)∧
+                        wfp                               x                                       x
+                                           x∈P                                    x∈R                                     constraint.
+                                                       (L) ∧             (L)
+                                                  cons              acyc                                                          ⃗
+                                                                                                                           ∃L∀I,O,T :                (L)∧
+                                                                                                                                                 wfp
+                     Wenote that if the location variables L satisfy                                 , then L
+                                                                                                 wfp                                                                 ⃗                             ⃗
+                                                                                                                                           (      (T)∧            (I,O,T,L) ⇒                  (I,O))        (4)
+                     deﬁnes a well-formed straight-line program in static single                                                               lib            conn                          spec
+                     assignment (SSA) form [8], whose assignments make calls
+                     to the components in the library. Speciﬁcally, the function                                              Example 5              (Synthesis Constraint). Of the 6 solu-
+                     Lval2Prog returns the program corresponding to a given                                               tions to the location variables L described in Example 4,
+                                                                      tℎ                                                  there are 2 solutions that satisfy the entire synthesis con-
+                     valuation L as follows: in the i                     line of Lval2Prog(L), we
+                     have the assignment O := f (O                             , . . , O     ) if l        = i,           straint. These two solutions are shown in Figure 1(e) and
+                                                          j         j     (1)          (t)         Oj                   Figure 1(f).
+                     lIk = l(k) for k = 1,..,t, where t is the arity of component
+                        j
+                                     1        t                                                  ⃗
+                     f , and (I ,..,I ) is the tuple of input variables I of f .
+                       j            j         j                                                    j       j                  Thefollowing theorem states that the synthesis constraint
+                         It isn’t diﬃcult to prove following property about our en-                                       in Eq. 4 is quadratic in size and it exactly encodes our
+                     coding.                                                                                              synthesis problem. Hence, solving the synthesis problem is
+                         Theorem 1. Let L be the set of all valuations of L that                                          equivalent to solving the synthesis constraint. The proof of
+                     satisfy the well-formedness constraint                             .   Let Π be the                  the theorem follows from the deﬁnition of Lval2Prog, The-
+                                                                                    wfp
+                     set of all straight-line programs in SSA form that take input                                        orem 1, and the deﬁnitions of the veriﬁcation and synthesis
+                     ⃗                                                                      ⃗                             constraints.
+                     I and contain the N assignments, O := f(V ), such that
+                                                                                i             i
+                     every variable is deﬁned before it is used. Then, the mapping                                            Theorem 2               (Synthesis Constraint). Let (                            ,     )
+                     Lval2Prog goes from L to Π and it is bijective.                                                                                                                                       spec    lib
+                                                                                                                          be the given speciﬁcations. Let   be the corresponding syn-
+                         Example 4              (Well-formedness Constraint). Forour                                      thesis constraint, deﬁned in Eq. 4, that is derived from the
+                     running example formally described in Example 1, the con-                                            given speciﬁcations. The size of   is O(n + m2) where n is
+                     straint            is:                                                                               the size of (            ,      ) and m is the number of base compo-
+                                   wfp                     ^                             ^                                                     spec     lib
+                             :=            ∧           ∧       (0 ≤ l ≤ 2) ∧                  (1 ≤ l ≤ 2)                 nents in the library. Furthermore,   is valid if and only if
+                        wfp          cons        acyc                   x                              x
+                                                          x∈P                           x∈R                               there is a straight-line program that implements the speciﬁ-
+                           where                := (l        ∕=l )
+                                         cons           O         O                                                       cation            using only the components in                        .
+                                                          1         2                                                                  spec                                                   lib
+                            and               := (l       <l ) ∧ (l <l ) ∧ (l ′ <l )
+                                       acyc           I        O            I        O             I       O
+                                                       1         1            2        2            2         2               Proof. The number of variables in L is O(m) and hence
+                                                   ′                                                                      the size of   is seen to be O(n + m2).
+                                       ⃗ ⃗ ⃗
+                     Here P = {I ,I ,I } and R = {O ,O }. There are 6 solu-
+                                         1    2   2                       1     2                                             (⇒): Suppose   is valid. This implies that there exists a
+                     tions for l        , l  , l ′ , l   , l     that satisfy the constraint                    .
+                                     I    I     I     O     O                                               wfp
+                                      1     2    2      1     2                                                           value for L, say L , such that                      (L ) holds and the formula
+                     Each of these solutions correspond to a syntactically distinct                                                                  0                    wfp    0
+                                                                                                                             ⃗                                             ⃗                                   ⃗
+                                                                                                                          ∀I,O,P,R: (P,R)∧                              (I,O,P,R,L ) ⇒                      (I,O)
+                     and well-formed straight-line program obtained by composi-                                                                  lib                conn                      0         spec
+                                                                                                                          is valid.       Since           (L ) holds, we can use Theorem 1 to
+                     tion of unary component f1 and binary component f2. These                                                                        wfp     0
+                     6 solutions and the corresponding straight-line-programs are                                         get a Program Lval2Prog(L), call it P. Now, the deﬁnition
+                     shown in Figure 1.                                                                                   of Lval2Prog and the constraint  conn together guarantee
+                                                                                                                          that the connectivity constraint                          deﬁned by P and the
+                     5.2        EncodingDataﬂowinPrograms:                                                                                                                     conn
+                                                                                                    conn                  connectivity constraint                      (L ) are equivalent. Since we
+                                                                                                                                                                  conn     0
+                         Given an interconnection among components speciﬁed by                                                       ⃗
+                                                                                                                          know∀I,O,P,R: ∧                              ⇒ isvalid,itfollowsthat
+                                                                                                                                                          lib     conn         spec
+                     values of location variables L, we can relate the input/output                                                             ⃗
+                                                                                                                          the formula ∀I,O,P,R :                         ∧          ⇒ isalso valid.
+                                                                                                                                                                     lib       conn          spec
+                     variables of the components and the program by the follow-                                           This shows that the veriﬁcation constraint for correctness of
+                     ing connectivity constraint:                                                                         P is valid.
+                                       :=             ^              (l   =l ⇒ x=y)                                           (⇐): Suppose there is a straight-line program, say P, that
+                                conn                                    x      y
+                                                           ⃗                                                              correctly implements the given speciﬁcation                                 using only
+                                            x,y∈P∪R∪I∪{O}                                                                                                                                        spec
+                                                                                                                   ⃗        ⃗
+               the components in      . Given a program P, we can imme-               StandardExAllSolver(∃L∀I : (L,I)):
+                                    lib
+               diately deﬁne values for the location variables L such that                               ⃗
+                   is equivalent to      (L). Since the program P is as-           1     // Input ∃L∀I :  is an exists-forall formula
+                conn                   conn                                         2     // Output: unsatisfiable or satisfiable
+               sumedtobewell-formed, thisvaluation of L will satisfy        .                   ⃗        ⃗                                  ⃗
+                                                                          wfp       3     S := {I } // I    is an arbitrary value for I
+                                                                                                 0        0
+               Furthermore, since P is correct, the veriﬁcation constraint is       4     while (1) {
+               valid. Replacing      in the veriﬁcation constraint by                                               V
+                                  conn                                   conn                                                    ⃗
+                                                                                    5        model := T-SAT(∃L :            (L,I ));
+                                                                                                                       ⃗          0
+                                                                                                                       I ∈S
+               shows that the synthesis constraint is also valid.                                                      0
+                                                                                    6        if (model ∕= ⊥) {currL := model∣L}
+                                                                                    7        else {return("unsatisfiable")};
+               6.   SYNTHESISCONSTRAINTSOLVING                                                                   ⃗              ⃗
+                                                                                    8        model := T-SAT(∃I : ¬(currL,I));
+                                                                                                                   ⃗                            ⃗
+                 In this section, we show how to solve the synthesis con-           9        if (model ∕= ⊥) { I := model∣ ; S := S ∪{I }}
+                                                                                                                    1            ⃗               1
+                                                                                                                                 I
+               straint (Eq. 4 in Section 5.3). In particular, we show how          10        else {return("satisfiable")};
+               to ﬁnd an assignment to the decision variables L that would         11     }
+               witness the validity of the synthesis constraint.
+                 We describe our procedure for solving the synthesis con-          Figure 2: Standard counterexample guided ∃∀ solver
+               straint, which has a quantiﬁer alternation of the form ∃∀, in       built using an ∃ satisﬁability solver.
+               two steps. First, in Section 6.1, we present a generic solver         RefinedExAllSolver(         ,    ,      ,      ):
+                                                                                                              wfp   lib    conn   spec
+               for ∃∀ formulas. This solver can be built modularly over                        ⃗
+                                                                                   1   // ∃L∀I,O,T :         ∧(     ∧      ⇒ )
+               any existing satisﬁability solver. It is based on the standard                             wfp     lib   conn     spec
+               counterexample-guided iterative reﬁnement paradigm [10,                 //        is a synthesis constraint
+               22]. The generic solver is not limited to solving only the          2   // Output: synthesis failed or values for L
+                                                                                              ⃗       ⃗
+                                                                                   3   S := {I } // I     is an arbitrary input
+               synthesis constraint. However, because of its generality, it                    0       0
+               turns out to be ineﬃcient for our purpose. Then, in Sec-            4   while (1) {
+                                                                                   5       model := T-SAT(∃L,O ,...,O ,T ,...,T :              (L)∧
+               tion 6.2, we reﬁne the generic procedure to eﬃciently solve                                     V 1         n   1       n    wfp
+                                                                                                                                        ⃗
+                                                                                                                      (   (T ) ∧      (I ,O ,T ,L)
+                                                                                                                 ⃗      lib  i     conn i   i  i
+               the synthesis constraint.                                                                         I ∈S
+                                                                                                                  i           ⃗
+                                                                                                                       ∧    (I ,O )));
+               6.1    StandardCounterexample-GuidedSolver                                                                 spec i   i
+                                                                                   6       if (model ∕= ⊥) {currL := model∣L}
+                 The pseudocode for the generic procedure StandardEx-              7       else {return("synthesis failed")};
+                                                                                                               ⃗             ⃗
+               AllSolver is presented in Figure 2. The input to the proce-         8       model := T-SAT(∃I,O,T :          (I,O,T,currL)∧
+                                                                                                                         conn
+                                                 ⃗       ⃗                                                                               ⃗
+               dure is a formula of the form ∃L∀I : (L,I). This procedure                                              (T)∧¬         (I,O));
+                                                                                                                        lib         spec
+               is iterative and it needs a seed to start. This seed is an arbi-                                ⃗                             ⃗
+                                                                                   9       if (model ∕= ⊥) {I := model∣ ; S := S ∪{I };}
+                                                                                                                1            ⃗                1
+                                   ⃗                                                                                         I
+               trarily chosen value I0 for the universally quantiﬁed variables    10       else {return(currL)};
+               ⃗                                             ⃗
+               I. The program variable S is initialized to {I } (in Line 3).
+                                                              0                   11   }
+               Theprocedure then iteratively performs the following steps:
+               Finite Synthesis (Lines 5-7): In this step, the procedure           Figure 3: Reﬁned counterexample guided ∃∀ solver
+                                                                                   for solving the synthesis constraint. Note that Line 5
+                    ﬁnds a value for the existential variables L that work         and Line 8 use diﬀerent formulas. If successful, the
+                    for (only) ﬁnitely many choices S for the universal vari-      procedure outputs values for L that can be used
+                          ⃗
+                    ables I. (Line 5,6). If no such value for L is found, then     to extract the desired straight-line program (The-
+                    we terminate and declare the formula as unsatisﬁable           orem 1).
+                    (Line 7).
+               Veriﬁcation (Lines 8-10): In this step, we verify if the            that the base satisﬁability procedure (used in Line 5 and
+                    value currL for existential variables L found in the           Line 8) is sound, complete and terminating.
+                    previous step – that we know works for the values in             Theiterationbetweenﬁnite synthesisandveriﬁcationsteps
+                    S – also works for all possible values of the universal        is attractive because, in each iteration, the two steps learn
+                    variables. If so, we return“Satisﬁable”(Line 10) If not,       from each other. The new value for L is always guided by a
+                                     ⃗                                             set of inputs on which the previous choice for L failed.
+                    we ﬁnd a value I1 on which it does not work and add
+                    ⃗
+                    I to S (Line 9).
+                     1                                                             6.2    ReﬁnedCounterexample-GuidedSolver
+               The function T-SAT checks for satisﬁability modulo theory             Thegeneric procedure StandardExAllSolver, when given
+               of an existentially quantiﬁed formula. If the formula is satis-     the synthesis constraint in Eq. 4, performs no better than a
+               ﬁable, then it returns a model, i.e., values for the existential    naive exhaustive enumeration (as we also found experimen-
+               variables that make the formula true. Note that the function        tally for our benchmark examples). We ﬁrst explain why
+               T-SAT is essentially a call to the SMT solver.                      this is the case, and then we reﬁne the generic procedure to
+                 Weneed to argue that the above approach for solving ∃∀            ensure that it works eﬀectively on synthesis constraints.
+               formulas is correct.  It is easily seen to be sound: if the           First, let us observe what happens when we use Pro-
+               procedure StandardExAllSolver terminates, then it termi-            cedure StandardExAllSolver directly to solve the synthe-
+               nates with the correct answer. It is also easy to show that         sis constraint (Eq. 4).   Since the universal quantiﬁcation
+                                                                                                             ⃗
+               the procedure makes progress in every iteration. Speciﬁ-            in this formula is over I,O,T, the variable S of Proce-
+               cally, in every iteration, at least one choice of values for L is   dure StandardExAllSolver will need to keep tuples of the
+                                                                                          ⃗
+               forever eliminated. If the domain of L is bounded, then this        form (I ,O ,T ). Performing two iterations of the proce-
+                                                                                           0   0  0
+               observation also proves termination of the above method.            dure will convince the reader that the procedure will main-
+                                                                                                 ⃗           ⃗
+               Of course, all these results hold only under the assumption         tain a set {(I ,O ,T ),(I ,O ,T ),...} of tuples that cor-
+                                                                                                  0  0   0    1   1   1
+                                                                                                       CompositionSynthesis(               , { ∣ i = 1,...,N}):
+                 respond to “runs” of the implementations that have been                                                                spec      i
+                 tried so far. Since the implementations have not worked,                                   // Input: spec:          component specification
+                         ⃗                                                                                  //           { ∣ i = 1,...,N}:          library specification
+                      (I ,O ) does not hold for each such tuple. In the ver-                                               i
+                   spec   i   i
+                                                                                                            // Output: Failure/Program implementing 
+                 iﬁcation phase, the procedure will add another such tuple                                                                                                spec
+                                                                                                                       ⃗
+                 to the above set. In the synthesis phase, the procedure will                       1       Let ∃L∀I,O,P,R:                ∧(       ∧        ⇒ )
+                                                                                                                                        wfp      lib     conn       spec
+                 ﬁnd a new implementation (new values for L) that is incon-                                       be the synthesis constraint.
+                 sistent with all the above runs. Hence, rather than ﬁnding                         2       L := RefinedExAllSolver(                ,     ,      ,     );
+                                                                                                                                                 wfp   lib    conn   spec
+                 implementations that work on more and more inputs, the                             3       if (L ∕= "synthesis failed") {return(Lval2Prog(L))}
+                 procedure is ﬁnding implementations that are simply diﬀer-                         4       else {return("synthesis failed")};
+                 ent from earlier ones.                                                              Figure 4: Algorithm for the component-based syn-
+                    It is easy to see that, as a result, the iterative loop of the                   thesis problem.
+                 procedureessentiallyperforms“exhaustiveenumeration”. What
+                 this means is that, since Procedure StandardExAllSolver is
+                 sound, we still get sound answers, but the number of itera-                            Lemma 1. Suppose the implementation of each base com-
+                                                                                                     ponent f in the library is terminating. Then, (F               ) logically
+                 tions required to terminate (and the probability of nonter-                                   i                                                 ver
+                                                                                                     implies (F     ).
+                 mination) is greatly increased. This is clearly undesirable.                                    syn
+                                                                                   ⃗
+                 Ideally, we want to keep values of only the inputs I in the                            Proof. Suppose (F           ) holds. Let L be the values of L
+                                                                                                                                 ver                   0
+                 set S and then synthesize designs that work for these ﬁnitely                       that show validity of (F          ).  We need to prove that (F            )
+                                                                                                                                   ver                                      syn
+                 many inputs. We do not want to keep values for the tempo-                           also holds. We will show that the values L will also make
+                                                                                                                                                            0
+                 rary variables T since they can change as the design changes.                                                             ⃗
+                                                                                                     the formula (F       ) valid. Let I be an arbitrary input. We
+                                                                                                                       syn
+                 Wedonot want to force them to remain unchanged.                                     need to show that there are values for P,R and O such that
+                    Themodiﬁedprocedure, Procedure RefinedExAllSolver,                                                       ⃗
+                                                                                                      (P,O)∧               (I,O,P,R,L ) holds. Since                  (L ) is
+                                                                                                      lib              conn                 0                       wfp   0
+                 is shown in Figure 3. The crucial diﬀerence is that the new                         true, it follows from Theorem 1 that there is a well-formed
+                 procedure uses the following two diﬀerent variants of the                           program P. Since all components in the library are assumed
+                 synthesis constraint in the two phases. The formula (F                     )                                                              ⃗
+                                                                                         ver         to be terminating, the program P on input I will compute at
+                 is same as the synthesis constraint, while the formula (F                  )
+                                                                                         syn         least one value for each variable in the program. These val-
+                 is a weaker version of the synthesis (Lemma 1 on Page ).                                                                                     ⃗
+                                                                                                     ues will make the formula            (P,O)∧            (I,O,P,R,L )
+                                                                                                                                        lib              conn                 0
+                                         ⃗                                                           true.
+                      (F    )     ∃L∀I,O,T : (            ∧(      ∧         ⇒ ))
+                        ver                           wfp       lib     conn      spec
+                                         ⃗
+                      (F    )     ∃L∀I ∃O,T : (            ∧(       ∧        ∧ ))                    The following theorem states the correctness of our con-
+                        syn                            wfp       lib     conn     spec
+                                                                                                     straint solving procedure, and its proof follows from Lemma 1.
+                 The new procedure is similar to old one and works in 2
+                 phases.
+                 Finite Synthesis (Lines 5-7): In this step, we synthesize a                            Theorem 3. SupposethatProcedureRefinedExAllSolver
+                                                                                                                                                                   ⃗
+                                                                                                     is called with the input            (L),       (T),        (I,O,T,L),
+                         designthatworksforﬁnitelymanyinputs. Speciﬁcally,                                                            wfp        lib         conn
+                                                                                                                 ⃗
+                                                                                                     and       (I,O), where T := (P∪R). Then,
+                         the procedure ﬁnds values for L that work for all the                              spec
+                         inputs in S (Line 5,6). If no such values are found, we                       (a) If the procedure terminates with answer synthesis
+                         terminate and declare that no design could be found                         successful, then the synthesis constraint is valid.
+                         (Line7). Line5iseﬀectivelysolvingforFormula(F                     ),          (b) If the procedure terminates with answer synthesis
+                                                                                        syn          failed, then the synthesis constraint is not valid.
+                         which is diﬀerent from the synthesis constraint.
+                                                                                                        Proof. Proof of Part (a): First, since currL is (a part
+                 Veriﬁcation (Lines 8-10): In this step, we verify if the syn-                       of) a model for the formula in Line 6, the value of currL in
+                         thesized design – that we know works for the inputs                         the program always satisﬁes the constraint  wfp(L). Second,
+                         in S – also works for all inputs. Speciﬁcally, if the                       the procedure returns synthesis successfulonlywhenthe
+                         generated value currL for L work for all inputs, then                                      ⃗
+                                                                                                     constraint ∃I,O,T :             ∧         ∧¬         is unsatisﬁable.
+                                                                                                                                  lib      conn        spec
+                         we terminate with success. If not, then we ﬁnd an                                                                                    ⃗
+                                 ⃗                                                  ⃗                This means that the veriﬁcation constraint, ∀I,O,T : lib∧
+                         input I on which it does not work and add I to S
+                                  1                                                  1                     ⇒ ,isvalid. This completes the proof of Part (a).
+                         (Line 9). Line 8 is verifying Formula (F              ), which is             conn      spec
+                                                                            ver                        ProofofPart(b): Theprocedurereturnssynthesis failed
+                         the synthesis constraint.                                                   onlywhentheconstraint∃L,O1,...,On,T1,...,Tn :  wfp(L)∧
+                                                                                                     V                            ⃗                         ⃗
+                                                                                                             (    (T )∧         (I ,O ,T ,L)∧           (I ,O )) is unsat-
+                    ProceduresRefinedExAllSolverandStandardExAllSolver                                 P ∈S     lib   i      conn   i   i   i         spec   i   i
+                                                                                                         i
+                 perform similar operations on matching line numbers. How-                           isﬁable. By Lemma 1, this implies that the veriﬁcation con-
+                 ever, by using Formula (F          )in the synthesis phase, we guar-                straint is unsatisﬁable.
+                                                 syn
+                 antee that when we synthesize L, it “works” for the inputs                            Now we have all the components – synthesis constraint
+                 in S. In the veriﬁcation phase, we continue to use the actual                       generation (Eq. 4), synthesis constraint solving (Figure 3),
+                 synthesis constraint.                                                               and the mapping from values of L to programs (Lval2Prog)
+                    We need to argue that Procedure RefinedExAllSolver                               – to describe our overall approach. Our complete synthesis
+                 always returns the correct answer on termination. This is                           procedureisdescribedinFigure4, anditscorrectnessfollows
+                 stated in Theorem 3. But, before that, we need a lemma                              from the correctness of the three steps, namely Theorem 1,
+                 that relates the two formula (F              ) and (F      ).  Under the
+                                                          syn            ver                         Theorem 2 and Theorem 3.
+                 assumption that the implementations fi’s of the base com-
+                 ponents in the library are all terminating, we can prove that                       7.    APPLICATIONTOBITVECTORPROGRAMS
+                 (F    ) logically implies (F       ).
+                    ver                          syn
+                 We chose the domain of bitvector programs for applying             grams for each of the benchmark examples. We now present
+               our theory of component-based synthesis. The running ex-             various statistics below.
+               ampledescribedinSection2belongstothisdomain. Synthe-                 8.1    PerformanceofSynthesis Algorithm
+               sis of bitvector programs has two main applications. (a) Ef-
+               ﬁcient bitvector code-fragments are of great signiﬁcance for           Table 1 reports some interesting statistics about the syn-
+               people who write optimizing compilers or high-performance            thesis algorithm (presented in Fig. 4) on the various bench-
+               code as these code-fragments can be used to speed up the             mark examples. The total time taken by the algorithm (col.
+               inner loop of some integer or bit-ﬁddly computation. (b)             4) on the various examples varies between 1.0 to 2778.7 sec-
+               These are also helpful for designing specialized hardware.           onds. We also report the number of iterations taken by the
+                 We chose this domain for the following two primary rea-            loop (col. 3) inside our constraint solving algorithm in Fig. 3
+               sons.                                                                while performing the reﬁned counterexample guided itera-
+               ∙ Thereisaneedforautomatedtoolsforsynthesizingbitvec-                tive synthesis. The small number of these iterations (which
+                  tor manipulating algorithms since these are usually inge-         varies between 2 to 14) illustrates the eﬀectiveness of our
+                  nious little programming tricks that can“sometimes stall          technique in using counterexamples for iterative synthesis.
+                  programmers for hours or days if they really want to un-            There has been a huge investment in building formal rea-
+                  derstand why things work”. These algorithms “typically            soning technology for full veriﬁcation of safety-critical sys-
+                  describe some plausible yet unusual operation on integers         tems or hardware circuits, and partial veriﬁcation of general
+                  or bit strings that could easily be programmed using ei-          purpose software. In this paper, we show that the same
+                  ther a longish ﬁxed sequence of machine instructions or           formal reasoning technology for veriﬁcation can be lifted to
+                  a loop, but the same thing can be done much more clev-            perform synthesis. In that context, the number of itera-
+                  erly using just four or three or two carefully chosen in-         tions required by our technique points out the extra factor
+                  structions whose interactions are not at all obvious until        of computational resources required to go from veriﬁcation
+                  explained or fathomed”[28].                                       to synthesis. The largest example in our experimental evalu-
+               ∙ There are two existing techniques that can also be used            ation took over 45 minutes but it involved only 11 iterations.
+                  to synthesize bitvector programs: superoptimizers [4, 20]         Hence, the largest SAT problem solved during synthesis is
+                  and sketching [25, 26]. This allows for experimental com-         roughly 11 times the size of the SAT problem for veriﬁ-
+                  parison of our technique with existing techniques, which          cation. Any improvement in satisﬁability solvers for veri-
+                  work in a fundamentally diﬀerent way.                             ﬁcation would also directly increase the scalability of our
+                 Anadditionalchallenge that this domain oﬀers is the pres-          technique.
+               ence of arbitrary constants in some programs. Our synthesis          8.2    ComparisonwithSketchandAHA
+               framework can be easily extended to discovering such con-              We experimentally compared the implementation of our
+               stants. For this purpose, we introduce a generic base com-           synthesis technique Brahma with two other existing tools for
+               ponent fc that simply outputs some arbitrary constant c.             synthesis - Sketch and AHA - on our benchmark suite of 25
+               The component fc takes no input and returns one output               examples.
+               O and its functional speciﬁcation is written as O = c. The
+               only change to the framework is that since c is allowed to           Sketch. The tool Sketch is based on the sketching tech-
+               be arbitrary, we existentially quantify over c in the synthesis      nique [25, 26] to synthesis. We used the most recent version
+               constraint in Equation 4.                                            of Sketch (v1.3.0) for comparison with our technique. For
+                                                                                    these 25 examples, we expressed the component based de-
+               8.   EXPERIMENTALRESULTS                                             sign problem as a sketch by deﬁning functions for the base
+                 In this section, we present an experimental evaluation of          components and encoding the component-based synthesis
+               our synthesis technique as applied to bitvector program syn-         problem using a variety of encodings, some of which even
+               thesis. We also experimentally compare our technique with            turned out to be exponential. After consultation with the
+               other existing techniques that can be used for bitvector pro-        Sketch team, we chose the best encoding, which is at best
+               gram synthesis.                                                      a high degree polynomial (as illustrated below). The total
+                                                                                    runtime of Sketch on the benchmark examples is presented
+               Benchmarks. We selected 25 benchmark examples from                   in col. 5 in Table 1. Sketch times out on 6 examples and
+               the book Hacker’s Delight, commonly referred to as the               is slower by an average factor of over 20 on other examples
+               Bible of bit twiddling hacks [28].                                   (col. 6).
+                 These examples are described in Figure 5. The bench-                 We now explain why Brahma performs much better than
+               marks are organized in increasing order of complexity re-            Sketch. At a higher level, the sketching technique is sim-
+               ﬂected by the number of lines in the program. For each               ilar to our synthesis technique – both generate constraints
+               example, we provided the speciﬁcation of the desired circuit         in the ﬁrst step and then use oﬀ-the-shelf solvers to solve
+               by specifying the functional relationship between the inputs         these constraints in the second step. However, there are
+               and output of the circuit. We also provided the set of base          fundamental diﬀerences in the constraints generated by the
+               components (in the form of their functional speciﬁcations)           two techniques as well as the algorithms used for solving the
+               used in these examples.                                              constraints. To illustrate these diﬀerences, we compare the
+               Implementation and Experimental Setup. We imple-                     scalability of the two techniques as we increase the number
+               mented our technique in a tool called Brahma. It uses Yices          of components in the user-speciﬁed library for synthesizing
+               1.0.21 [3] as the underlying SMT solver, which supports rea-         the running example in Table 2. The time taken by Sketch
+               soning for quantiﬁer-free bitvector arithmetic. We ran our           (Col. 3 of Table 2) appears to scale exponentially, while the
+               experiments on 8x Intel(R) Xeon(R) CPU 1.86GHz with                  time taken by Brahma (Col. 2 of Table 2) appears to scale
+               4GBofRAM.Brahmawasabletosynthesizethedesiredpro-                     non-exponentially as the number of components increases
+              P1(x) : Turn-oﬀ right-                                                                  P22(x) : Compute Parity
+              most 1 bit. This is the      P10(x,y) : Test if nlz(x)     P17(x) :    Turn-oﬀ the      1 o :=bvshr (x,1)
+                                           == nlz(y) where nlz is        rightmost     contiguous          1
+              running example in the                                                                  2 o2:=bvxor (o1,x)
+              paper.                       number of leading zeroes      string of 1 bits             3 o :=bvshr (o ,2)
+                                                                                                           3          2
+              1 o1:=bvsub (x,1)                                          1 o1:=bvsub (x,1)            4 o4:=bvxor (o2,o3)
+              2 res:=bvand (x,o1)          1 o1:=bvand (x,y)             2 o2:=bvor (x,o1)            5 o5:=bvand (o4,0x11111111)
+                                           2 o2:=bvxor (x,y)             3 o3:=bvadd (o2,1)           6 o6:=bvmul (o5,0x11111111)
+              P2(x) : Test whether an      3 res:=bvule (o2,o1)          4 res:=bvand (o3,x)          7 o7:=bvshr (o6,28)
+              unsigned integer is of the                                                              8 res:=bvand (o7,0x1)
+                     n−1                   P11(x,y) : Test if nlz(x)     P18(x): Determineif an
+              form 2
+              1 o :=bvadd (x,1)            < nlz(y) where nlz is         integer is a power of 2 or   P23(x) : Counting number of bits
+                   1                       number of leading zeroes      not
+              2 res:=bvand (x,o1)                                                                      1 o1:=bvshr (x,1)
+                                                                         1 o1:=bvsub (x,1)             2 o2:=bvand (o1,0x55555555)
+              P3(x) : Isolate the right-   1 o1:=bvnot (y)               2 o2:=bvand (o1,x)            3 o3:=bvsub (x,o2)
+              most 1-bit                   2 o2:=bvand (x,o1)            3 o3:=bvredor (x)             4 o4:=bvand (o3,0x33333333)
+                                           3 res:=bvugt (o2,y)           4 o4:=bvredor (o2)            5 o5:=bvshr (o3,2)
+              1 o1:=bvneg (x)                                            5 o :=!(o )
+              2 res:=bvand (x,o )                                            5     4                   6 o6:=bvand (o3,0x33333333)
+                                 1         P12(x,y) : Test if nlz(x)     6 res:=(o5 && o3)             7 o :=bvadd (o ,o )
+                                                                                                            7           4  6
+              P4(x) : Form a mask          <= nlz(y) where nlz is                                      8 o8:=bvshr (o7,4)
+                                           number of leading zeroes      P19(x,m,k) : Exchang-         9 o9:=bvadd (o8,o7)
+              that identiﬁes the right-                                  ing 2 ﬁelds A and B of       10 res:=bvand (o ,0x0F0F0F0F)
+              most 1 bit and trailing 0s                                                                                 9
+                                           1 o :=bvnot (y)               the same register x where
+              1 o :=bvsub (x,1)                 1
+                   1                       2 o :=bvand (x,o )            m is mask which identi-      P24(x) : Round up to the next
+              2 res:=bvxor (x,o )               2             1
+                                 1         3 res:=bvule (o ,y)           ﬁes ﬁeld B and k is num-     highest power of 2
+                                                            2            ber of bits from end of A
+              P5(x) : Right propagate                                    to start of B                 1 o1:=bvsub (x,1)
+              rightmost 1-bit              P13(x) : Sign Function                                      2 o2:=bvshr (o1,1)
+                                           1 o :=bvshr (x,31)            1 o1:=bvshr (x,k)             3 o3:=bvor (o1,o2)
+              1 o :=bvsub (x,1)                 1                        2 o :=bvxor (x,o )
+                   1                       2 o :=bvneg (x)                   2             1           4 o4:=bvshr (o3,2)
+              2 res:=bvor (x,o )                2                        3 o :=bvand (o ,m)
+                                1          3 o :=bvshr (o ,31)               3            2            5 o5:=bvor (o3,o4)
+                                                3           2            4 o :=bvshl (o ,k)
+                                           4 res:=bvor (o ,o )               4           3             6 o6:=bvshr (o5,4)
+                                                           1  3          5 o :=bvxor (o ,o )
+              P6(x) :    Turn on the                                         5           4  3          7 o7:=bvor (o5,o6)
+              rightmost 0-bit in a word    P14 (x,y) :      Floor of     6 res:=bvxor (o5,x)           8 o8:=bvshr (o7,8)
+                                           average of two integers                                     9 o9:=bvor (o7,o8)
+              1 o1:=bvadd (x,1)            without over-ﬂowing           P20(x): Nexthigherun-        10 o10:=bvshr (o9,16)
+              2 res:=bvor (x,o1)                                         signed number with same      11 o11:=bvor (o9,o10)
+                                           1 o1:=bvand (x,y)             number of 1 bits             12 res:=bvadd (o10,1)
+                                           2 o2:=bvxor (x,y)             1 o :=bvneg (x)
+              P7(x) : Isolate the right-   3 o :=bvshr (o ,1)                1
+                                                3           2            2 o :=bvand (x,o )           P25(x,y) : Compute higher order
+              most 0-bit                   4 res:=bvadd (o ,o )              2             1
+                                                             1  3        3 o :=bvadd (x,o )           half of product of x and y
+              1 o1:=bvnot (x)                                                3             2
+              2 o :=bvadd (x,1)                                          4 o4:=bvxor (x,o2)            1 o1:=bvand (x,0xFFFF)
+                   2                       P15 (x,y) : Ceil of aver-     5 o :=bvshr (o ,2)
+              3 res:=bvand (o1,o2)         age of two integers with-         5           4             2 o2:=bvshr (x,16)
+                                           out over-ﬂowing               6 o6:=bvdiv (o5,o2)           3 o3:=bvand (y,0xFFFF)
+              P8(x) : Form a mask                                        7 res:=bvor (o6,o3)           4 o4:=bvshr (y,16)
+              that identiﬁes the trail-    1 o1:=bvor (x,y)                                            5 o5:=bvmul (o1,o3)
+              ing 0’s                      2 o2:=bvxor (x,y)             P21(x,a,b,c) : Cycling        6 o6:=bvmul (o2,o3)
+                                           3 o3:=bvshr (o2,1)            through 3 values a,b,c        7 o7:=bvmul (o1,o4)
+              1 o1:=bvsub (x,1)            4 res:=bvsub (o1,o3)                                        8 o :=bvmul (o ,o )
+              2 o :=bvnot (x)                                            1 o1:=bvneg (bveq (x,c))           8           2  4
+                   2                                                                                   9 o :=bvshr (o ,16)
+              3 res:=bvand (o ,o )                                       2 o2:=bvxor (a,c)                  9           5
+                               1  2        P16 (x,y) : Compute                                        10 o :=bvadd (o ,o )
+                                                                         3 o3:=bvneg (bveq (x,a))           10           6  9
+                                           max of two integers           4 o :=bvxor (b,c)            11 o11:=bvand (o10,0xFFFF)
+              P9(x) : Absolute Value                                         4
+              Function                     1 o1:=bvxor (x,y)             5 o5:=bvand (o1,o2)          12 o12:=bvshr (o10,16)
+                                           2 o2:=bvneg (bvuge (x,y)) 6      o6:=bvand (o3,o4)         13 o13:=bvadd (o7,o11)
+              1 o1:=bvshr (x,31)           3 o3:=bvand (o1,o2)           7 o7:=bvxor (o5,o6)          14 o14:=bvshr (o13,16)
+              2 o2:=bvxor (x,o1)           4 res:=bvxor (o3,y)           8 res:=bvxor (o7,c)          15 o15:=bvadd (o14,o12)
+              3 res:=bvsub (o2,o1)                                                                    16 res:=bvadd (o15,o8)
+              Figure 5: Benchmark Examples. The functions used in the examples have the usual semantics deﬁned in
+              SMTLIB QF BF logic [2].
+                 Benchmark          Brahma        Sketch     ratio     AHA                                             Ratio          Normalized
+                 Id    #lines   Iter.  runtime    runtime    Sketch/  time(sec)      No. of         Runtime          of Runtime     Constraint Size
+                                          sec       sec     Brahma    [#cand]        Comps.    Brahma Sketch Sketch/Brahma Brahma Sketch
+                  1       2       3        4         5         6         7               1         2        3             4            5        6
+                 P1       2       2       3.2       69.8      22       0.1[1]            2       0.11      0.27         2.45           1        1
+                 P2       2       3       3.6       28.9       8       0.1[1]            3       0.14      0.83         5.93         1.52     5.00
+                 P3       2       3       1.4       91.8      63       0.1[1]            4       0.20      2.09        10.45         1.91     19.85
+                 P4       2       2       3.3       68.4      21       0.1[1]            5       0.25      6.78        27.12         2.36     48.01
+                 P5       2       3       2.2       67.9      31       0.1[1]            6       0.36     19.69        54.70         3.18    129.26
+                 P6       2       2       2.4       87.0      36       0.1[1]            7       0.33     164.80       499.39        3.76    242.04
+                 P7       3       2       1.0       69.6      68       1.7[9]
+                 P8       3       2       1.4       70.0      51       1.4[9]        Table 2: Comparing Brahma and Sketch on running
+                 P9       3       2       5.8       85.1      15       6.5[5]        example by increasing the number of components.
+                P10       3      14      76.1     timeout     NA      10.4[1]        Constraint size is normalized with respect to the
+                P11       3       7      57.1     timeout     NA       9.3[1]        size for 2 components.
+                P12       3       9      67.8     timeout     NA       9.5[1]
+                P13       4       4       6.2      193.7      31      timeout        AHA. The AHA tool [4] is a superoptimizer, endorsed by
+                P14       4       4      59.6      935.3      16      timeout        our benchmark book [28] as A Hacker’s Assistant. It is
+                P15       4       8      118.9     726.5       6      timeout
+                P16       4       5      62.3      820.8      13      timeout        based on an idea by Henry Massalin [20], and was made
+                P17       4       6      78.1      626.1       8      108.6[9]       widely available by Granlund and Kenner as the GNU super-
+                P18       6       5      45.9      117.2       2      timeout        optimizer [11]. For experimental comparison, we provided
+                P19       6       5      34.7      472.8      14      timeout        the set of base components as a set of library functions.
+                P20       7       6      108.4    timeout     NA      timeout        AHAenumerates all possible composition of these functions
+                P21       8       5      28.3     timeout     NA      timeout        to generate candidate programs (in a way described in Fig-
+                P22       8       8      279.0    timeout     NA      timeout
+                P23      10       8     1668.0    timeout     NA      timeout        ure 1), but it tests the correctness of the candidate pro-
+                P24      12       9      224.9    timeout     NA      timeout        grams only on some inputs, and often outputs a number of
+                P25      16      11     2778.7    timeout     NA      timeout        potential solutions. The solutions produced by AHA must
+               Table 1: Comparing our tool Brahma with Sketch                        be veriﬁed in order to select the right solution.       Table 1
+               and AHA. Timeout was 1 hour. NA denotes not                           lists the total number of solutions generated by AHA (col.
+               applicable. The table shows the runtime for Brahma                    7 within [brackets]) and the total time (col. 7) taken for
+               (Col. 4), Sketch (Col. 5) and AHA (Col. 7) on 25                      generation and veriﬁcation of these solutions. AHA times
+               benchmarkssortedbylinesofcode(Col. 2). Wealso                         out on 12 examples. The better performance of Brahma is
+               report the number of iterations needed by Brahma                      explained by the fact that Brahma does not perform an ex-
+               (Col. 3), ratio of runtimes of Brahma and Sketch (Col.                haustive enumeration of the exponential state space, but
+               6) and the number of candidate solutions found by                     relies on a non-trivial strategy of candidate selection and
+               AHA(within brackets in Col. 7).                                       elimination though SMT solving. Thus, we exploit the engi-
+                                                                                     neering advances in the underlying SMT solving technology
+               from 2 to 7. The ratio of Sketch runtime to Brahma runtime,           for an eﬃcient search.
+               shown in col. 4 of Table 2, increases from 2 to nearly 500.           8.3    Choice of Set of Base Components
+                 While the size of the constraints generated by our tech-
+               nique is provably quadratic in the number of components,                 We now discuss the strategy that we used for choosing
+               experimental evidence indicates that the size of the con-             the set of base components for our benchmark examples.
+               straints generated by the sketching technique is either expo-         Picking the set of base components is the only step in our
+               nential or a high degree polynomial in the number of holes or         approach that currently requires human guidance, although
+               components. This is also illustrated in Table 2 that shows            even it is partly automated.
+               the normalized size of the constraints generated by both                 In our experiments, we started with a common set of base
+               techniques against the number of components (Col. 5 and               components, referred to as the standard library, for synthe-
+               Col. 6 for Brahma and Sketch respectively). We normalize              sizing programs for each of the benchmark examples. The
+               the size of the constraints with respect to the constraint size       standard library included 12 components performing stan-
+               for 2 components. This ensures a fair comparison of the               dardoperations, such as bitwise-and, bitwise-or, bitwise-not,
+               rate of increase in constraint size with increase in number           add-one, bitwise-xor, shift-right, comparison, add, and sub-
+               of components for the two tools irrespective of the abso-             tract operations.     The standard library was suﬃcient for
+               lute size of the generated constraints which may depend on            synthesizing the ﬁrst 17 benchmark examples. For other
+               optimizations and preprocessing. The succinctness of our              examples, the library was augmented with a set of new com-
+               constraint is because of our non-trivial encoding that ex-            ponents suggested by the user. We call this set the extended
+               ploits the modular speciﬁcations of the components, and it            library.  This is similar to many library driven programming
+               helps us relegate the inherent exponential reasoning to the           languages such as Java and Ocaml which have standard li-
+               underlying SMT solvers.                                               brary functions. If a program requires functions outside the
+                 It may be tempting to speculate that the runtime gains              standard library, the user has to select the appropriate li-
+               of Brahma over Sketch arise because Brahma uses a diﬀer-              braries to include. Similarly, in our technique, programmer
+               ent SMT solver. However, this is not true, since Brahma               speciﬁes the extended library if the standard library is not
+               and Sketch are experimentally observed to take comparable             suﬃcient for the synthesis of the program. This also facili-
+               time for performing the veriﬁcation step; see Table 3. It fol-        tates the hierarchical design of programs where the user can
+               lows that the diﬀerences are entirely due to the algorithmic          specify a synthesized program as a new component in a new
+               improvements in Brahma.                                               synthesis problem.
+                                                                         For the above-mentioned incremental design technique to
+                                                                       be successful, it is pertinent that the synthesis engine not
+                                                                       only synthesize correct designs quickly but also report in-
+                                                                       feasibility of the synthesis problem quickly. In our experi-
+                                                                       ments, we noted that Brahma reports infeasibility of design
+                                                                       rather quickly. More speciﬁcally, when the standard library
+                                                                       wasinsuﬃcient to synthesize a desired speciﬁcation, Brahma
+                                                                       terminated in less than 100 seconds on almost all examples.
+                                                                       Hence, reliance on human guidance can be reduced using a
+                                                                       strategy where components are added in an incremental way
+                                                                       to the library until synthesis is successful.
+                                                                         Regarding the issue of synthesis of optimal designs – de-
+                     Benchmark    Veriﬁcation Runtime(ms)              signs that use the minimal number of components – we ob-
+                                  Brahma   Sketch  Ratio               served that in experiments, we always got minimal designs.
+                                                                       However, this is not a guarantee. Minimality can, however,
+                         P1         35       18     1.94               be ensured by iteratively removing each component as long
+                         P2         11       16     0.69               as a design exists.
+                         P3         98       57     1.72
+                         P4         58       31     1.87               9.  RELATEDWORK
+                         P5         59       45     1.31
+                         P6         78       32     2.43               Counterexample Guided Inductive Synthesis. Induc-
+                         P7         03       11     0.27               tive synthesis refers to generating a system from input-output
+                         P8         78       66     1.18               examples. Thisprocessinvolvesusingeachnewinput-output
+                         P9         14       08     1.75               example to reﬁne the hypothesis about the system until con-
+                        P10         48      NA      NA                 vergence is reached. Inductive synthesis had its origin in
+                        P11         29      NA      NA                 the pioneering work by Gold on language learning [10] and
+                        P12         29      NA      NA                 by Shapiro on algorithmic debugging and its application to
+                        P13         12       16     0.75               automated program construction [22]. The inductive ap-
+                        P14         69       38     1.82               proach [21, 9] for synthesizing a program involves debugging
+                        P15         108      56     1.93               the program with respect to positive and negative examples
+                        P16         77       41     1.88               until the correct program is synthesized. The negative ex-
+                        P17         109      78     1.40               amples can be counterexamples discovered while trying to
+                        P18         72       47     1.53               prove a program’s correctness. Counterexamples have been
+                        P19         64       52     1.23               used in incremental synthesis of programs [26] and discrete
+                        P20         96      NA      NA                 event systems [7].
+                        P21         42      NA      NA                   Wehave recently used the encoding presented in this pa-
+                        P22         127     NA      NA                 per to solve a diﬀerent component-based synthesis problem
+                        P23         103     NA      NA                 wherein logical speciﬁcation of the desired program is re-
+                        P24         62      NA      NA                 placed by an input-output oracle [12]. The synthesis ap-
+                        P25         184     NA      NA                 proaches in the two papers are signiﬁcantly diﬀerent – [12]
+            Table 3:     Comparing the veriﬁcation times of            uses only the encoding of the synthesis problem as an ∃∀
+            Brahma and Sketch. Timeout was 1 hour. For the             formula that is presented in (and is the contribution of) this
+            similar veriﬁcation step, Sketch is slower only by an      paper, but not the ∃∀ solving strategy.
+            average factor of 1.4 (maximum factor is 2.43) on          Automated API Composition. The Jungloid mining
+            all examples. NA denotes that Sketch timeouts on           tool [18] synthesizes code-fragments (over a given set of API
+            that example and hence there is no veriﬁcation time.       methods annotated with their type signatures) given a sim-
+            For the algorithmically-diﬀerent synthesis step, as        ple query that describes the desired code in terms of input
+            shown in Table 1, Sketch was slower by a factor of         and output types. We push this work forward to synthesiz-
+            20 on examples on which it terminates – so, even if        ing code-fragments that meet a functional speciﬁcation as
+            we normalize for use of diﬀerent constraint solvers,       opposed to simply type speciﬁcations. Typing constraints
+            sketch continues to be an order-of-magnitude slower.       can also be easily incorporated in our synthesis constraints.
+                                                                         DIPACS[13]compilerincorporatesanAIplannertoreplace
+                                                                       a call of a programmer-deﬁned abstract algorithm with a se-
+                                                                       quence of library calls. It uses programmer-compiler inter-
+                                                                       action to prune undesirable compositions. DIPACS requires
+                                                                       the library (or application) programmer to specify behavior
+                                                                       of the library procedures (or, desired eﬀect of the abstract
+                                                                       algorithm) using high-level abstractions, such as predicates
+                                                                       sorted and permutation. Furthermore, it then needs axioms
+                                                                       for these predicates. This is similar to the work on auto-
+                                                                       matic program synthesis [19, 27], where a theorem prover
+                                                                       was used instead of an AI planner. Our approach does not
+                                                                       use abstract predicates and axioms and relies on the pred-
+              icates provided by the SMT solver. The SMT solver also            generalizations to synthesizing programs with richer control
+              reasons about the implicit axioms using decision procedures.      structure, such as loops and recursion, and to synthesizing
+              Sketching. System development requires both algorithmic           from partial speciﬁcations. There is also potential for us-
+              insights as well as careful attention to details. Sketching [25]  ing richer theories, and limited ﬁrst-order reasoning, that is
+              requires a developer to come up with the algorithmic insight      supported by modern SMT solvers, to synthesize from com-
+              and uses the sketch compiler to ﬁll in missing details by us-     ponents whose speciﬁcations are given at higher levels of
+              ing principle of counterexample guided inductive synthesis.       abstraction.
+              This allows the sketch technique to be quite general, and ap-     Acknowledgment. WethankmembersoftheSketchteam
+              plicable to discovering small unknown details in a variety of     (Ras Bodik, Armando Solar-Lezama, Lexin Shan, Nicholas
+              programs [26, 23, 24]. In contrast, our tool seeks to discover    Tung) and Rishabh Singh who helped us with the Sketch
+              algorithmic insights, albeit at cost of being more suited for     tool.
+              a special class of programs. We chose bitvector programs          11.    REFERENCES
+              as our application domain since key hardness in synthesis of
+              these programs is to come up with the algorithmic insight.          [1] Satisﬁability modulo theories competition (smt-comp).
+              Super-optimizers. Superoptimization is the task of ﬁnd-                http://www.smtcomp.org/2009/index.shtml.
+              ing an optimal code sequence for a straight-line target se-         [2] SMTLIB: Satisﬁability modulo theories lib.
+              quence of instructions, and has shown to be useful in op-              http://smtlib.org.
+              timizing performance-critical inner loops. One approach to          [3] Yices: An SMT solver. http://yices.csl.sri.com.
+              superoptimization has been to simply enumerate sequences            [4] The aha! (a hacker’s assistant) superoptimizer.
+              of increasing length or cost, testing each for equality with           www.hackersdelight.org/aha.zip,/aha.pdf, 2008.
+              the target speciﬁcation [20].  Another approach has been            [5] S. Bansal and A. Aiken. Automatic generation of
+              to constrain the search space to a set of equality-preserving          peephole superoptimizers. In ASPLOS, 2006.
+              transformations expressed by the system designer [14] and           [6] S. Bansal and A. Aiken. Binary translation using
+              then select the one with the lowest cost. Recent work has              peephole superoptimizers. In OSDI, 2008.
+              used superoptimization [5, 6] to automatically generate gen-        [7] B. Brandin, R. Malik, and P. Malik. Incremental
+              eral purpose peephole optimizers by optimizing a small set             veriﬁcation and synthesis of discrete-event systems
+              of instructions in the code. In these approaches, the ex-              guided by counterexamples. IEEE CST, 12(3), 2004.
+              haustive state space search is quite expensive making them          [8] R. Cytron, J. Ferrante, B. K. Rosen, M. N. Wegman,
+              amenable to only discovering optimal instructions of length            and F. K. Zadeck. An eﬃcient method of computing
+              four or less in reasonable amount of time.                             static single assignment form. In POPL, 1989.
+              Use of satisﬁability solving for synthesis. SAT solvers             [9] P. Flener and L. Popelmnsky. On the use of inductive
+              have been used for synthesis previously. Massalin [20] used            reasoning in program synthesis: Prejudice and
+              themforveriﬁcationofcandidatesynthesizedprograms. SAT                  prospects. In LOBSTR. 1994.
+              solvers are also used in Sketching [26] to implement the in-      [10] E. M. Gold. Language identiﬁcation in the limit.
+              ductive program synthesis technique. We use SMT solving                Information and Control, 10(5):447–474, 1967.
+              to implementouralgorithmforsolvingsynthesisconstraints.           [11] T. Granlund and R. Kenner. Eliminating branches
+              This makes our synthesis approach more eﬃcient as well as              using a superoptimizer and In PLDI, 1992.
+              more general. We only require that synthesis constraints
+              generated by our technique be solvable by an SMT solver.          [12] S. Jha, S. Gulwani, S. Seshia, and A. Tiwari.
+                                                                                     Oracle-guided component-based program synthesis. In
+              10.    CONCLUSIONANDFUTUREWORK                                         ICSE, 2010 (to-appear).
+                                                                                [13] T. A. Johnson and R. Eigenmann. Context-sensitive
+                Automated synthesis has the potential to revolutionize               domain-independent algorithm composition and
+              systemdevelopmentprocess. Upuntilnow, automatingsyn-                   selection. In PLDI, 2006.
+              thesis was beyond the realm of practicality. However, huge        [14] R. Joshi, G. Nelson, and K. H. Randall. Denali: A
+              engineering advances in logical reasoning have signiﬁcantly            goal-directed superoptimizer. In PLDI, 2002.
+              changed the landscape. It has enabled veriﬁcation of large        [15] D. E. Knuth. The art of computer programming.
+              systems, and in this paper, we show that synthesis requires            http://www-cs-faculty.stanford.edu/˜knuth/
+              resources within one order of magnitude of the resources               taocp.html.
+              required for veriﬁcation.                                         [16] N. Linial, Y. Mansour, and N. Nisan. Constant depth
+                Most recent work on automated synthesis is based on the              circuits, fourier transform, learnability. In FOCS, ’89.
+              philosophy that synthesis can be automated only if it is          [17] Y. Lustig and M. Vardi. Synthesis from component
+              partially aided by humans. We demonstrate that, using a                libraries. In Proc. FoSSaCS, pages 395–409, 2009.
+              combination of the modularity principle, SMT solver, non-
+              trivial encoding of synthesis as constraint solving, and re-      [18] D. Mandelin, L. Xu, R. Bod´ık, and D. Kimelman.
+              ﬁned constraint-solving approaches, human intervention can             Jungloid mining: helping to navigate the API jungle.
+              be eliminated. This is especially true for speciﬁc domains,            In PLDI, pages 48–61, 2005.
+              such as bitvector algorithms, where algorithms are not in-        [19] Z. Manna and R. Waldinger. A deductive approach to
+              tuitive and human guidance is a hindrance, rather than a               program synthesis. ACM TOPLAS, 2(1):90–121, 1980.
+              help, to automated synthesis.                                     [20] H. Massalin. Superoptimizer - a look at the smallest
+                Our formulation of the component-based synthesis prob-               program. In ASPLOS, pages 122–126, 1987.
+              lem and our solution are both more widely applicable, and         [21] S. Muggleton, editor. Inductive Logic Programming,
+              this exploration is left for future work. There are possible           volume 38 of The APIC Series. Academic Press, 1992.
+       [22] E. Y. Shapiro. Algorithmic Program DeBugging. MIT
+         Press, Cambridge, MA, USA, 1983.
+       [23] A. Solar-Lezama, G. Arnold, L. Tancau, R. Bod´ık,
+         V. A. Saraswat, and S. A. Seshia. Sketching stencils.
+         In PLDI, pages 167–178, 2007.
+       [24] A. Solar-Lezama, C. G. Jones, and R. Bod´ık.
+         Sketching concurrent data structures. In PLDI, 2008.
+       [25] A. Solar-Lezama, R. Rabbah, R. Bod´ık, and
+         K. Ebcioglu. Programming by sketching for
+         bit-streaming programs. In PLDI, 2005.
+       [26] A. Solar-Lezama, L. Tancau, R. Bod´ık, S. Seshia, and
+         V. Saraswat. Combinatorial sketching for ﬁnite
+         programs. In ASPLOS, 2006.
+       [27] M. Stickel, R. Waldinger, M. Lowry, T. Pressburger,
+         and I. Underwood. Deductive composition of astro.
+         software from subroutine libraries. In CADE, ’94.
+       [28] H. S. Warren. Hacker’s Delight. Addison-Wesley, ’02.

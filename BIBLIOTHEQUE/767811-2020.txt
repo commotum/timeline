@@ -1,0 +1,663 @@
+                                      SE(3)-Transformers: 3D Roto-Translation
+                                               Equivariant Attention Networks
+                                                           ∗†                                               ∗
+                                          Fabian B. Fuchs                                Daniel E. Worrall
+                               Bosch Center for Artiﬁcial Intelligence     AmsterdamMachineLearningLab,Philips Lab
+                                     A2ILab,OxfordUniversity                          University of Amsterdam
+                                    fabian@robots.ox.ac.uk                             d.e.worrall@uva.nl
+                                           Volker Fischer                                   MaxWelling
+                               Bosch Center for Artiﬁcial Intelligence           AmsterdamMachineLearningLab
+                                 volker.fischer@de.bosch.com                          University of Amsterdam
+                                                                                         m.welling@uva.nl
+                                                                       Abstract
+                                    Weintroduce the SE(3)-Transformer, a variant of the self-attention module for
+                                    3D point clouds and graphs, which is equivariant under continuous 3D roto-
+                                    translations. Equivariance is important to ensure stable and predictable perfor-
+                                    mance in the presence of nuisance transformations of the data input. A positive
+                                    corollary of equivariance is increased weight-tying within the model. The SE(3)-
+                                    Transformer leverages the beneﬁts of self-attention to operate on large point clouds
+                                    and graphs with varying number of points, while guaranteeing SE(3)-equivariance
+                                    for robustness. We evaluate our model on a toy N-body particle simulation dataset,
+                                    showcasing the robustness of the predictions under rotations of the input. We fur-
+                                    ther achieve competitive performance on two real-world datasets, ScanObjectNN
+                                    and QM9. In all cases, our model outperforms a strong, non-equivariant attention
+                                    baseline and an equivariant model without attention.
+                           1    Introduction
+                           Self-attention mechanisms [31] have enjoyed a sharp rise in popularity in recent years. Their relative
+                           implementational simplicity coupled with high efﬁcacy on a wide range of tasks such as language
+                           modeling [31], image recognition [18], or graph-based problems [32], make them an attractive
+                           component to use. However, their generality of application means that for speciﬁc tasks, knowledge
+                           of existing underlying structure is unused. In this paper, we propose the SE(3)-Transformer shown in
+                           Fig. 1, a self-attention mechanism speciﬁcally for 3D point cloud and graph data, which adheres to
+                           equivariance constraints, improving robustness to nuisance transformations and general performance.
+                           Point cloud data is ubiquitous across many ﬁelds, presenting itself in diverse forms such as 3D
+                           object scans [29], 3D molecular structures [21], or N-body particle simulations [14]. Finding neural
+                           structures which can adapt to the varying number of points in an input, while respecting the irregular
+                           samplingofpointpositions, is challenging. Furthermore, an important property is that these structures
+                           should be invariant to global changes in overall input pose; that is, 3D translations and rotations of
+                           the input point cloud should not affect the output. In this paper, we ﬁnd that the explicit imposition
+                           of equivariance constraints on the self-attention mechanism addresses these challenges. The SE(3)-
+                           Transformer uses the self-attention mechanism as a data-dependent ﬁlter particularly suited for sparse,
+                           non-voxelised point cloud data, while respecting and leveraging the symmetries of the task at hand.
+                              ∗equal contribution
+                               †work done while at the Bosch Center for Artiﬁcial Intelligence
+                           34th Conference on Neural Information Processing Systems (NeurIPS 2020), Vancouver, Canada.
+                                                                        learned per 
+                                                                                                              equivariant
+                          A                                                            B
+                                                                        point features
+                                                                                                                invariant
+                                               map                      pool
+                          Figure 1: A) Each layer of the SE(3)-Transformer maps from a point cloud to a point cloud (or graph
+                          to graph) while guaranteeing equivariance. For classiﬁcation, this is followed by an invariant pooling
+                          layer and an MLP. B) In each layer, for each node, attention is performed. Here, the red node attends
+                          to its neighbours. Attention weights (indicated by line thickness) are invariant w.r.t. input rotation.
+                          Self-attention itself is a pseudo-linear map between sets of points. It can be seen to consist of
+                          twocomponents: input-dependent attention weights and an embedding of the input, called a value
+                          embedding. In Fig. 1, we show an example of a molecular graph, where attached to every atom we
+                          see a value embedding vector and where the attention weights are represented as edges, with width
+                          corresponding to the attention weight magnitude. In the SE(3)-Transformer, we explicitly design the
+                          attention weights to be invariant to global pose. Furthermore, we design the value embedding to be
+                          equivariant to global pose. Equivariance generalises the translational weight-tying of convolutions. It
+                          ensures that transformations of a layer’s input manifest as equivalent transformations of the output.
+                          SE(3)-equivariance in particular is the generalisation of translational weight-tying in 2D known from
+                          conventional convolutions to roto-translations in 3D. This restricts the space of learnable functions to
+                          a subspace which adheres to the symmetries of the task and thus reduces the number of learnable
+                          parameters. Meanwhile, it provides us with a richer form of invariance, since relative positional
+                          information between features in the input is preserved.
+                          Theworksclosest related to ours are tensor ﬁeld networks (TFN) [28] and their voxelised equivalent,
+                          3Dsteerable CNNs [37]. These provide frameworks for building SE(3)-equivariant convolutional
+                          networks operating on point clouds. Employing self-attention instead of convolutions has several
+                          advantages. (1) It allows a natural handling of edge features extending TFNs to the graph setting.
+                          (2) This is one of the ﬁrst examples of a nonlinear equivariant layer. In Section 3.2, we show our
+                          proposed approach relieves the strong angular constraints on the ﬁlter compared to TFNs, therefore
+                          adding representational capacity. This constraint has been pointed out in the equivariance literature to
+                          limit performance severely [36]. Furthermore, we provide a more efﬁcient implementation, mainly
+                          due to a GPU accelerated version of the spherical harmonics. The TFN baselines in our experiments
+                          leverage this and use signiﬁcantly scaled up architectures compared to the ones used in [28].
+                          Ourcontributions are the following:
+                                • Weintroduce a novel self-attention mechanism, guaranteeably invariant to global rotations
+                                  and translations of its input. It is also equivariant to permutations of the input point labels.
+                                • WeshowthattheSE(3)-Transformerresolves an issue with concurrent SE(3)-equivariant
+                                  neural networks, which suffer from angularly constrained ﬁlters.
+                                • Weintroduce a Pytorch implementation of spherical harmonics, which is 10x faster than
+                                  Scipy on CPU and 100−1000× faster on GPU. This directly addresses a bottleneck of
+                                  TFNs[28]. E.g., for a ScanObjectNN model, we achieve ≈ 22× speed up of the forward
+                                  pass compared to a network built with SH from the lielearn library (see Appendix C).
+                                • Codeavailable at https://github.com/FabianFuchsML/se3-transformer-public
+                          2   BackgroundAndRelatedWork
+                          Inthissectionweintroducetherelevantbackgroundmaterialsonself-attention,graphneuralnetworks,
+                          and equivariance. We are concerned with point cloud based machine learning tasks, such as object
+                          classiﬁcation or segmentation. In such a task, we are given a point cloud as input, represented as a
+                          collection of n coordinate vectors x ∈ R3 with optional per-point features f ∈ Rd.
+                                                           i                                    i
+                          2.1  TheAttention Mechanism
+                          The standard attention mechanism [31] can be thought of as consisting of three terms: a set of
+                          query vectors q ∈ Rp for i = 1,...,m, a set of key vectors k ∈ Rp for j = 1,...,n, and a set of
+                                         i                                          j
+                                                                       2
+                             value vectors v ∈ Rr for j = 1,...,n, where r and p are the dimensions of the low dimensional
+                                              j
+                             embeddings. We commonly interpret the key k and the value v as being ‘attached’ to the same
+                                                                                 j                 j
+                             point j. For a given query q , the attention mechanism can be written as
+                                                           i
+                                                                          n                                >
+                                                                        X                            exp(q k )
+                                               Attn(q ,{k },{v }) =          α v ,       α =P              i   j                    (1)
+                                                      i    j     j            ij j         ij      n           >
+                                                                                                    0   exp(q k 0)
+                                                                         j=1                       j =1        i  j
+                             where we used a softmax as a nonlinearity acting on the weights. In general, the number of query
+                             vectors does not have to equal the number of input points [16]. In the case of self-attention the query,
+                             key, and value vectors are embeddings of the input features, so
+                                               q=hQ(f),                     k=hK(f),                      v = hV(f),                (2)
+                             where{h ,h ,h }are,inthemostgeneralcase,neuralnetworks[30]. Forus,queryq isassociated
+                                       Q K V                                                                            i
+                             with a point i in the input, which has a geometric location x . Thus if we have n points, we have n
+                                                                                             i
+                             possible queries. For query q , we say that node i attends to all other nodes j 6= i.
+                                                            i
+                             Motivated by a successes across a wide range of tasks in deep learning such as language modeling
+                             [31], image recognition [18], graph-based problems [32], and relational reasoning [30, 9], a recent
+                             stream of work has applied forms of self-attention algorithms to point cloud data [44, 42, 16]. One
+                             such example is the Set Transformer [16]. When applied to object classiﬁcation on ModelNet40 [41],
+                             the input to the Set Transformer are the cartesian coordinates of the points. Each layer embeds this
+                             positional information further while dynamically querying information from other points. The ﬁnal
+                             per-point embeddings are downsampled and used for object classiﬁcation.
+                             Permutation equivariance A key property of self-attention is permutation equivariance. Permuta-
+                             tions of point labels 1,...,n lead to permutations of the self-attention output. This guarantees the
+                             attention output does not depend arbitrarily on input point ordering. Wagstaff et al. [33] recently
+                             showedthat this mechanism can theoretically approximate all permutation equivariant functions. The
+                             SE(3)-transformer is a special case of this attention mechanism, inheriting permutation equivariance.
+                             However, it limits the space of learnable functions to rotation and translation equivariant ones.
+                             2.2   GraphNeuralNetworks
+                             Attention scales quadratically with point cloud size, so it is useful to introduce neighbourhoods:
+                             instead of each point attending to all other points, it only attends to its nearest neighbours. Sets with
+                             neighbourhoods are naturally represented as graphs. Attention has previously been introduced on
+                             graphs under the names of intra-, self-, vertex-, or graph-attention [17, 31, 32, 12, 26]. These methods
+                             were uniﬁed by Wang et al. [34] with the non-local neural network. This has the simple form
+                                                             y =          1        Xw(f,f )h(f )                                    (3)
+                                                               i   C({f ∈ N })              i  j     j
+                                                                        j      i   j∈N
+                                                                                       i
+                             where w and h are neural networks and C normalises the sum as a function of all features in the
+                             neighbourhood Ni. This has a similar structure to attention, and indeed we can see it as performing
+                             attention per neighbourhood. While non-local modules do not explicitly incorporate edge-features, it
+                                                                       ˇ     ´
+                             is possible to add them, as done in Velickovic et al. [32] and Hoshen [12].
+                             2.3   Equivariance
+                             Given a set of transformations T : V → V for g ∈ G, where G is an abstract group, a function
+                                                                 g
+                             φ:V →Yiscalledequivariantiffor every g there exists a transformation Sg : Y → Y such that
+                                                         Sg[φ(v)] = φ(Tg[v])         for all g ∈ G,v ∈ V.                           (4)
+                             Theindices g can be considered as parameters describing the transformation. Given a pair (T ,S ),
+                                                                                                                                g   g
+                             wecansolvefor the family of equivariant functions φ satisfying Equation 4. Furthermore, if (Tg,Sg)
+                             are linear and the map φ is also linear, then a very rich and developed theory already exists for ﬁnding
+                             φ [6]. In the equivariance literature, deep networks are built from interleaved linear maps φ and
+                             equivariant nonlinearities. In the case of 3D roto-translations it has already been shown that a suitable
+                             structure for φ is a tensor ﬁeld network [28], explained below. Note that Romero et al. [24] recently
+                             introduced a 2D roto-translationally equivariant attention module for pixel-based image data.
+                             GroupRepresentations In general, the transformations (Tg,Sg) are called group representations.
+                             Formally, a group representation ρ : G → GL(N) is a map from a group G to the set of N × N
+                                                                                 3
+                             invertible matrices GL(N). Critically ρ is a group homomorphism; that is, it satisﬁes the following
+                             property ρ(g g ) = ρ(g )ρ(g ) for all g ,g ∈ G. Speciﬁcally for 3D rotations G = SO(3), we
+                                          1 2         1     2          1  2
+                             have a few interesting properties: 1) its representations are orthogonal matrices, 2) all representations
+                             can be decomposed as
+                                                                              "           #
+                                                                            > M
+                                                                 ρ(g) = Q           D`(g) Q,                                    (5)
+                                                                                 `
+                            where Q is an orthogonal, N × N, change-of-basis matrix [5]; each D for ` = 0,1,2,... is a
+                                                                                    3         L           `
+                            (2`+1)×(2`+1)matrixknownasaWigner-Dmatrix ;andthe                     is the direct sum or concatenation
+                             of matrices along the diagonal. The Wigner-D matrices are irreducible representations of SO(3)—
+                             think of them as the ‘smallest’ representations possible. Vectors transforming according to D (i.e.
+                                                                                                                              `
+                            we set Q = I), are called type-` vectors. Type-0 vectors are invariant under rotations and type-1
+                            vectors rotate according to 3D rotation matrices. Note, type-` vectors have length 2` + 1. They can
+                             be stacked, forming a feature vector f transforming according to Eq. (5).
+                            Tensor Field Networks Tensor ﬁeld networks (TFN) [28] are neural networks, which map point
+                             clouds to point clouds under the constraint of SE(3)-equivariance, the group of 3D rotations and
+                             translations. For point clouds, the input is a vector ﬁeld f : R3 → Rd of the form
+                                                                            N
+                                                                    f(x) = Xf δ(x−x ),                                          (6)
+                                                                                j        j
+                                                                           j=1
+                            where δ is the Dirac delta function, {x } are the 3D point coordinates and {f } are point features,
+                                                                     j                                        j
+                             representing such quantities as atomic number or point identity. For equivariance to be satisﬁed, the
+                             features of a TFN transform under Eq. (5), where Q = I. Each fj is a concatenation of vectors of
+                             different types, where a subvector of type-` is written f`. A TFN layer computes the convolution of a
+                                                                                    j
+                                                                               `k    3      (2`+1)×(2k+1)
+                             continuous-in-space, learnable weight kernel W       : R →R                   from type-k features to
+                             type-` features. The type-` output of the TFN layer at position x is
+                                                                                               i
+                                                         Z                                   n
+                                             `       X `k 0                k   0    0   XX `k                   k
+                                             f    =         W (x −x)f (x)dx =                   W (x −x)f ,                     (7)
+                                             out,i                      i  in                          j     i  in,j
+                                                     k≥0|            {z            }    k≥0j=1|          {z       }
+                                                                k→`convolution                  node j →nodeimessage
+                            Wecan also include a sum over input channels, but we omit it here. Weiler et al. [37], Thomas
+                             et al. [28] and Kondor [15] showed that the kernel W`k lies in the span of an equivariant basis
+                                `k k+`                                                                              th
+                             {WJ }          . The kernel is a linear combination of these basis kernels, where the J  coefﬁcient is
+                                    J=|k−`|        `k
+                             a learnable function ϕ   : R≥0 → Roftheradius kxk. Mathematically this is
+                                                   J
+                                                 k+`                                                 J
+                                      `k         X `k               `k                   `k        X                    `k
+                                    W (x)=              ϕ (kxk)W (x),           where W (x) =            YJm(x/kxk)Q       .    (8)
+                                                         J          J                    J                              Jm
+                                               J=|k−`|                                            m=−J
+                             Each basis kernel W`k : R3 → R(2`+1)×(2k+1) is formed by taking a linear combination of Clebsch-
+                                                  J
+                                                `k                                                 th
+                             Gordan matrices Q      of shape (2` + 1) × (2k + 1), where the J,m linear combination coefﬁcient
+                                                Jm
+                                      th                     th                             3       2J+1                         `k
+                             is the m   dimension of the J     spherical harmonic YJ : R → R             . Each basis kernel W
+                                                                                                                                 J
+                             completely constrains the form of the learned kernel in the angular direction, leaving the only
+                                                                                                 `k
+                             learnable degree of freedom in the radial direction. Note that W (0) 6= 0 only when k = ` and
+                                                                                                 J
+                             J =0,whichreducesthekernel to a scalar w multiplied by the identity, W`` = w``I, referred to as
+                             self-interaction [28]. As such we can rewrite the TFN layer as
+                                                                                   n
+                                                        `          `` `      XX `k                   k
+                                                       f     = w f         +          W (xj −xi)f       ,                       (9)
+                                                        out,i         in,i                           in,j
+                                                                 | {z }      k≥0 j6=i
+                                                               self-interaction
+                             Eq. (7) and Eq. (9) present the convolution in message-passing form, where messages are aggregated
+                             from all nodes and feature types. They are also a form of nonlocal graph operation as in Eq. (3),
+                            where the weights are functions on edges and the features {f } are node features. We will later see
+                                                                                            i
+                             howourproposedattention layer uniﬁes aspects of convolutions and graph neural networks.
+                                3The ‘D’ stands for Darstellung, German for representation
+                                                                               4
+                                 Step 1: Get nearest neighbours and relative positions             Step 2: Get SO(3)-equivariant weight matrices
+                                                                                                                                             Spherical
+                                                                                                    Clebsch-          Radial Neural 
+                                                                                                                                             Harmonics
+                                                                                                    Gordon Coeff.     Network
+                                                                                                   Matrix W consists of blocks mapping between degrees
+                                 Step 3: Propagate queries, keys, and values to edges              Step 4: Compute attention and aggregate
+                                 Figure 2: Updating the node features using our equivariant attention mechanism in four steps. A
+                                 moredetailed description, especially of step 2, is provided in the Appendix. Steps 3 and 4 visualise a
+                                 graph network perspective: features are passed from nodes to edges to compute keys, queries and
+                                 values, which depend both on features and relative positions in a rotation-equivariant manner.
+                                 3    Method
+                                 Here, we present the SE(3)-Transformer. The layer can be broken down into a procedure of steps as
+                                 showninFig.2,whichwedescribeinthefollowing section. These are the construction of a graph
+                                 from a point cloud, the construction of equivariant edge functions on the graph, how to propagate
+                                 SE(3)-equivariant messagesonthegraph,andhowtoaggregatethem. Wealsointroduceanalternative
+                                 for the self-interaction layer, which we call attentive self-interaction.
+                                 3.1   Neighbourhoods
+                                 Given a point cloud {(x ,f )}, we ﬁrst introduce a collection of neighbourhoods N ⊆ {1,...,N},
+                                                             i   i                                                                   i
+                                 one centered on each point i. These neighbourhoods are computed either via the nearest-neighbours
+                                 methods or may already be deﬁned. For instance, molecular structures have neighbourhoods deﬁned
+                                 bytheir bonding structure. Neighbourhoods reduce the computational complexity of the attention
+                                 mechanism from quadratic in the number of points to linear. The introduction of neighbourhoods
+                                 converts our point cloud into a graph. This step is shown as Step 1 of Fig. 2.
+                                 3.2   TheSE(3)-Transformer
+                                 TheSE(3)-Transformer itself consists of three components. These are 1) edge-wise attention weights
+                                 α ,constructedtobeSE(3)-invariantoneachedgeij,2)edge-wiseSE(3)-equivariantvaluemessages,
+                                   ij
+                                 propagating information between nodes, as found in the TFN convolution of Eq. (7), and 3) a
+                                 linear/attentive self-interaction layer. Attention is performed on a per-neighbourhood basis as follows:
+                                                       `              `` `         X X                       `k             k
+                                                      f     = W f               +                  α      W (x −x)f             .                (10)
+                                                       out,i          V in,i                         ij      V    j      i  in,j
+                                                                   | {z }          k≥0j∈Ni\i      |{z}    |         {z        }
+                                                                                                attention
+                                                                self-interaction               1            valuemessage
+                                                                 3                                            2
+                                 These components are visualised in Fig. 2. If we remove the attention weights then we have a
+                                 tensor ﬁeld convolution, and if we instead remove the dependence of W                    on(x −x ),wehavea
+                                                                                                                       V        j      i
+                                 conventional attention mechanism. Provided that the attention weights αij are invariant, Eq. (10) is
+                                 equivariant to SE(3)-transformations. This is because it is just a linear combination of equivariant
+                                 value messages. Invariant attention weights can be achieved with a dot-product attention structure
+                                 showninEq.(11). This mechanism consists of a normalised inner product between a query vector q
+                                                                                                                                                     i
+                                                                                           5
+                                        at node i and a set of key vectors {k }                          along each edge ij in the neighbourhood N where
+                                                                                            ij j∈Ni                                                                     i
+                                                                     >                             MX                                    MX
+                                                            exp(q k )
+                                                    P                i    ij                                       `k k                                 `k                k
+                                          α =                                         ,    q =                 W f , k =                             W (x −x)f . (11)
+                                             ij                             >                i                     Q in,i        ij                     K j           i   in,j
+                                                          0        exp(q k 0)
+                                                        j ∈N \i             i    ij
+                                                               i                                   `≥0 k≥0                               `≥0 k≥0
+                                        L                                                                                                                                            `k
+                                             is the direct sum, i.e. vector concatenation in this instance. The linear embedding matrices W
+                                                                                                                                                                                     Q
+                                                  `k
+                                        and W (x −x ) are of TFN type (c.f. Eq. (8)). The attention weights α                                              are invariant for the
+                                                  K j           i                                                                                      ij
+                                        following reason. If the input features {f                         } are SO(3)-equivariant, then the query q and key
+                                                                                                       in,j                                                               i
+                                        vectors {k } are also SE(3)-equivariant, since the linear embedding matrices are of TFN type.
+                                                        ij
+                                        Theinner product of SO(3)-equivariant vectors, transforming under the same representation S is
+                                                                                                                                                                                   g
+                                                                                                               > >                >
+                                        invariant, since if q 7→ S q and k 7→ S k, then q S S k = q k, because of the orthonormality of
+                                                                            g                   g                  g    g
+                                        representations of SO(3), mentioned in the background section. We follow the common practice from
+                                        the self-attention literature [31, 16], and chosen a softmax nonlinearity to normalise the attention
+                                        weights to unity, but in general any nonlinear function could be used.
+                                        Aside: Angular Modulation The attention weights add extra degrees of freedom to the TFN
+                                        kernel in the angular direction. This is seen when Eq. (10) is viewed as a convolution with a data-
+                                                                          `k
+                                        dependent kernel α W (x). In the literature, SO(3) equivariant kernels are decomposed as a sum
+                                                                    ij    V
+                                                                                                       `k                                                                 `k
+                                        of products of learnable radial functions ϕ                       (kxk) and non-learnable angular kernels W (x/kxk)
+                                                                                                       J                                                                  J
+                                        (c.f. Eq. (8)). The ﬁxed angular dependence of W`k(x/kxk) is a strange artifact of the equivariance
+                                                                                                                J
+                                        condition in noncommutative algebras and while necessary to guarantee equivariance, it is seen as
+                                        overconstraining the expressiveness of the kernels. Interestingly, the attention weights α                                         introduce
+                                                                                                                                                                       ij
+                                        a means to modulate the angular proﬁle of W`k(x/kxk), while maintaining equivariance.
+                                                                                                          J
+                                        Channels, Self-interaction Layers, and Non-Linearities Analogous to conventional neural net-
+                                        works, the SE(3)-Transformer can straightforwardly be extended to multiple channels per repre-
+                                        sentation degree `, so far omitted for brevity. This sets the stage for self-interaction layers. The
+                                        attention layer (c.f. Fig. 2 and circles 1 and 2 of Eq. (10)) aggregates information over nodes and input
+                                        representation degrees k. In contrast, the self-interaction layer (c.f. circle 3 of Eq. (10)) exchanges
+                                        information solely between features of the same degree and within one node—much akin to 1x1
+                                        convolutions in CNNs. Self-interaction is an elegant form of learnable skip connection, transporting
+                                        information from query point i in layer L to query point i in layer L + 1. This is crucial since, in
+                                        the SE(3)-Transformer, points do not attend to themselves. In our experiments, we use two different
+                                        types of self-interaction layer: (1) linear and (2) attentive, both of the form
+                                                                                               `            X `` `
+                                                                                             f        0 =         w 0 f           .                                               (12)
+                                                                                               out,i,c              i,c c in,i,c
+                                                                                                              c
+                                        Linear: Following Schütt et al. [25], output channels are a learned linear combination of input
+                                        channels using one set of weights w``                      =w`` perrepresentation degree, shared across all points.
+                                                                                             i,c0c        c0c
+                                        AsproposedinThomasetal.[28], this is followed by a norm-based non-linearity.
+                                        Attentive: We propose an extension of linear self-interaction, attentive self-interaction, combining
+                                        self-interaction and nonlinearity. We replace the learned scalar weights w`` with attention weights
+                                                                                                 L                                                 c0c
+                                        output from an MLP, shown in Eq. (13) (                       meansconcatenation.). These weights are SE(3)-invariant
+                                        due to the invariance of inner products of features, transforming under the same representation.
+                                                                                          ``                M`> ` 
+                                                                                       w 0 =MLP                      f      0f                                                  (13)
+                                                                                          i,c c                        in,i,c  in,i,c
+                                                                                                                c,c0
+                                        3.3     NodeandEdgeFeatures
+                                        Point cloud data often has information attached to points (node-features) and connections between
+                                        points (edge-features), which we would both like to pass as inputs into the ﬁrst layer of the network.
+                                        Nodeinformationcandirectlybeincorporatedviathetensorsf inEqs.(6)and(10). Forincorporating
+                                                                                                                                j
+                                        edge information, note that f is part of multiple neighbourhoods. One can replace f with f                                                   in
+                                                                                   j                                                                                  j           ij
+                                        Eq. (10). Now, f            can carry different information depending on which neighbourhood N we are
+                                                                ij                                                                                                          i
+                                        currently performing attention over. In other words, fij can carry information both about node j but
+                                        also about edge ij. Alternatively, if the edge information is scalar, it can be incorporated into the
+                                        weight matrices W              and W asaninputtotheradialnetwork(see step 2 in Fig. 2).
+                                                                   V             K
+                                                                                                               6
+                                         Table 1: Predicting future locations and velocities in an electron-proton simulation.
+                                                        Linear    DeepSet [46]    Tensor Field [28]   Set Transformer [16]    SE(3)-Transformer
+                                              MSEx 0.0691               0.0639              0.0151                  0.0139                0.0076
+                                  Position    std             -         0.0086              0.0011                  0.0004                  0.0002
+                                              ∆EQ             -          0.038           1.9 · 10−7                  0.167              3.2 · 10−7
+                                              MSEv       0.261           0.246                0.125                  0.101                  0.075
+                                  Velocity    std             -          0.017                0.002                  0.004                   0.001
+                                              ∆EQ             -            1.11          5.0 · 10−7                    0.37             6.3 · 10−7
+                                4    Experiments
+                                Wetest the efﬁcacy of the SE(3)-Transformer on three datasets, each testing different aspects of the
+                                model. The N-body problem is an equivariant task: rotation of the input should result in rotated
+                                predictions of locations and velocities of the particles. Next, we evaluate on a real-world object
+                                classiﬁcation task. Here, the network is confronted with large point clouds of noisy data with
+                                symmetryonlyaroundthegravitational axis. Finally, we test the SE(3)-Transformer on a molecular
+                                property regression task, which shines light on its ability to incorporate rich graph structures. We
+                                comparetopubliclyavailable,state-of-the-artresultsaswellasasetofourownbaselines. Speciﬁcally,
+                                we compare to the Set-Transformer [16], a non-equivariant attention model, and Tensor Field
+                                Networks [28], which is similar to SE(3)-Transformer but does not leverage attention.
+                                Similar to [27, 39], we measure the exactness of equivariance by applying uniformly sampled SO(3)-
+                                transformations to input and output. The distance between the two, averaged over samples, yields the
+                                equivariance error. Note that, unlike in Sosnovik et al. [27], the error is not squared:
+                                                                ∆ =kLΦ(f)−ΦL (f)k /kL Φ(f)k                                                    (14)
+                                                                  EQ         s              s      2      s        2
+                                4.1    N-BodySimulations
+                                In this experiment, we use an adaptation of the dataset from Kipf et al. [14]. Five particles each carry
+                                either a positive or a negative charge and exert repulsive or attractive forces on each other. The input
+                                to the network is the position of a particle in a speciﬁc time step, its velocity, and its charge. The task
+                                of the algorithm is then to predict the relative location and velocity 500 time steps into the future.
+                                Wedeliberately formulated this as a regression problem to avoid the need to predict multiple time
+                                steps iteratively. Even though it certainly is an interesting direction for future research to combine
+                                equivariant attention with, e.g., an LSTM, our goal here was to test our core contribution and compare
+                                it to related models. This task sets itself apart from the other two experiments by not being invariant
+                                but equivariant: When the input is rotated or translated, the output changes respectively (see Fig. 3).
+                                We trained an SE(3)-Transformer with 4 equivariant layers, each followed by an attentive self-
+                                interaction layer (details are provided in the Appendix). Table 1 shows quantitative results. Our
+                                model outperforms both an attention-based, but not rotation-equivariant approach (Set Transformer)
+                                and a equivariant approach which does not levarage attention (Tensor Field). The equivariance error
+                                shows that our approach is indeed fully rotation equivariant up to the precision of the computations.
+                                      input                                                       input
+                                      label                     original                          label                      original
+                                      Set Transf.               rotated                           SE(3) Transf.              rotated
+                                                 (a) Set Transformer                                        (b) SE(3)-Transformer
+                                Figure 3: A model based on conventional self-attention (left) and our rotation-equivariant version
+                                (right) predict future locations and velocities in a 5-body problem. The respective left-hand plots show
+                                input locations at time step t = 0, ground truth locations at t = 500, and the respective predictions.
+                                Theright-hand plots show predicted locations and velocities for rotations of the input in steps of 10
+                                degrees. The dashed curves show the predicted locations of a perfectly equivariant model.
+                                                                                         7
+                                          0.8                                                                        0.8
+                                          0.7                                                                        0.7
+                                          0.6                                                                        0.6
+                                          0.5                                                                        0.5
+                                         accuracy0.4 SE(3)-Transformer +z                                           accuracy0.4 SE(3)-Transformer +z
+                                                     SE(3)-Transformer                                                          SE(3)-Transformer
+                                          0.3        Tensor Field                                                    0.3        Tensor Field
+                                                     SetTransformer                                                             SetTransformer
+                                          0.2        DeepSet                                                         0.2        DeepSet
+                                               0      30      60      90     120     150     180                          0      30      60      90     120     150     180
+                                                            maximum rotation                                                           maximum rotation
+                                            (a) Training without data augmentation.                                     (b) Training with data augmentation.
+                                      Figure 4: ScanObjectNN: x-axis shows data augmentation on the test set. The x-value corresponds
+                                      to the maximum rotation around a random axis in the x-y-plane. If both training and test set are not
+                                      rotated (x = 0 in a), breaking the symmetry of the SE(3)-Transformer by providing the z-component
+                                      of the coordinates as an additional, scalar input improves the performance signiﬁcantly. Interestingly,
+                                      the model learns to ignore the additional, symmetry-breaking input when the training set presents a
+                                      rotation-invariant problem (strongly overlapping dark red circles and dark purple triangles in b).
+                                                                                                                                                                     4
+                                     Table 2: Classiﬁcation accuracy on the ’object only’ category of the ScanObjectNN dataset . The
+                                      performance of the SE(3)-Transformer is averaged over 5 runs (standard deviation 0.7%).
+                                                                                    .                                            +z                 .+z
+                                                             Field             ransf            ransformer                   Field              ransf
+                                                        ensor                                  T                        ensor
+                                                      T         DeepSet  SE(3)-T  3DmFV Set         PointNet SpiderCNNT         PointNet++SE(3)-T PointCNNDGCNN PointGLR
+                                         No. Points     128     1024       128     1024     1024     1024     1024      128     1024       128     1024     1024     1024
+                                         Accuracy     63.1%    71.4%    72.8 %   73.8%     74.1%    79.2%    79.5%    81.0%    84.3%    85.0%    85.5%    86.2%    87.2%
+                                      4.2    Real-World Object Classiﬁcation on ScanObjectNN
+                                      Objectclassiﬁcationfrompointcloudsisawell-studiedtask. Interestingly, thevastmajorityofcurrent
+                                      neural network methods work on scalar coordinates without incorporating vector speciﬁc inductive
+                                      biases. Some recent works explore rotation invariant point cloud classiﬁcation [45, 47, 4, 22]. Our
+                                      method sets itself apart by using roto-translation equivariant layers acting directly on the point cloud
+                                     without prior projection onto a sphere [22, 45, 7]. This allows for weight-tying and increased sample
+                                      efﬁciency while transporting information about local and global orientation through the network -
+                                      analogous to the translation equivariance of CNNs on 2D images. To test our method, we choose
+                                      ScanObjectNN, a recently introduced dataset for real-world object classiﬁcation. The benchmark
+                                      provides point clouds of 2902 objects across 15 different categories. We only use the coordinates of
+                                      the points as input and object categories as training labels. We train an SE(3)-Transformer with 4
+                                      equivariant layers with linear self-interaction followed by max-pooling and an MLP. Interestingly,
+                                      the task is not fully rotation invariant, in a statistical sense, as the objects are aligned with respect to
+                                      the gravity axis. This results in a performance loss when deploying a fully SO(3) invariant model
+                                     (see Fig. 4a). In other words: when looking at a new object, it helps to know where ‘up’ is. We
+                                      create an SO(2) invariant version of our algorithm by additionally feeding the z-component as an
+                                      type-0 ﬁeld and the x, y position as an additional type-1 ﬁeld (see Appendix). We dub this model
+                                     SE(3)-Transformer +z. This way, the model can ‘learn’ which symmetries to adhere to by suppressing
+                                      and promoting different inputs (compare Fig. 4a and Fig. 4b). In Table 2, we compare our model to
+                                      the current state-of-the-art in object classiﬁcation4. Despite the dataset not playing to the strengths
+                                      of our model (full SE(3)-invariance) and a much lower number of input points, the performance is
+                                      competitive with models speciﬁcally designed for object classiﬁcation - PointGLR [23], for instance,
+                                      is pre-trained on the larger ModelNet40 dataset [41]. For a discussion of performance vs. number of
+                                      input points used, see Appendix D.1.2.
+                                          4At time of submission, PointGLR was a recently published preprint [23]. The performance of the following
+                                      models was taken from the ofﬁcial benchmark of the dataset as of June 4th, 2020 (https://hkust-vgd.
+                                      github.io/benchmark/): 3DmFV[3],PointNet[19], SpiderCNN [43], PointNet++ [20], DGCN [35].
+                                                                                                         8
+                                    4.3    QM9                                   Table3: QM9MeanAbsoluteError. Top: Non-equivariantmodels.
+                                    TheQM9regressiondataset[21]                  Bottom: Equivariant models. SE(3)-Tr. is averaged over 5 runs.
+                                    is a publicly available chemical
+                                                                                   TASK                       α        ∆ε    ε        ε               µ         C
+                                    property prediction task. There                                                           HOMO     LUMO                       ν
+                                    are 134k molecules with up to 29               UNITS                  bohr3      meV      meV       meV           D   cal/mol K
+                                    atoms per molecule. Atoms are                 WaveScatt [11]           .160       118       85        76        .340       .049
+                                                                                  NMP[10]                  .092        69       43        38        .030       .040
+                                    represented as a 5 dimensional                SchNet [25]              .235        63       41        34        .033       .033
+                                    one-hot node embeddings in a                  Cormorant [1]            .085        61       34        38        .038       .026
+                                                                                  LieConv(T3) [8]          .084        49       30        25        .032       .038
+                                    molecular graph connected by                  TFN[28]                  .223        58       40        38        .064       .101
+                                    4 different chemical bond types               SE(3)-Transformer   .142±.002  53.0±0.3   33.0±.9  35.0±.7  .051±.001   .054±.002
+                                    (more details in Appendix). ‘Po-
+                                    sitions’ of each atom are provided. We show results on the test set of Anderson et al. [1] for 6
+                                    regression tasks in Table 3. Lower is better. The table is split into non-equivariant (top) and equivari-
+                                    ant models (bottom). Our nearest models are Cormorant and TFN (own implementation). We see that
+                                    while not state-of-the-art, we offer competitive performance, especially against Cormorant and TFN,
+                                    which transform under irreducible representations of SE(3) (like us), unlike LieConv(T3), using a
+                                    left-regular representation of SE(3), which may explain its success.
+                                    5    Conclusion
+                                   Wehavepresented an attention-based neural architecture designed speciﬁcally for point cloud data.
+                                    Thisarchitectureisguaranteedtoberobusttorotationsandtranslationsoftheinput,obviatingtheneed
+                                    for training time data augmentation and ensuring stability to arbitrary choices of coordinate frame.
+                                    Theuseofself-attention allows for anisotropic, data-adaptive ﬁlters, while the use of neighbourhoods
+                                    enables scalability to large point clouds. We have also introduced the interpretation of the attention
+                                    mechanism as a data-dependent nonlinearity, adding to the list of equivariant nonlinearties which we
+                                    can use in equivariant networks. Furthermore, we provide code for a speed up of spherical harmonics
+                                    computation of up to 3 orders of magnitudes. This speed-up allowed us to train signiﬁcantly larger
+                                    versions of both the SE(3)-Transformer and the Tensor Field network [28] and to apply these models
+                                    to real-world datasets.
+                                    Ourexperiments showed that adding attention to a roto-translation-equivariant model consistently led
+                                    to higher accuracy and increased training stability. Speciﬁcally for large neighbourhoods, attention
+                                    proved essential for model convergence. On the other hand, compared to convential attention, adding
+                                    the equivariance constraints also increases performance in all of our experiments while at the same
+                                    time providing a mathematical guarantee for robustness with respect to rotations of the input data.
+                                    BroaderImpact
+                                    Themaincontribution of the paper is a mathematically motivated attention mechanism which can be
+                                    used for deep learning on point cloud based problems. We do not see a direct potential of negative
+                                    impact to the society. However, we would like to stress that this type of algorithm is inherently suited
+                                    for classiﬁcation and regression problems on molecules. The SE(3)-Transformer therefore lends itself
+                                    to application in drug research. One concrete application we are currently investigating is to use
+                                    the algorithm for early-stage suitability classiﬁcation of molecules for inhibiting the reproductive
+                                    cycle of the coronavirus. While research of this sort always requires intensive testing in wet labs,
+                                    computer algorithms can be and are being used to ﬁlter out particularly promising compounds from
+                                    large databases of millions of molecules.
+                                    AcknowledgementsandFundingDisclosure
+                                   WewouldliketoexpressourgratitudetotheBoschCenterforArtiﬁcialIntelligenceandKonincklijke
+                                    Philips N.V. for funding our work and contributing to open research by publishing our paper. Fabian
+                                    Fuchs worked on this project while on a research sabbatical at the Bosch Center for Artiﬁcial
+                                    Intelligence. His PhD is funded by the EPSRC AIMS Centre for Doctoral Training at Oxford
+                                    University.
+                                                                                                   9
+           References
+            [1] Brandon Anderson, Truong Son Hy, and Risi Kondor. Cormorant: Covariant molecular neural
+              networks. In Advances in Neural Information Processing Systems (NeurIPS). 2019.
+            [2] Lei Jimmy Ba, Jamie Ryan Kiros, and Geoffrey E. Hinton. Layer normalization. arXiv Preprint,
+              2016.
+            [3] Yizhak Ben-Shabat, Michael Lindenbaum, and Anath Fischer. 3dmfv: Three-dimensional
+              point cloud classiﬁcation in realtime using convolutional neural networks. IEEE Robotics and
+              Automation Letters, 2018.
+            [4] Chao Chen, Guanbin Li, Ruijia Xu, Tianshui Chen, Meng Wang, and Liang Lin. ClusterNet:
+              DeepHierarchical Cluster Network with Rigorously Rotation-Invariant Representation for Point
+              Cloud Analysis. In Proceedings of the IEEE Conference on Computer Vision and Pattern
+              Recognition (CVPR), 2019.
+            [5] Gregory S Chirikjian, Alexander B Kyatkin, and AC Buckingham. Engineering applications of
+              noncommutative harmonic analysis: with emphasis on rotation and motion groups. Appl. Mech.
+              Rev., 54(6):B97–B98, 2001.
+            [6] Taco S. Cohen and Max Welling. Steerable cnns. International Conference on Learning
+              Representations (ICLR), 2017.
+            [7] Taco S. Cohen, Mario Geiger, Jonas Koehler, and Max Welling. Spherical cnns. In International
+              Conference on Learning Representations (ICLR), 2018.
+            [8] Marc Finzi, Samuel Stanton, Pavel Izmailov, and Andrew Wilson. Generalizing convolutional
+              neural networks for equivariance to lie groups on arbitrary continuous data. Proceedings of the
+              International Conference on Machine Learning, ICML, 2020.
+            [9] Fabian B. Fuchs, Adam R. Kosiorek, Li Sun, Oiwi Parker Jones, and Ingmar Posner. End-to-end
+              recurrent multi-object tracking and prediction with relational reasoning. arXiv preprint, 2020.
+           [10] Justin Gilmer, Samuel S. Schoenholz, Patrick F. Riley, and Oriol Vinyals George E. Dahl.
+              Neural message passing for quantum chemistry. Proceedings of the International Conference
+              onMachineLearning, ICML, 2020.
+           [11] Matthew J. Hirn, Stéphane Mallat, and Nicolas Poilvert. Wavelet scattering regression of
+              quantumchemical energies. Multiscale Model. Simul., 15(2):827–863, 2017.
+           [12] Yedid Hoshen. Vain: Attentional multi-agent predictive modeling. Advances in Neural Informa-
+              tion Processing Systems (NeurIPS), 2017.
+           [13] Diederik P. Kingma and Jimmy Ba. Adam: A method for stochastic optimization. In Interna-
+              tional Conference on Learning Representations, ICLR, 2015.
+           [14] ThomasN.Kipf,EthanFetaya,Kuan-ChiehWang,MaxWelling,andRichardS.Zemel. Neural
+              relational inference for interacting systems. In Proceedings of the International Conference on
+              Machine Learning, ICML, 2018.
+           [15] Risi Kondor. N-body networks: a covariant hierarchical neural network architecture for learning
+              atomic potentials. arXiv preprint, 2018.
+           [16] Juho Lee, Yoonho Lee, Jungtaek Kim, Adam R. Kosiorek, Seungjin Choi, and Yee Whye Teh.
+              Set transformer: A framework for attention-based permutation-invariant neural networks. In
+              Proceedings of the International Conference on Machine Learning, ICML, 2019.
+           [17] Zhouhan Lin, Minwei Feng, Cicero Nogueira dos Santos, Mo Yu, Bing Xiang, Bowen Zhou,
+              and Yoshua Bengio. A structured self-attentive sentence embedding. International Conference
+              onLearning Representations (ICLR), 2017.
+           [18] Niki Parmar, Prajit Ramachandran, Ashish Vaswani, Irwan Bello, Anselm Levskaya, and
+              Jon Shlens. Stand-alone self-attention in vision models. In Advances in Neural Information
+              Processing System (NeurIPS), 2019.
+                               10
+           [19] Charles R Qi, Hao Su, Kaichun Mo, and Leonidas J Guibas. Pointnet: Deep learning on point
+              sets for 3d classiﬁcation and segmentation. IEEE Conference on Computer Vision and Pattern
+              Recognition (CVPR), 2017.
+           [20] Charles R Qi, Li Yi, Hao Su, and Leonidas J Guibas. Pointnet++: Deep hierarchical feature
+              learning on point sets in a metric space. Advances in Neural Information Processing Systems
+              (NeurIPS), 2017.
+           [21] Raghunathan Ramakrishnan, Pavlo Dral, Matthias Rupp, and Anatole von Lilienfeld. Quantum
+              chemistry structures and properties of 134 kilo molecules. Scientiﬁc Data, 1, 08 2014.
+           [22] Yongming Rao, Jiwen Lu, and Jie Zhou. Spherical fractal convolutional neural networks for
+              point cloud recognition. In Proceedings of the IEEE Conference on Computer Vision and
+              Pattern Recognition (CVPR), 2019.
+           [23] Yongming Rao, Jiwen Lu, and Jie Zhou. Global-local bidirectional reasoning for unsupervised
+              representation learning of 3d point clouds. In Proceedings of the IEEE Conference on Computer
+              Vision and Pattern Recognition (CVPR), 2020.
+           [24] David W. Romero, Erik J. Bekkers, Jakub M. Tomczak, and Mark Hoogendoorn. Attentive
+              group equivariant convolutional networks. Proceedings of the International Conference on
+              Machine Learning (ICML), 2020.
+           [25] K. T. Schütt, P.-J. Kindermans, H. E. Sauceda, S. Chmiela1, A. Tkatchenko, and K.-R. Müller.
+              Schnet: A continuous-ﬁlter convolutional neural network for modeling quantum interactions.
+              Advances in Neural Information Processing Systems (NeurIPS), 2017.
+           [26] Peter Shaw, Jakob Uszkoreit, and Ashish Vaswani. Self-attention with relative position represen-
+              tations. Annual Conference of the North American Chapter of the Association for Computational
+              Linguistics (NAACL-HLT), 2018.
+           [27] Ivan Sosnovik, Michał Szmaja, and Arnold Smeulders. Scale-equivariant steerable networks.
+              International Conference on Learning Representations (ICLR), 2020.
+           [28] Nathaniel Thomas, Tess Smidt, Steven M. Kearnes, Lusann Yang, Li Li, Kai Kohlhoff, and
+              Patrick Riley. Tensor ﬁeld networks: Rotation- and translation-equivariant neural networks for
+              3dpoint clouds. ArXiv Preprint, 2018.
+           [29] Mikaela Angelina Uy, Quang-Hieu Pham, Binh-Son Hua, Duc Thanh Nguyen, and Sai-Kit
+              Yeung. Revisiting point cloud classiﬁcation: A new benchmark dataset and classiﬁcation model
+              onreal-world data. In International Conference on Computer Vision (ICCV), 2019.
+           [30] Sjoerd van Steenkiste, Michael Chang, Klaus Greff, and Jürgen Schmidhuber. Relational
+              neural expectation maximization: Unsupervised discovery of objects and their interactions.
+              International Conference on Learning Representations (ICLR), 2018.
+           [31] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez,
+              Lukasz Kaiser, and Illia Polosukhin. Attention is all you need. Advances in Neural Information
+              Processing Systems (NeurIPS), 2017.
+                  ˇ ´
+           [32] PetarVelickovic, GuillemCucurull, ArantxaCasanova,AdrianaRomero,PietroLiò,andYoshua
+              Bengio. Graph attention networks. International Conference on Learning Representations
+              (ICLR), 2018.
+           [33] Edward Wagstaff, Fabian B. Fuchs, Martin Engelcke, Ingmar Posner, and Michael A. Osborne.
+              Onthe limitations of representing functions on sets. International Conference on Machine
+              Learning (ICML), 2019.
+           [34] Xiaolong Wang, Ross Girshick, Abhinav Gupta, and Kaiming He. Non-local neural networks.
+              IEEEConference on Computer Vision and Pattern Recognition (CVPR), 2017.
+           [35] Yue Wang, Yongbin Sun, Ziwei Liu, Sanjay E. Sarma, Michael M. Bronstein, and Justin M.
+              Solomon. Dynamic graph cnn for learning on point clouds. ACM Transactions on Graphics
+              (TOG), 2019.
+                               11
+           [36] Maurice Weiler and Gabriele Cesa. General E(2)-Equivariant Steerable CNNs. In Conference
+              onNeuralInformation Processing Systems (NeurIPS), 2019.
+           [37] Maurice Weiler, Mario Geiger, Max Welling, Wouter Boomsma, and Taco Cohen. 3d steerable
+              cnns: Learning rotationally equivariant features in volumetric data. In Advances in Neural
+              Information Processing Systems (NeurIPS), 2018.
+           [38] Marysia Winkels and Taco S. Cohen. 3d g-cnns for pulmonary nodule detection. 1st Conference
+              onMedicalImagingwithDeepLearning(MIDL),2018.
+           [39] Daniel E. Worrall and Max Welling. Deep scale-spaces: Equivariance over scale. In Advances
+              in Neural Information Processing Systems (NeurIPS), 2019.
+           [40] Daniel E. Worrall, Stephan J. Garbin, Daniyar Turmukhambetov, and Gabriel J. Brostow.
+              Harmonicnetworks: Deeptranslation and rotation equivariance. IEEE Conference on Computer
+              Vision and Pattern Recognition (CVPR), 2017.
+           [41] Zhirong Wu, Shuran Song, Aditya Khosla, Fisher Yu, Linguang Zhang, Xiaoou Tang, and
+              Jianxiong Xiao. 3d shapenets: A deep representation for volumetric shapes. IEEE Conference
+              onComputerVision and Pattern Recognition (CVPR), 2015.
+           [42] Saining Xie, Sainan Liu, and Zeyu Chen Zhuowen Tu. Attentional shapecontextnet for point
+              cloud recognition. IEEE Conference on Computer Vision and Pattern Recognition (CVPR),
+              2018.
+           [43] Yifan Xu, Tianqi Fan, Mingye Xu, Long Zeng, and Yu Qiao. Spidercnn: Deep learning on
+              point sets with parameterized convolutional ﬁlters. European Conference on Computer Vision
+              (ECCV), 2018.
+           [44] Jiancheng Yang, Qiang Zhang, and Bingbing Ni. Modeling point clouds with self-attention
+              and gumbel subset sampling. IEEE Conference on Computer Vision and Pattern Recognition
+              (CVPR), 2019.
+           [45] YangYou,YujingLou,QiLiu,Yu-WingTai,LizhuangMa,CewuLu,andWeimingWang.Point-
+              wise Rotation-Invariant Network with Adaptive Sampling and 3D Spherical Voxel Convolution.
+              In AAAI Conference on Artiﬁcial Intelligence, 2019.
+           [46] Manzil Zaheer, Satwik Kottur, Siamak Ravanbhakhsh, Barnabás Póczos, Ruslan Salakhutdinov,
+              and Alexander Smola. Deep Sets. In Advances in Neural Information Processing Systems
+              (NeurIPS), 2017.
+           [47] Zhiyuan Zhang, Binh-Son Hua, David W. Rosen, and Sai-Kit Yeung. Rotation invariant
+              convolutions for 3d point clouds deep learning. In International Conference on 3D Vision (3DV),
+              2019.
+                               12

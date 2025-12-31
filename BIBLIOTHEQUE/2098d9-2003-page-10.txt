@@ -1,0 +1,57 @@
+                                                                          BENGIO,DUCHARME,VINCENTANDJAUVIN
+                                                     i.   ∂L ←1j==w − pj
+                                                          ∂yj                t
+                                                    ii. bj ← bj +ε∂L
+                                                                            ∂yj
+                                                         If (direct connections) ∂L ← ∂L + ∂LWj
+                                                                                             ∂x       ∂x      ∂yj
+                                                          ∂L ← ∂L + ∂LUj
+                                                          ∂a       ∂a      ∂yj
+                                                         If (direct connections) Wj ←Wj+ε∂Lx
+                                                                                                                 ∂yj
+                                                         Uj ←Uj+ε∂La
+                                                                             ∂yj
+                                            (b) Sum and share ∂L and ∂L across processors. This can easily be achieved with an MPI
+                                                                           ∂x         ∂a
+                                                  Allreduce operation.
+                                            (c) Back-propagate through and update hidden layer weights:
+                                                  Loop over k between 1 and h,
+                                                         ∂L                 2 ∂L
+                                                              ←(1−a )
+                                                        ∂o                  k ∂a
+                                                           k                      k
+                                                   ∂L ← ∂L +H0∂L
+                                                   ∂x       ∂x    ∂L ∂o
+                                                  d ←d+ε∂o
+                                                                    ∂L 0
+                                                  H←H+ε∂ox
+                                            (d) Update word feature vectors for the input words:
+                                                  Loop over k between 1 and n−1
+                                                        C(w        ) ←C(w            )+ε ∂L
+                                                              t−k ∂L             t−k         ∂x(k)                                            ∂L
+                                                        where ∂x(k) is the k-th block (of length m) of the vector ∂x.
+                                The weight decay regularization was not shown in the above implementation but can easily be put
+                                in (by subtracting the weight decay factor times the learning rate times the value of the parameter,
+                                from each parameter, at each update). Note that parameter updates are done directly rather than
+                                through a parameter gradient vector, to increase speed, a limiting factor in computation speed being
+                                the access to memory, in our experiments.
+                                      Therecouldbeanumericalprobleminthecomputationoftheexponentials intheforwardphase,
+                                whereby all the pj could be numerically zero, or one of them could be too large for computing
+                                the exponential (step 1(c)ii above). To avoid this problem, the usual solution is to subtract the
+                                maximum of the yj’s before taking the exponentials in the softmax. Thus we have added an extra
+                                Allreduce operation to share among the M processors the maximum of the yj’s, before computing
+                                the exponentials in p .Letq be the maximum of the y ’s in block i. Then the overall maximum
+                                                                 j           i                                         j
+                                Q=maxq is collectively computed and shared among the M processors. The exponentials are
+                                               i  i
+                                                                                      yj−Q
+                                then computed as follows: pj ← e                             (instead of step 1(c)ii) to guarantee that at least one of the
+                                pj’s will be numerically non-zero, and the maximum of the exponential’s argument is 1.
+                                      Bycomparingclocktimeoftheparallel version with clock time on a single processor, we found
+                                that the communication overhead was only 1/15th of the total time (for one training epoch): thus
+                                weget an almost perfect speed-up through parallelization, using this algorithm on a fast network.
+                                      Onclusters with a slow network, it might be possible to still obtain an efﬁcient parallelization
+                                by performing the communications every K examples (a mini-batch) rather than for each example.
+                                This requires storing K versions of the activities and gradients of the neural network in each pro-
+                                cessor. After the forward phase on the K examples, the probability sums must be shared among the
+                                                                                                         1146

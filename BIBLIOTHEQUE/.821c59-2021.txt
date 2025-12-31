@@ -1,0 +1,494 @@
+                                                                                                                                                                                             Point Transformer
+                                                                                                                                                        1,2                                                3                                              3                                                       1                                                                        4
+                                                                                    Hengshuang Zhao                                                                          Li Jiang                                     Jiaya Jia                                       Philip Torr                                             Vladlen Koltun
+                                                                                                                                 1University of Oxford                                                                         2The University of Hong Kong
+                                                                                                                                     3The Chinese University of Hong Kong                                                                                                                            4Intel Labs
+                                                                                                                   Abstract
+                                                                                                                                                                                                                                                                                                                                  ation                                                      lamp
+                                                 Self-attention networks have revolutionized natural lan-                                                                                                                                                                                                                       ic                airplane                                                                    bed
+                                                                                                                                                                                                                                                                                                                              if
+                                                                                                                                                                                                                                                                                                                             s
+                                        guage processing and are making impressive strides in im-                                                                                                                                                                                                                       clas
+                                        age analysis tasks such as image classification and object                                                                                                                                                                                                                    part 
+                                        detection. Inspired by this success, we investigate the ap-                                                                                                                                                                                                                   segmentation
+                                                                                                                                                                                                                                                                                                                          s
+                                        plication of self-attention networks to 3D point cloud pro-                                                                                                                                                                                                                  s     em
+                                                                                                                                                                                                                                                                                                                      egm an
+                                                                                                                                                                                                                                                                                                                           e     t
+                                        cessing. Wedesignself-attentionlayersforpointcloudsand                                                                                                                                                                                                                              n    ic 
+                                                                                                                                                                                                                                                                                                                             t
+                                                                                                                                                                                                                                                                                                                              at
+                                        use these to construct self-attention networks for tasks such                                                                                                                                                                                                                           ion
+                                        as semantic scene segmentation, object part segmentation,                                                                                                                                                                     Point Transformer
+                                        andobjectclassification. Our Point Transformer design im-
+                                        proves upon prior work across domains and tasks. For ex-
+                                        ample, on the challenging S3DIS dataset for large-scale se-                                                                                                                                               Figure1.ThePointTransformercanserveasthebackboneforvar-
+                                        mantic scene segmentation, the Point Transformer attains                                                                                                                                                  ious 3D point cloud understanding tasks such as object classifica-
+                                        an mIoU of 70.4% on Area 5, outperforming the strongest                                                                                                                                                   tion, object part segmentation, and semantic scene segmentation.
+                                        prior model by 3.3 absolute percentage points and crossing
+                                        the 70% mIoU threshold for the first time.
+                                                                                                                                                                                                                                                  in natural language processing [39, 45, 5, 4, 51] and image
+                                        1. Introduction                                                                                                                                                                                           analysis [10, 28, 54]. The transformer family of models is
+                                                                                                                                                                                                                                                  particularly appropriate for point cloud processing because
+                                                 3D data arises in many application areas such as au-                                                                                                                                             the self-attention operator, which is at the core of trans-
+                                        tonomous driving, augmented reality, and robotics. Unlike                                                                                                                                                 former networks, is in essence a set operator: it is invariant
+                                        images, which are arranged on regular pixel grids, 3D point                                                                                                                                               to permutation and cardinality of the input elements. The
+                                        clouds are sets embedded in continuous space. This makes                                                                                                                                                  application of self-attention to 3D point clouds is therefore
+                                        3Dpointclouds structurally different from images and pre-                                                                                                                                                 quite natural, since point clouds are essentially sets embed-
+                                        cludes immediate application of deep network designs that                                                                                                                                                 ded in 3D space.
+                                        havebecomestandardincomputervision,suchasnetworks                                                                                                                                                                   We flesh out this intuition and develop a self-attention
+                                        based on the discrete convolution operator.                                                                                                                                                               layer for 3D point cloud processing. Based on this layer,
+                                                 A variety of approaches to deep learning on 3D point                                                                                                                                             we construct Point Transformer networks for a variety of
+                                        clouds have arisen in response to this challenge. Some vox-                                                                                                                                               3Dunderstandingtasks. Weinvestigatetheformoftheself-
+                                        elize the 3D space to enable the application of 3D discrete                                                                                                                                               attention operator, the application of self-attention to local
+                                        convolutions [23, 32]. This induces massive computational                                                                                                                                                 neighborhoods around each point, and the encoding of po-
+                                        and memory costs and underutilizes the sparsity of point                                                                                                                                                  sitional information in the network. The resulting networks
+                                        sets in 3D. Sparseconvolutionalnetworksrelievetheselimi-                                                                                                                                                  are based purely on self-attention and pointwise operations.
+                                        tations by operating only on voxels that are not empty [9, 3].                                                                                                                                                      Weshowthat Point Transformers are remarkably effec-
+                                        Other designs operate directly on points and propagate in-                                                                                                                                                tive in 3D deep learning tasks, both at the level of detailed
+                                        formation via pooling operators [25, 27] or continuous con-                                                                                                                                               object analysis and large-scale parsing of massive scenes.
+                                        volutions [42, 37]. Another family of approaches connect                                                                                                                                                  In particular, Point Transformers set the new state of the art
+                                        the point set into a graph for message passing [44, 19].                                                                                                                                                  on large-scale semantic segmentation on the S3DIS dataset
+                                                 In this work, we develop an approach to deep learning on                                                                                                                                         (70.4% mIoU on Area 5), shape classification on Model-
+                                        point clouds that is inspired by the success of transformers                                                                                                                                              Net40 (93.7% overall accuracy), and object part segmenta-
+                                                                                                                                                                                                                                       16259
+              tion on ShapeNetPart (86.6% instance mIoU). Our full im-           putation and memory costs due to the cubic growth in the
+              plementation and trained models will be released upon ac-          number of voxels as a function of resolution. The solution
+              ceptance. In summary, our main contributions include the           is to take advantage of sparsity, as most voxels are usually
+              following.                                                         unoccupied. For example, OctNet [29] uses unbalanced
+                • WedesignahighlyexpressivePointTransformerlayer                 octrees with hierarchical partitions. Approaches based on
+                   for point cloud processing.     The layer is invariant        sparse convolutions, where the convolution kernel is only
+                   to permutation and cardinality and is thus inherently         evaluated at occupied voxels, can further reduce computa-
+                   suited to point cloud processing.                             tion and memory requirements [9, 3]. These methods have
+                                                                                 demonstrated good accuracy but may still lose geometric
+                • Based on the Point Transformer layer, we construct             detail due to quantization onto the voxel grid.
+                   high-performing Point Transformer networks for clas-          Point-based networks. Rather than projecting or quantiz-
+                   sification and dense prediction on point clouds. These        ingirregular point clouds onto regular grids in 2D or 3D, re-
+                   networks can serve as general backbones for 3D scene          searchers have designed deep network structures that ingest
+                   understanding.                                                point clouds directly, as sets embedded in continuous space.
+                • We report extensive experiments over multiple do-              PointNet [25] utilizes permutation-invariant operators such
+                   mains and datasets. We conduct controlled studies to          as pointwise MLPs and pooling layers to aggregate features
+                   examine specific choices in the Point Transformer de-         across a set. PointNet++ [27] applies these ideas within a
+                   sign and set the new state of the art on multiple highly      hierarchical spatial structure to increase sensitivity to local
+                   competitive benchmarks, outperforming long lines of           geometric layout. Such models can benefit from efficient
+                   prior work.                                                   sampling of the point set, and a variety of sampling strate-
+                                                                                 gies have been developed [27, 7, 46, 50, 11].
+              2. Related Work                                                       A number of approaches connect the point set into
+                                                                                 a graph and conduct message passing on this graph.
+                 For 2D image understanding, pixels are placed in regu-          DGCNN[44]performsgraphconvolutionsonkNNgraphs.
+              lar grids and can be processed with classical convolution.         PointWeb [55] densely connects local neightborhoods.
+              In contrast, 3D point clouds are unordered and scattered           ECC[31]usesdynamicedge-conditionedfilterswherecon-
+              in 3D space: they are essentially sets. Learning-based ap-         volution kernels are generated based on edges inside point
+              proaches to processing 3D point clouds can be classified           clouds. SPG [15] operates on a superpoint graph that rep-
+              intothefollowingtypes: projection-based,voxel-based,and            resents contextual relationships. KCNet [30] utilizes kernel
+              point-based networks.                                              correlation and graph pooling. Wang et al. [40] investigate
+              Projection-based networks. For processing irregular in-            the local spectral graph convolution. GACNet [41] employs
+              puts like point clouds, an intuitive way is to transform ir-       graphattentionconvolutionandHPEIN[13]buildsahierar-
+              regular representations to regular ones.    Considering the        chical point-edge interaction architecture. DeepGCNs [19]
+              success of 2D CNNs, some approaches [34, 18, 2, 14, 16]            explore the advantages of depth in graph convolutional net-
+              adoptmulti-viewprojection,where3Dpointcloudsarepro-                works for 3D scene understanding.
+              jected into various image planes. Then 2D CNNs are used               Anumberofmethodsarebasedoncontinuous convolu-
+              to extract feature representations in these image planes, fol-     tions that apply directly to the 3D point set, with no quan-
+              lowed by multi-view feature fusion to form the final output        tization. PCCN [42] represents convolutional kernels as
+              representations. In a related approach, TangentConv [35]           MLPs. SpiderCNN [49] defines kernel weights as a fam-
+              projects local surface geometry onto a tangent plane at ev-        ily of polynomial functions. Spherical CNN [8] designs
+              ery point, forming tangent images that can be processed by         spherical convolution to address the problem of 3D rota-
+              2D convolution. However, this approach heavily relies on           tion equivariance. PointConv [46] and KPConv [37] con-
+              tangent estimation. In projection-based frameworks, the ge-        struct convolution weights based on the input coordinates.
+              ometric information inside point clouds is collapsed during        InterpCNN [22] utilizes coordinates to interpolate point-
+              the projection stage. These approaches may also underuti-          wisekernelweights. PointCNN[20]proposestoreorderthe
+              lize the sparsity of point clouds when forming dense pixel         input unordered point clouds with special operators. Um-
+              grids on projection planes. The choice of projection planes        menhofer et al. [38] apply continuous convolutions to learn
+              may heavily influence recognition performance and occlu-           particle-based fluid dynamics.
+              sion in 3D may impede accuracy.                                    Transformer and self-attention. Transformer and self-
+              Voxel-based networks. An alternative approach to trans-            attention models have revolutionized machine translation
+              forming irregular point clouds to regular representations is       and natural language processing [39, 45, 5, 4, 51]. This
+              3D voxelization [23, 32], followed by convolutions in 3D.          has inspired the development of self-attention networks for
+              Whenappliednaively, this strategy can incur massive com-           2D image recognition [10, 28, 54, 6]. Hu et al. [10] and
+                                                                             16260
+              Ramachandran et al. [28] apply scalar dot-product self-              where yi is the output feature. φ, ψ, and α are pointwise
+              attention within local image patches. Zhao et al. [54] de-           feature transformations, such as linear projections or MLPs.
+              velop a family of vector self-attention operators. Dosovit-          δ is a position encoding function and ρ is a normalization
+              skiy et al. [6] treat images as sequences of patches.                function such as softmax. The scalar attention layer com-
+                 Our work is inspired by the findings that transform-              putes the scalar product between features transformed by φ
+              ers and self-attention networks can match or even outper-            and ψ and uses the output as an attention weight for aggre-
+              form convolutional networks on sequences and 2D images.              gating features transformed by α.
+              Self-attention is of particular interest in our setting because         In vector attention, the computation of attention weights
+              it is intrinsically a set operator: positional information is        is different. In particular, attention weights are vectors that
+              provided as attributes of elements that are processed as a           can modulate individual feature channels:
+              set [39, 54]. Since 3D point clouds are essentially sets of                     X                                 
+                                                                                       y =         ρ γ(β(φ(x ),ψ(x ))+δ) ⊙α(x ),               (2)
+              points with positional attributes, the self-attention mecha-               i                     i       j                 j
+              nism seems particularly suitable to this type of data. We                      xj∈X
+              thus develop a Point Transformer layer that applies self-            where β is a relation function (e.g., subtraction) and γ is
+              attention to 3D point clouds.                                        a mapping function (e.g., an MLP) that produces attention
+                 There are a number of previous works [48, 21, 50, 17]             vectors for feature aggregation.
+              that utilize attention for point cloud analysis. They apply             Both scalar and vector self-attention are set operators.
+              global attention on the whole point cloud, which introduces          The set can be a collection of feature vectors that represent
+              heavycomputationandrenderstheseapproachesinapplica-                  the entire signal (e.g., sentence or image) [39, 6] or a collec-
+              ble to large-scale 3D scene understanding. They also utilize         tion of feature vectors from a local patch within the signal
+              scalar dot-product attention, where different channels share         (e.g., an image patch) [10, 28, 54].
+              the same aggregation weights. In contrast, we apply self-
+              attention locally, which enables scalability to large scenes         3.2. Point Transformer Layer
+              with millions of points, and we utilize vector attention,               Self-attention is a natural fit for point clouds because
+              whichweshowtobeimportantforachievinghighaccuracy.                    point clouds are essentially sets embedded irregularly in a
+              Wealsodemonstratetheimportanceofappropriateposition                  metric space. Our point transformer layer is based on vec-
+              encoding in large-scale point cloud understanding, in con-           tor self-attention. We use the subtraction relation and add
+              trast to prior approaches that omitted position information.         a position encoding δ to both the attention vector γ and the
+              Overall, we show that appropriately designed self-attention          transformed features α:
+              networks can scale to large and complex 3D scenes, and                         X                                              
+              substantially advance the state of the art in large-scale point        yi =          ρ γ(φ(xi)−ψ(xj)+δ) ⊙ α(xj)+δ (3)
+              cloud understanding.                                                         xj∈X(i)
+              3. Point Transformer                                                 HerethesubsetX(i) ⊆ X isasetofpointsinalocalneigh-
+                                                                                   borhood (specifically, k nearest neighbors) of xi. Thus we
+                 Webeginbybrieflyrevisiting the general formulation of             adopt the practice of recent self-attention networks for im-
+              transformers and self-attention operators. Then we present           age analysis in applying self-attention locally, within a lo-
+              the point transformer layer for 3D point cloud processing.           cal neighborhood around each datapoint [10, 28, 54]. The
+              Lastly, we present our network architecture for 3D scene             mapping function γ is an MLP with two linear layers and
+              understanding.                                                       one ReLU nonlinearity. The point transformer layer is il-
+              3.1. Background                                                      lustrated in Figure 2.
+                 Transformers and self-attention networks have revolu-                                              input: (x, p)
+              tionized natural language processing [39, 45, 5, 4, 51] and                                       ���㌵: mlp
+              have demonstrated impressive results in 2D image analy-                   ���㌵,���㌵:linear                                ���㌵: linear
+              sis [10, 28, 54, 6]. Self-attention operators can be classi-
+              fied into two types: scalar attention [39] and vector atten-                                 ���㌵:ml
+              tion [54].                                                                                       p
+                 Let X = {x } be a set of feature vectors. The stan-
+                                i i                                                                          aggregation
+              dard scalar dot-product attention layer can be represented
+              as follows:                                                                                           output: (y, p)
+                        yi = X ρ φ(xi)⊤ψ(xj)+δα(xj),                     (1)                      Figure 2. Point transformer layer.
+                              xj∈X
+                                                                               16261
+                                                         (N, 32)        (N/4, 64)      (N/16, 128)     (N/64, 256)     (N/256, 512)    (N/256, 512)     (N/64, 256)     (N/16, 128)       (N/4, 64)        (N, 32)      (N, D )
+                                                                                                                                                                                                                             out
+                                                                                                                                                                 r                 Point Transformer
+                                                                                                                                                                 i                                                     MLP
+                                                                                                                                                                 ha
+                                                                                                                                                                 c
+                                                                                                                                                                  
+                                                                                                                                                                 :                  TransitionDown
+                                                                                                                                                                 l
+                                                                                                                                                                 be
+                                                                                                                                                                 a                                             Global AvgPooling
+                                                                                                                                                                 L                    TransitionUp
+                                                         (N, 32)        (N/4, 64)      (N/16, 128)     (N/64, 256)     (N/256, 512)    (1, 512)  (1, D  )
+                                                                                                                                                      out
+                                                          Figure 3. Point transformer networks for semantic segmentation (top) and classification (bottom).
+                                                             input: (x, p)                                                    input: (x, p )                                         input :(x , p )                       input :(x , p )
+                                                                                                                                                 1                                            1      1     1                        2      2    2
+                                                       linear                                                farthest point sampl.                                             linear                               linear
+                                             point transformer                                                      kNN, mlp                                            interpolation
+                                                       linear                                                localmaxpooling                                              summation
+                                                             output: (y, p)                                                   output: (y, p )                                        output: (y, p )
+                                                                                                                                                   2                                                      2
+                                          (a) point transformer block                                             (b) transition down                                                          (c) transition up
+                                                                                               Figure 4. Detailed structure design for each module.
+                        3.3. Position Encoding                                                                                                  3.4. Point Transformer Block
+                             Position encoding plays an important role in self-                                                                      Weconstruct a residual point transformer block with the
+                        attention, allowing the operator to adapt to local structure                                                            point transformer layer at its core, as shown in Figure 4(a).
+                        in the data [39]. Standard position encoding schemes for                                                                The transformer block integrates the self-attention layer,
+                        sequences and image grids are crafted manually, for exam-                                                               linear projections that can reduce dimensionality and ac-
+                        ple based on sine and cosine functions or normalized range                                                              celerate processing, and a residual connection. The input
+                        values [39, 54]. In 3D point cloud processing, the 3D point                                                             is a set of feature vectors x with associated 3D coordinates
+                        coordinates themselves are a natural candidate for position                                                             p. The point transformer block facilitates information ex-
+                        encoding. We go beyond this by introducing trainable, pa-                                                               change between these localized feature vectors, producing
+                        rameterizedpositionencoding. Ourpositionencodingfunc-                                                                   new feature vectors for all data points as its output. The
+                        tion δ is defined as follows:                                                                                           information aggregation adapts both to the content of the
+                                                                                                                                                feature vectors and their layout in 3D.
+                                                               δ = θ(p −p ).                                                    (4)
+                                                                               i         j                                                      3.5. Network Architecture
+                        Here p and p are the 3D point coordinates for points i                                                                       We construct complete 3D point cloud understanding
+                                     i              j
+                        and j. The encoding function θ is an MLP with two linear                                                                networks based on the point transformer block. Note that
+                        layers and one ReLU nonlinearity. Notably, we found that                                                                the point transformer is the primary feature aggregation op-
+                        position encoding is important for both the attention gener-                                                            erator throughout the network. We do not use convolu-
+                        ation branch and the feature transformation branch. Thus                                                                tions for preprocessing or auxiliary branches: the network is
+                        Eq. 3 adds the trainable position encoding in both branches.                                                            based entirely on point transformer layers, pointwise trans-
+                        Thepositionencodingθ istrainedend-to-endwiththeother                                                                    formations, and pooling. The network architectures are vi-
+                        subnetworks.                                                                                                            sualized in Figure 3.
+                                                                                                                                         16262
+              Backbone structure. The feature encoder in point trans-              4. Experiments
+              former networks for semantic segmentation and classifica-               We evaluate the effectiveness of the presented Point
+              tion has five stages that operate on progressively downsam-          Transformer design on a number of domains and tasks. For
+              pled point sets. The downsampling rates for the stages are           3Dsemanticsegmentation,weusethechallengingStanford
+              [1, 4, 4, 4, 4], thus the cardinality of the point set produced      Large-Scale 3D Indoor Spaces (S3DIS) dataset [1]. For
+              byeachstageis[N,N/4,N/16,N/64,N/256],whereNisthe                     3D shape classification, we use the widely adopted Mod-
+              number of input points. Note that the number of stages and           elNet40 dataset [47]. And for object part segmentation, we
+              the downsampling rates can be varied depending on the ap-            use ShapeNetPart [52].
+              plication, for example to construct light-weight backbones
+              for fast processing. Consecutive stages are connected by             Implementation details. We implement the Point Trans-
+              transition modules: transition down for feature encoding             former in PyTorch [24]. We use the SGD optimizer with
+              and transition up for feature decoding.                              momentumandweightdecaysetto0.9and0.0001,respec-
+                                                                                   tively. For semantic segmentation on S3DIS, we train for
+              Transition down. A key function of the transition down               40Kiterations with initial learning rate 0.5, dropped by 10x
+              module is to reduce the cardinality of the point set as re-          at steps 24K and 32K. For 3D shape classification on Mod-
+              quired, for example from N to N/4 in the transition from             elNet40 and 3D object part segmentation on ShapeNetPart,
+              the first to the second stage. Denote the point set provided         we train for 200 epochs. The initial learning rate is set to
+              as input to the transition down module as P and denote               0.05 and is dropped by 10x at epochs 120 and 160.
+                                                               1
+              the output point set as P . We perform farthest point sam-
+                                        2                                          4.1. Semantic Segmentation
+              pling [27] in P to identify a well-spread subset P       ⊂P
+                              1                                      2      1      Dataandmetric. TheS3DIS[1]datasetforsemanticscene
+              with the requisite cardinality. To pool feature vectors from
+              P onto P , we use a kNN graph on P . (This is the same               parsing consists of 271 rooms in six areas from three differ-
+                1        2                              1
+              k as in Section 3.2. We use k = 16 throughout and report             ent buildings. Each point in the scan is assigned a semantic
+              a controlled study of this hyperparameter in Section 4.4.)           label from 13 categories (ceiling, floor, table, etc.). Follow-
+              Eachinputfeaturegoesthroughalineartransformation,fol-                ing a common protocol [36, 27], we evaluate the presented
+              lowed by batch normalization and ReLU, followed by max               approach in two modes: (a) Area 5 is withheld during train-
+              pooling onto each point in P from its k neighbors in P .             ing and is used for testing, and (b) 6-fold cross-validation.
+                                             2                             1
+              The transition down module is schematically illustrated in           For evaluation metrics, we use mean classwise intersection
+              Figure 4(b).                                                         over union (mIoU), mean of classwise accuracy (mAcc),
+                                                                                   and overall pointwise accuracy (OA).
+              Transition up. For dense prediction tasks such as seman-             Performancecomparison. TheresultsarepresentedinTa-
+              tic segmentation, we adopt a U-net design in which the               bles 1 and 2. The Point Transformer outperforms all prior
+              encoder described above is coupled with a symmetric de-              models according to all metrics in both evaluation modes.
+              coder [27, 3]. Consecutive stages in the decoder are con-            On Area 5, the Point Transformer attains mIoU/mAcc/OA
+              nected by transition up modules. Their primary function is           of 70.4%/76.5%/90.8%, outperforming all prior work by
+              to map features from the downsampled input point set P               multiple percentage points in each metric. The Point Trans-
+                                                                            2
+              onto its superset P    ⊃ P . To this end, each input point           former is the first model to pass the 70% mIoU bar, outper-
+                                   1      2
+              feature is processed by a linear layer, followed by batch            forming the prior state of the art by 3.3 absolute percent-
+              normalization and ReLU, and then the features are mapped             age points in mIoU. The Point Transformer outperforms
+              onto the higher-resolution point set P      via trilinear inter-     MLPs-based frameworks such as PointNet [25], voxel-
+                                                        1
+              polation. These interpolated features from the preceding             based architectures such as SegCloud [36], graph-based
+              decoder stage are summarized with the features from the              methods such as SPGraph [15], attention-based methods
+              corresponding encoder stage, provided via a skip connec-             such as PAT [50], sparse convolutional networks such as
+              tion. The structure of the transition up module is illustrated       MinkowskiNet [3], and continuous convolutional networks
+              in Figure 4(c).                                                      such as KPConv [37]. Point Transformer also substantially
+                                                                                   outperforms all prior models under 6-fold cross-validation.
+              Outputhead. Forsemanticsegmentation,thefinaldecoder                  The mIoU in this mode is 73.5%, outperforming the prior
+              stage produces a feature vector for each point in the input          state of the art (KPConv) by 2.9 absolute percentage points.
+              point set. We apply an MLP to map this feature to the final          The number of parameters in Point Transformer (4.9M) is
+              logits. For classification, we perform global average pool-          muchsmaller than in current high-performing architectures
+              ing over the pointwise features to get a global feature vec-         such as KPConv (14.9M) and SparseConv (30.1M).
+              tor for the whole point set. This global feature is passed           Visualization. Figure 5 shows the Point Transformer’s pre-
+              through an MLP to get the global classification logits.              dictions. We can see that the predictions are very close to
+                                                                               16263
+                  Method                OA mAcc mIoU ceiling floor              wall   beam   column    window     door   table  chair   sofa   bookcase   board   clutter
+                  PointNet [25]          –     49.0     41.1    88.8     97.3   69.8    0.1      3.9      46.3     10.8   59.0   52.6    5.9      40.3      26.4    33.2
+                  SegCloud [36]          –     57.4     48.9    90.1     96.1   69.9    0.0     18.4      38.4     23.1   70.4   75.9    40.9     58.4      13.0    41.6
+                  TangentConv [35]       –     62.2     52.6    90.5     97.7   74.0    0.0     20.7      39.0     31.3   77.5   69.4    57.3     38.5      48.8    39.8
+                  PointCNN[20]          85.9   63.9     57.3    92.3     98.2   79.4    0.0     17.6      22.8     62.1   74.4   80.6    31.7     66.7      62.1    56.7
+                  SPGraph[15]           86.4   66.5     58.0    89.4     96.9   78.1    0.0     42.8      48.9     61.6   84.7   75.4    69.8     52.6      2.1     52.2
+                  PCCN[42]               –     67.0     58.3    92.3     96.2   75.9    0.3      6.0      69.5     63.5   66.9   65.6    47.3     68.9      59.1    46.2
+                  PAT[50]                –     70.8     60.1    93.0     98.5   72.3    1.0     41.5      85.1     38.2   57.7   83.6    48.1     67.0      61.3    33.6
+                  PointWeb [55]         87.0   66.6     60.3    92.0     98.5   79.4    0.0     21.1      59.7     34.8   76.3   88.3    46.9     69.3      64.9    52.5
+                  HPEIN[13]             87.2   68.3     61.9    91.5     98.2   81.4    0.0     23.3      65.3     40.0   75.5   87.7    58.5     67.8      65.6    49.4
+                  MinkowskiNet [37]      –     71.7     65.4    91.8     98.7   86.2    0.0     34.1      48.9     62.4   81.6   89.8    47.2     74.9      74.4    58.6
+                  KPConv[37]             –     72.8     67.1    92.8     97.3   82.4    0.0     23.9      58.0     69.0   81.5   91.0    75.4     75.3      66.7    58.9
+                  PointTransformer      90.8   76.5     70.4    94.0     98.5   86.3    0.0     38.0      63.4     74.3   89.1   82.4    74.3     80.2      76.0    59.3
+                                               Table 1. Semantic segmentation results on the S3DIS dataset, evaluated on Area 5.
+                          Method                     OA mAcc mIoU                                4.2. Shape Classification
+                          PointNet [25]             78.5      66.2       47.6                    Data and metric. The ModelNet40 [47] dataset contains
+                          RSNet[12]                   –       66.5       56.5                    12,311 CAD models with 40 object categories. They are
+                          SPGraph[15]               85.5      73.0       62.1                    split into 9,843 models for training and 2,468 for testing.
+                          PAT[50]                     –       76.5       64.3                    Wefollow the data preparation procedure of Qi et al. [27]
+                          PointCNN[20]              88.1      75.6       65.4                    and uniformly sample the points from each CAD model
+                          PointWeb [55]             87.3      76.2       66.7                    together with the normal vectors from the object meshes.
+                          ShellNet [53]             87.1        –        66.8                    For evaluation metrics, we use the mean accuracy within
+                          RandLA-Net[37]            88.0      82.0       70.0                    each category (mAcc) and the overall accuracy (OA) over
+                          KPConv[37]                  –       79.1       70.6                    all classes.
+                          PointTransformer          90.2      81.9       73.5                    Performancecomparison. TheresultsarepresentedinTa-
+                Table2.SemanticsegmentationresultsontheS3DISdataset,eval-                        ble 3. The Point Transformer sets the new state of the art in
+                uated with 6-fold cross-validation.                                              both metrics. The overall accuracy of Point Transformer on
+                                                                                                 ModelNet40 is 93.7%. It outperforms strong graph-based
+                the ground truth. Point Transformer captures detailed se-                        models such as DGCNN [44], attention-based models such
+                mantic structure in complex 3D scenes, such as the legs of                       as A-SCN [48] and Point2Sequence [21], and strong point-
+                chairs, the outlines of poster boards, and the trim around                       based models such as KPConv [37].
+                doorways.                                                                        Visualization. To probe the representation learned by the
+                                                                                                 Point Transformer, we conduct shape retrieval by retrieving
+                        Method                         input     mAcc        OA                  nearest neighbors in the space of the output features pro-
+                        3DShapeNets[47]               voxel       77.3       84.7                duced by the Point Transformer Some results are shown in
+                        VoxNet[23]                    voxel       83.0       85.9                Figure 6. The retrieved shapes are very similar to the query,
+                        Subvolume[26]                 voxel       86.0       89.2                and when they differ, they differ along aspects that we per-
+                        MVCNN[34]                     image         –        90.1                ceive as less semantically salient, such as legs of desks.
+                        PointNet [25]                  point      86.2       89.2
+                        A-SCN[48]                      point      87.6       90.0                4.3. Object Part Segmentation
+                        Set Transformer [17]           point        –        90.4                Data and metric. The ShapeNetPart dataset [52] is anno-
+                        PAT[50]                        point        –        91.7                tated for 3D object part segmentation. It consists of 16,880
+                        PointNet++ [27]                point        –        91.9                models from 16 shape categories, with 14,006 3D models
+                        SpecGCN[40]                    point        –        92.1                for training and 2,874 for testing. The number of parts for
+                        PointCNN[20]                   point      88.1       92.2                each category is between 2 and 6, with 50 different parts
+                        DGCNN[44]                      point      90.2       92.2                in total. We use the sampled point sets produced by Qi et
+                        PointWeb [55]                  point      89.4       92.3                al. [27] for a fair comparison with prior work. For evalua-
+                        SpiderCNN[49]                  point        –        92.4                tion metrics, we report category mIoU and instance mIoU.
+                        PointConv [46]                 point        –        92.5
+                        Point2Sequence [21]            point      90.4       92.6                Performancecomparison. TheresultsarepresentedinTa-
+                        KPConv[37]                     point        –        92.9                ble 4. The Point Transformer outperforms all prior mod-
+                        InterpCNN [22]                 point        –        93.0                els as measured by instance mIoU. (Note that we did not
+                        PointTransformer               point      90.6       93.7                use loss-balancing during training, which can boost cate-
+                Table 3. Shape classification results on the ModelNet40 dataset.                 gory mIoU.)
+                                                                                            16264
+                    Method                   cat. mIoU    ins. mIoU              Number of neighbors. We first investigate the setting of
+                    PointNet [25]               80.4         83.7                the number of neighbors k, which is used in determining
+                    A-SCN[48]                    –           84.6                the local neighborhood around each point. The results are
+                    PCNN[42]                    81.8         85.1                shown in Table 5. The best performance is achieved when
+                    PointNet++ [27]             81.9         85.1                k is set to 16. When the neighborhood is smaller (k = 4
+                    DGCNN[44]                   82.3         85.1                or k = 8), the model may not have sufficient context for its
+                    Point2Sequence [21]          –           85.2                predictions. When the neighborhood is larger (k = 32 or
+                    SpiderCNN[49]               81.7         85.3                k = 64), each self-attention layer is provided with a large
+                    SPLATNet[33]                83.7         85.4                number of datapoints, many of which may be farther and
+                    PointConv [46]              82.8         85.7                less relevant. This may introduce excessive noise into the
+                    SGPN[43]                    82.8         85.8                processing, lowering the model’s accuracy.
+                    PointCNN[20]                84.6         86.1                Softmax regularization. We conduct an ablation study
+                    InterpCNN [22]              84.0         86.3                on the normalization function ρ in Eq. 3.        The perfor-
+                    KPConv[37]                  85.1         86.4                mance without softmax regularization on S3DIS Area5 is
+                    PointTransformer            83.7         86.6                66.5%/72.8%/89.3%, in terms of mIoU/mAcc/OA. It is
+              Table 4. Object part segmentation results on the ShapeNetPart      muchlower than the performance with softmax regulariza-
+              dataset.                                                           tion (70.4%/76.5%90.8%). This suggests that the normal-
+                              k     mIoU     mAcc     OA                         ization is essential in this setting.
+                              4     59.6      66.0    86.0                       Position encoding. We now study the choice of the posi-
+                              8     67.7      73.8    89.9                       tion encoding δ. The results are shown in Table 6. We can
+                              16    70.4      76.5    90.8                       see that without position encoding, the performance drops
+                              32    68.3      75.0    89.8                       significantly. With absolute position encoding, the perfor-
+                              64    67.7      74.1    89.9                       mance is higher than without. Relative position encoding
+              Table 5. Ablation study: number of neighbors k in the definition   yields the highest performance. When relative position en-
+              of local neighborhoods.                                            codingisaddedonlytotheattentiongenerationbranch(first
+                                                                                 term in Eq. 3) or only to the feature transformation branch
+                        Pos. encoding        mIoU     mAcc      OA               (second term in Eq. 3), the performance drops again, in-
+                             none             64.6     71.9    88.2              dicating that adding the relative position encoding to both
+                           absolute           66.5     73.2    88.9              branches is important.
+                           relative           70.4     76.5    90.8              Attention type. Finally, we investigate the type of self-
+                     relative for attention   67.0     73.0    89.3              attention used in the point transformer layer. The results are
+                      relative for feature    68.7     74.4    90.4              shown in Table 7. We examine four conditions. ‘MLP’ is
+                        Table 6. Ablation study: position encoding.              a no-attention baseline that replaces the point transformer
+                                                                                 layer in the point transformer block with a pointwise MLP.
+                           Operator       mIoU      mAcc     OA                  ‘MLP+pooling’ is a more advanced no-attention baseline
+                            MLP            61.7     68.6     87.1                that replaces the point transformer layer with a pointwise
+                        MLP+pooling        63.7     71.0     87.8                MLPfollowedbymaxpoolingwithineach kNNneighbor-
+                       scalar attention    64.6     71.9     88.4                hood: this performs feature transformation at each point
+                       vector attention    70.4     76.5     90.8                and enables each point to exchange information with its lo-
+                  Table 7. Ablation study: form of self-attention operator.      cal neighborhood, but does not leverage attention mecha-
+                                                                                 nisms. ‘scalar attention’ replaces the vector attention used
+              Visualization. Object part segmentation results on a num-          in Eq. 3 by scalar attention, as in Eq. 1 and in the original
+                                                                                 transformer design [39]. ‘vector attention’ is the formula-
+              ber of models are shown in Figure 7. The Point Trans-              tion we use, presented in Eq. 3. We can see that scalar at-
+              former’s part segmentation predictions are clean and close         tention is more expressive than the no-attention baselines,
+              to the ground truth.                                               but is in turn outperformed by vector attention. The per-
+              4.4. Ablation Study                                                formance gap between vector and scalar attention is signif-
+                                                                                 icant: 70.4% vs. 64.6%, an improvement of 5.8 absolute
+                 Wenowconductanumberofcontrolledexperimentsthat                  percentage points. Vector attention is more expressive since
+              examinespecific decisions in the Point Transformer design.         it supports adaptive modulation of individual feature chan-
+              These studies are performed on the semantic segmentation           nels, not just whole feature vectors. This expressivity ap-
+              task on the S3DIS dataset, tested on Area 5.                       pears to be very beneficial in 3D data processing.
+                                                                             16265
+                                    Input                    GroundTruth                 Point Transformer                          Input                     GroundTruth                 Point Transformer
+                                  ceiling        floor        wall         beam         column          window          door         table         chair        sofa        bookcase        board         clutter
+                                                               Figure 5. Visualization of semantic segmentation results on the S3DIS dataset.
+                    Figure 6. Visualization of shape retrieval results on the ModelNet40 dataset. The leftmost column shows the input query and the other
+                    columns show the retrieved models.
+                    Figure 7. Visualization of object part segmentation results on the ShapeNetPart dataset. The ground truth is in the top row, Point Trans-
+                    former predictions on the bottom.
+                    5. Conclusion                                                                                           former networks is fundamentally a set operator. We have
+                                                                                                                            shownthatbeyondthisconceptualcompatibility,transform-
+                         Transformers have revolutionized natural language pro-                                             ers are remarkably effective in point cloud processing, out-
+                    cessing and are making impressive gains in 2D image anal-                                               performing state-of-the-art designs from a variety of fam-
+                    ysis. Inspired by this progress, we have developed a trans-                                             ilies: graph-based models, sparse convolutional networks,
+                    former architecture for 3D point clouds. Transformers are                                               continuous convolutional networks, and others. We hope
+                    perhaps an even more natural fit for point cloud process-                                               that our workwillinspirefurtherinvestigationoftheproper-
+                    ing than they are for language or image processing, be-                                                 ties of point transformers, the development of newoperators
+                    cause point clouds are essentially sets embedded in a metric                                            and network designs, and the application of transformers to
+                    space, and the self-attention operator at the core of trans-                                            other tasks, such as 3D object detection.
+                                                                                                                      16266
+              References                                                          [17] Juho Lee, Yoonho Lee, Jungtaek Kim, Adam Kosiorek, Se-
+               [1] Iro Armeni, Ozan Sener, Amir R. Zamir, Helen Jiang, Ioan-            ungjin Choi, and Yee Whye Teh. Set transformer: A frame-
+                   nis Brilakis, Martin Fischer, and Silvio Savarese. 3D seman-         work for attention-based permutation-invariant neural net-
+                   tic parsing of large-scale indoor spaces. In CVPR, 2016. 5           works. In ICML, 2019. 3, 6
+               [2] Xiaozhi Chen, Huimin Ma, Ji Wan, Bo Li, and Tian Xia.          [18] Bo Li, Tianlei Zhang, and Tian Xia. Vehicle detection from
+                   Multi-view 3d object detection network for autonomous                3dlidar using fully convolutional network. In RSS, 2016. 2
+                   driving. In CVPR, 2017. 2                                      [19] Guohao Li, Matthias Muller, Ali Thabet, and Bernard
+               [3] Christopher Choy, JunYoung Gwak, and Silvio Savarese. 4d             Ghanem. Deepgcns: Cangcnsgoasdeepascnns? InICCV,
+                   spatio-temporal convnets: Minkowski convolutional neural             2019. 1, 2
+                   networks. In CVPR, 2019. 1, 2, 5                               [20] Yangyan Li, Rui Bu, Mingchao Sun, Wei Wu, Xinhan
+               [4] Zihang Dai, Zhilin Yang, Yiming Yang, Jaime Carbonell,               Di, and Baoquan Chen.     Pointcnn: Convolution on X-
+                   Quoc V. Le, and Ruslan Salakhutdinov. Transformer-XL:                transformed points. In NIPS, 2018. 2, 6, 7
+                   Attentive language models beyond a fixed-length context. In    [21] Xinhai Liu, Zhizhong Han, Yu-Shen Liu, and Matthias
+                   ACL,2019. 1, 2, 3                                                    Zwicker. Point2sequence: Learning the shape representa-
+               [5] Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina               tion of 3d point clouds with an attention-based sequence to
+                   Toutanova. BERT: Pre-training of deep bidirectional trans-           sequence network. In AAAI, 2019. 3, 6, 7
+                   formers for language understanding. In NAACL-HLT, 2019.        [22] Jiageng Mao, Xiaogang Wang, and Hongsheng Li. Interpo-
+                   1, 2, 3                                                              lated convolutional networks for 3d point cloud understand-
+               [6] Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov,               ing. In ICCV, 2019. 2, 6, 7
+                   Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner,            [23] Daniel Maturana and Sebastian Scherer. Voxnet: A 3d con-
+                   Mostafa Dehghani, Matthias Minderer, Georg Heigold, Syl-             volutional neural networkforreal-timeobjectrecognition. In
+                   vain Gelly, et al. An image is worth 16x16 words: Trans-             IROS, 2015. 1, 2, 6
+                   formers for image recognition at scale. ICLR, 2021. 2, 3       [24] Adam Paszke, Sam Gross, Francisco Massa, Adam Lerer,
+               [7] Oren Dovrat, Itai Lang, and Shai Avidan. Learning to sam-            James Bradbury, Gregory Chanan, Trevor Killeen, Zeming
+                   ple. In CVPR, 2019. 2                                                Lin, Natalia Gimelshein, Luca Antiga, et al. PyTorch: An
+               [8] Carlos Esteves, Christine Allen-Blanchette, Ameesh Maka-             imperative style, high-performance deep learning library. In
+                   dia, and Kostas Daniilidis. Learning so (3) equivariant rep-         NIPS, 2019. 5
+                   resentations with spherical cnns. In ECCV, 2018. 2             [25] Charles Ruizhongtai Qi, Hao Su, Kaichun Mo, and
+               [9] Benjamin Graham, Martin Engelcke, and Laurens Van                    Leonidas J. Guibas. Pointnet: Deep learning on point sets
+                   Der Maaten. 3d semantic segmentation with submanifold                for 3d classification and segmentation. In CVPR, 2017. 1, 2,
+                   sparse convolutional networks. In CVPR, 2018. 1, 2                   5, 6, 7
+              [10] Han Hu, Zheng Zhang, Zhenda Xie, and Stephen Lin. Local        [26] Charles Ruizhongtai Qi, Hao Su, Matthias Nießner, Angela
+                   relation networks for image recognition. In ICCV, 2019. 1,           Dai, Mengyuan Yan, and Leonidas Guibas. Volumetric and
+                   2, 3                                                                 multi-view cnns for object classification on 3d data.  In
+              [11] Qingyong Hu, Bo Yang, Linhai Xie, Stefano Rosa, Yulan                CVPR,2016. 6
+                   Guo, Zhihua Wang, Niki Trigoni, and Andrew Markham.            [27] Charles Ruizhongtai Qi, Li Yi, Hao Su, and Leonidas J.
+                   Randla-net: Efficient semantic segmentation of large-scale           Guibas. Pointnet++: Deep hierarchical feature learning on
+                   point clouds. In CVPR, 2020. 2                                       point sets in a metric space. In NIPS, 2017. 1, 2, 5, 6, 7
+              [12] QianguiHuang,WeiyueWang,andUlrichNeumann. Recur-               [28] Prajit Ramachandran, Niki Parmar, Ashish Vaswani, Irwan
+                   rent slice networks for 3d segmentation of point clouds. In          Bello, Anselm Levskaya, and Jonathon Shlens. Stand-alone
+                   CVPR,2018. 6                                                         self-attention in vision models. In NeurIPS, 2019. 1, 2, 3
+              [13] Li Jiang, Hengshuang Zhao, Shu Liu, Xiaoyong Shen, Chi-        [29] Gernot Riegler, Ali Osman Ulusoy, and Andreas Geiger.
+                   Wing Fu, and Jiaya Jia. Hierarchical point-edge interaction          Octnet: Learningdeep3drepresentationsathighresolutions.
+                   network for point cloud semantic segmentation. In ICCV,              In CVPR, 2017. 2
+                   2019. 2, 6                                                     [30] Yiru Shen, Chen Feng, Yaoqing Yang, and Dong Tian. Min-
+              [14] Asako Kanezaki, Yasuyuki Matsushita, and Yoshifumi                   ing point cloud local structures by kernel correlation and
+                   Nishida. Rotationnet: Joint object categorization and pose           graph pooling. In CVPR, 2018. 2
+                   estimation using multiviews from unsupervised viewpoints.      [31] Martin Simonovsky and Nikos Komodakis. Dynamic edge-
+                   In CVPR, 2018. 2                                                     conditioned filters in convolutional neural networks on
+              [15] Loic Landrieu and Martin Simonovsky. Large-scale point               graphs. In CVPR, 2017. 2
+                   cloud semantic segmentation with superpoint graphs.    In      [32] ShuranSong,FisherYu,AndyZeng,AngelXChang,Mano-
+                   CVPR,2018. 2, 5, 6                                                   lis Savva, and Thomas Funkhouser. Semantic scene comple-
+              [16] Alex H Lang, Sourabh Vora, Holger Caesar, Lubing Zhou,               tion from a single depth image. In CVPR, 2017. 1, 2
+                   Jiong Yang, and Oscar Beijbom. Pointpillars: Fast encoders     [33] Hang Su, Varun Jampani, Deqing Sun, Subhransu Maji,
+                   for object detection from point clouds. In CVPR, 2019. 2             Evangelos Kalogerakis, Ming-Hsuan Yang, and Jan Kautz.
+                                                                                        Splatnet: Sparse lattice networks for point cloud processing.
+                                                                                        In CVPR, 2018. 7
+                                                                               16267
+              [34] Hang Su, Subhransu Maji, Evangelos Kalogerakis, and              [45] Felix Wu, Angela Fan, Alexei Baevski, Yann N Dauphin,
+                   Erik G. Learned-Miller.    Multi-view convolutional neural            and Michael Auli. Pay less attention with lightweight and
+                   networks for 3d shape recognition. In ICCV, 2015. 2, 6                dynamic convolutions. In ICLR, 2019. 1, 2, 3
+              [35] MaximTatarchenko, Jaesik Park, Vladlen Koltun, and Qian-         [46] WenxuanWu,ZhongangQi,andLiFuxin. Pointconv: Deep
+                   YiZhou. Tangentconvolutionsfordensepredictionin3d. In                 convolutional networks on 3d point clouds. In CVPR, 2019.
+                   CVPR,2018. 2, 6                                                       2, 6, 7
+              [36] Lyne P. Tchapmi, Christopher B. Choy, Iro Armeni, JunY-          [47] Zhirong Wu, Shuran Song, Aditya Khosla, Fisher Yu, Lin-
+                   oung Gwak, and Silvio Savarese. Segcloud: Semantic seg-               guang Zhang, Xiaoou Tang, and Jianxiong Xiao.           3d
+                   mentation of 3d point clouds. In 3DV, 2017. 5, 6                      shapenets: A deep representation for volumetric shapes. In
+              [37] Hugues Thomas, Charles R Qi, Jean-Emmanuel Deschaud,                  CVPR,2015. 5, 6
+                   Beatriz Marcotegui, Franc¸ois Goulette, and Leonidas J           [48] Saining Xie, Sainan Liu, Zeyu Chen, and Zhuowen Tu. At-
+                   Guibas. Kpconv: Flexible and deformable convolution for               tentional shapecontextnet for point cloud recognition.  In
+                   point clouds. In ICCV, 2019. 1, 2, 5, 6, 7                            CVPR,2018. 3, 6, 7
+              [38] Benjamin Ummenhofer, Lukas Prantl, Nils Thuerey, and             [49] Yifan Xu, Tianqi Fan, Mingye Xu, Long Zeng, and Yu Qiao.
+                   Vladlen Koltun. Lagrangian fluid simulation with continu-             Spidercnn: Deep learning on point sets with parameterized
+                   ous convolutions. In ICLR, 2020. 2                                    convolutional filters. In ECCV, 2018. 2, 6, 7
+              [39] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszko-          [50] Jiancheng Yang, Qiang Zhang, Bingbing Ni, Linguo Li,
+                   reit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia            Jinxian Liu, Mengdie Zhou, and Qi Tian. Modeling point
+                   Polosukhin. Attention is all you need. In NIPS, 2017. 1, 2,           clouds with self-attention and gumbel subset sampling. In
+                   3, 4, 7                                                               CVPR,2019. 2, 3, 5, 6
+              [40] Chu Wang, Babak Samari, and Kaleem Siddiqi. Local spec-          [51] Zhilin Yang, Zihang Dai, Yiming Yang, Jaime Carbonell,
+                   tral graph convolution for point set feature learning.   In           Ruslan Salakhutdinov, and Quoc V. Le. XLNet: General-
+                   ECCV,2018. 2, 6                                                       ized autoregressive pretraining for language understanding.
+              [41] LeiWang,YuchunHuang,YaolinHou,ShenmanZhang,and                        In NeurIPS, 2019. 1, 2, 3
+                   Jie Shan. Graphattentionconvolutionforpointcloudseman-           [52] Li Yi, Vladimir G Kim, Duygu Ceylan, I-Chao Shen,
+                   tic segmentation. In CVPR, 2019. 2                                    MengyanYan,HaoSu,CewuLu,QixingHuang,AllaShef-
+              [42] Shenlong Wang, Simon Suo, Wei-Chiu Ma, Andrei                         fer, and Leonidas Guibas. A scalable active framework for
+                   Pokrovsky, and Raquel Urtasun. Deep parametric continu-               region annotation in 3d shape collections. TOG, 2016. 5, 6
+                   ous convolutional neural networks. In CVPR, 2018. 1, 2, 6,       [53] Zhiyuan Zhang, Binh-Son Hua, and Sai-Kit Yeung. Shell-
+                   7                                                                     net: Efficient point cloud convolutional neural networks us-
+              [43] Weiyue Wang, Ronald Yu, Qiangui Huang, and Ulrich Neu-                ing concentric shells statistics. In ICCV, 2019. 6
+                   mann. Sgpn: Similarity group proposal network for 3d point       [54] Hengshuang Zhao, Jiaya Jia, and Vladlen Koltun. Exploring
+                   cloud instance segmentation. In CVPR, 2018. 7                         self-attention for image recognition. In CVPR, 2020. 1, 2, 3,
+              [44] Yue Wang, Yongbin Sun, Ziwei Liu, Sanjay E. Sarma,                    4
+                   Michael M. Bronstein, and Justin M. Solomon. Dynamic             [55] Hengshuang Zhao, Li Jiang, Chi-Wing Fu, and Jiaya Jia.
+                   graph cnn for learning on point clouds. TOG, 2019. 1, 2, 6,           PointWeb: Enhancing local neighborhood features for point
+                   7                                                                     cloud processing. In CVPR, 2019. 2, 6
+                                                                                16268

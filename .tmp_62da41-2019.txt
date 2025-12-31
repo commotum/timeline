@@ -1,0 +1,600 @@
+               8th ICML Workshop on Automated Machine Learning (2021)
+                                 PonderNet: Learning to Ponder
+               Andrea Banino∗
+               DeepMind
+               London, UK
+               abanino@deepmind.com
+               Jan Balaguer*
+               DeepMind
+               London, UK
+               jan@deepmind.com
+               Charles Blundell
+               DeepMind
+               London, UK
+               cblundell@deepmind.com
+                                               Abstract
+                   In standard neural networks the amount of computation used grows with the size of the in-
+                   puts, but not with the complexity of the problem being learnt. To overcome this limitation
+                   we introduce PonderNet, a new algorithm that learns to adapt the amount of computa-
+                   tion based on the complexity of the problem at hand. PonderNet learns end-to-end the
+                   number of computational steps to achieve an eﬀective compromise between training pre-
+                   diction accuracy, computational cost and generalization. On a complex synthetic problem,
+                   PonderNet dramatically improves performance over previous adaptive computation meth-
+                   ods and additionally succeeds at extrapolation tests where traditional neural networks fail.
+                   Also, our method matched the current state of the art results on a real world question and
+                   answering dataset, but using less compute. Finally, PonderNet reached state of the art
+                   results on a complex task designed to test the reasoning capabilities of neural networks.
+               1. Introduction
+               The time required to solve a problem is a function of more than just the size of the inputs.
+               Commonlyproblems also have an inherent complexity that is independent of the input size:
+               it is faster to add two numbers than to divide them. Most machine learning algorithms do
+               not adjust their computational budget based on the complexity of the task they are learning
+               to solve, or arguably, such adaptation is done manually by the machine learning practitioner.
+               This adaptation is known as pondering. In prior work, Adaptive Computation Time (ACT;
+               Graves, 2016) automatically learns to scale the required computation time via a scalar
+               halting probability. This halting probability modulates the number of computational steps,
+               called the “ponder time”, needed for each input. Unfortunately ACT is notably unstable and
+                ∗. contributed equally
+                c
+               2021 Andrea Banino, Jan Balaguer, Charles Blundell.
+                                                                           Banino, Balaguer, Blundell
+                             sensitive to the choice of a hyper-parameter that trades-oﬀ accuracy and computation cost.
+                             Additionally, the gradient for the cost of computation can only back-propagate through the
+                             last computational step, leading to a biased estimation of the gradient. Another approach
+                             is represented by Adaptive Early Exit Networks (Bolukbasi et al., 2017) where the forward
+                             pass of an existing network is terminated at evaluation time if it is likely that the part
+                             of the network used so far already predicts the correct answer. More recently, work has
+                             investigated the use of REINFORCE (Williams, 1992) to perform conditional computation.
+                             Adiscrete latent variable is used to dynamically adjust the number of computation steps.
+                             This approach has been applied to recurrent neural networks (Chung et al., 2016; Banino
+                             et al., 2020), but has the downside that the estimated gradients have high variance, requiring
+                             large batch sizes to train them.                      A parallel line of research has explored using similar
+                             techniques to reduce the computation by skipping elements from a sequence of processed
+                             inputs (Yu et al., 2017; Campos Camunez et al., 2018).
+                                   In this paper we present PonderNet that builds on these previous ideas. PonderNet is
+                             fully diﬀerentiable which allows for low-variance gradient estimates (unlike REINFORCE).
+                             It has unbiased gradient estimates (unlike ACT). We achieve this by reformulating the
+                             halting policy as a probabilistic model. This has consequences in all aspects of the model:
+                                  1. Architecture: in PonderNet, the halting node predicts the probability of halting con-
+                                      ditional on not having halted before. We exactly compute the overall probability of
+                                      halting at each step as a geometric distribution.
+                                  2. Loss: we don’t regularize PonderNet to explicitly minimize the number of comput-
+                                      ing steps, but incentivize exploration instead. The pressure of using computation
+                                      eﬃciently happens naturally as a form of Occam’s razor.
+                                  3. Inference: PonderNet is probabilistic both in terms of number of computational steps
+                                      and the prediction produced by the network.
+                             2. Methods
+                             2.1 Problem setting
+                             We consider a supervised setting, where we want to learn a function f : x → y from
+                                                                     (1)        (k)                       (1)        (k)
+                             data (x,y), with x = {x                    , ..., x    } and y = {y              , ..., y   }. We propose a new general
+                             architecture for neural networks that modiﬁes the forward pass, as well as a novel loss
+                             function to train it.
+                             2.2 Step recurrence and halting process
+                             ThePonderNet architecture requires a step function s of the form yˆ ,h                                          , λ   =s(x,h ), as
+                                                                                                                                  n     n+1     n               n
+                             well as an initial state h 1. The output yˆ and λ are respectively the network’s prediction
+                                                                 0                          n           n
+                             and scalar probability of halting at step n. The step function s can be any neural network,
+                             such as MLPs, LSTMs, or encoder-decoder architectures such as transformers. We apply
+                             the step function recurrently up to N times.
+                               1. Alternatively, one can consider a step function of the form yˆ ,h                     , λ  =s(h )together with an encoder
+                                                                                                              n    n+1     n        n
+                                  e of the form h = e(x).
+                                                      0
+                                                                                                  2
+                                               Ponder Net: Learning to Ponder
+                       The output yˆ is a learned prediction conditioned on the dynamic number of steps
+                                      n
+                    n ∈ {1,...,N}. We rely on the value of λn to learn the optimal value of n. We deﬁne a
+                    Bernoulli random variable Λ in order to represent a Markov process for the halting with
+                                                 n
+                    two states “continue” (Λ = 0) and “halt” (Λ = 1). The decision process starts from state
+                                             n                    n
+                    “continue” (Λ = 0). We set the transition probability:
+                                  0
+                                             P(Λn =1|Λn−1 = 0) = λn       ∀1≤n≤N                             (1)
+                    that is the conditional probability of entering state “halt” at step n conditioned that there
+                    has been no previous halting. Note that “halt” is a terminal state. We can then estimate the
+                    unconditioned probability that the halting happened in steps 0,1,2,...,N where N is the
+                    maximum number of steps allowed before halting. We derive this probability distribution
+                    p as a generalization of the geometric distribution:
+                     n
+                                                                n−1
+                                                        pn = λn Y(1−λj)                                      (2)
+                                                                 j=1
+                    which is a valid probability distribution if we integrate over an inﬁnite number of possible
+                    computation steps (N → ∞).
+                                            ˆ                                                            ˆ
+                       The prediction yˆ ∼ Y made by PonderNet is sampled from a random variable Y with
+                                                ˆ
+                    probability distribution P(Y = y ) = p . In other words, the prediction of PonderNet is
+                                                      n      n
+                    the prediction made at the step n at which it halts. This is in contrast with ACT, where
+                    model predictions are always weighted averages across steps. Additionally, PonderNet is
+                    more generic in this regard: if one wishes to do so, it is straightforward to calculate the
+                    expected prediction across steps, similar to how it is done in ACT.
+                    2.3 Maximum number of pondering steps
+                    Since in practice we can only unroll the step function for a limited number of iterations, we
+                    must correct for this so that the sum of probabilities p  sums to 1. We can do this in two
+                                                                            n
+                    ways. One option here is to normalize the probabilities p so that they sum up to 1 (this
+                                                                               n
+                    is equivalent to conditioning the probability of halting under the knowledge that n ≤ N).
+                    Alternatively, we could assign any remaining halting probability to the last step, so that
+                              P
+                    p  =1− N−1p instead of as previously deﬁned.
+                     N          n=1 n
+                       In our experiments, we specify the maximum number of steps using two diﬀerent criteria.
+                    In evaluation, and under known temporal or computational limitations, N can be set naively
+                    as a constant (or not set any limit, i.e. N → ∞). For training, we found that a more
+                    eﬀective (and interpretable) way of parameterizing N is by deﬁning a minimum cumulative
+                                                                                         P
+                    probability of halting. N is then the smallest value of n such that     n  p > 1−ε, with
+                                                                                            j=1 j
+                    the hyper-parameter ε positive near 0 (in our experiments 0.05).
+                    2.4 Training loss
+                    The total loss is composed of reconstruction L     and regularization L     terms:
+                                                                   Rec                      Reg
+                                                                 3
+                                                  Banino, Balaguer, Blundell
+                                                    N
+                                               L=XpL(y,yˆ )+βKL(p ||p (λ ))                                   (3)
+                                                        n       n     |     n{zG p }
+                                                   n=1                      L
+                                                   |     {z      }           Reg
+                                                         L
+                                                          Rec
+                        where L is a pre-deﬁned loss for the prediction (usually mean squared error, or cross-
+                    entropy); and λp is a hyper-parameter that deﬁnes a geometric prior distribution p (λp) on
+                                                                                                        G
+                    the halting policy (truncated at N). LRec is the expectation of the pre-deﬁned reconstruction
+                    loss L across halting steps. L     is the KL divergence between the distribution of halting
+                                                   Reg
+                    probabilities p  and the prior (a geometric distribution truncated at N, parameterized by
+                                   n
+                    λp). This hyper-parameter deﬁnes a prior on how likely it is that the network will halt at
+                    each step. This regularisation serves two purposes. First, it biases the network towards the
+                    expected prior number of steps 1/λp. Second, it provides an incentive to give a non-zero
+                    probability to all possible number of steps, thus promoting exploration.
+                    2.5 Evaluation sampling
+                    At evaluation, the network samples on a step basis from the halting Bernoulli random
+                    variable Λ ∼ B(p = λ ) to decide whether to continue or to halt. This process is repeated
+                              n            n
+                    on every step n until a “halt” outcome is sampled, at which point the output y = y
+                                                                                                                n
+                    becomes the ﬁnal prediction of the network. If a maximum number of steps N is reached,
+                    the network is automatically halted and produces a prediction y = y .
+                                                                                          N
+                    3. Results
+                    3.1 Parity
+                    In this section we are reporting results on the parity task as introduced in the original ACT
+                    paper (Graves, 2016). Out of the four tasks presented in that paper we decided to focus on
+                    parity as it was the one showing greater beneﬁt from adaptive compute. In our instantiation
+                    of the parity problem the input vectors had 64 elements, of which a random number from
+                    1 to 64 were randomly set to 1 or −1 and the rest were set to 0. The corresponding target
+                    was 1 if there was an odd number of ones and 0 if there was an even number of ones. We
+                    refer the reader to the original ACT paper for speciﬁc details on the tasks (Graves, 2016).
+                    Also, please refer to Appendix B for further training and evaluation details.
+                        In ﬁgure 1a we can see that PonderNet achieved better accuracy than ACT on the parity
+                    task and it did so with a more eﬃcient use of thinking time (1a at the bottom). Moreover,
+                    if we consider the total computation time during training (ﬁgure 1c) we can see that, in
+                    comparison to ACT, PonderNet employed less computation and achieved higher score.
+                        Another analysis we performed on this version of the parity task was to look at the
+                    eﬀect of the prior probability on performance. In ﬁgure 2b we show that the only case
+                    where PonderNet could not solve the task is when the prior (λp) was set to 0.9, that is when
+                    the average number of thinking steps given as prior was roughly 1 (1/0.9). Interestingly,
+                    when the prior (λp) was set to 0.1, hence starting with a prior average thinking time of 10
+                    steps (1/0.1), the network managed to overcome this and settled to a more eﬃcient average
+                    thinking time of roughly 3 steps (ﬁgure 2c). These results are important as they show that
+                                                                  4
+                                       Ponder Net: Learning to Ponder
+                Figure 1: Performance on the parity task. a) Interpolation. Top: accuracy for both PonderNet(blue)
+                and ACT(orange). Bottom: number of ponder steps at evaluation time. Error bars calculated over
+                10 random seeds. b) Extrapolation. Top: accuracy for both PonderNet(blue) and ACT(orange).
+                Bottom: number of ponder steps at evaluation time. Error bars calculated over 10 random seeds.
+                c) Total number of compute steps calculated as the number of actual forward passes performed by
+                each network. Blue is PonderNet, Green is ACT and Orange is an RNN without adaptive compute.
+                our method is particularly robust with respect to the prior, and a clear advancement in
+                comparison to ACT, where the τ parameter is diﬃcult to set and it is a source of training
+                instability, as explained in the original paper and conﬁrmed by our results. Indeed, Fig.
+                2a shows that only for few conﬁguration of τ ACT is able to solve the task and even when
+                it does so there is a great variance across seeds. Finally, one advantage of setting a prior
+                probability is that this parameter is easy to interpret as the inverse of the “number of
+                ponder steps”, whereas the τ parameter does not have any straightforward interpretation,
+                which makes it harder to deﬁne a priori.
+                Figure 2: Sensitivity to hyper-parameter. a) Sensitivity of ACT to τ. Each box-plot is over 10
+                random seeds. b) Sensitivity of PonderNet to λ . Each box-plot is over 10 random seeds. c)
+                                                       p
+                Box-plot over 30 random seeds for number of ponder steps when λp = 0.1.
+                                                      5
+                                          Banino, Balaguer, Blundell
+                    Next we moved to test the ability of PonderNet to allow extrapolation. To do this we
+                 consider input vectors of 96 elements instead. We train the network on input vectors up
+                 from integers ranging from 1 to 48 elements and we then evaluate on integers between 49
+                 and 96. Figure 1b shows that PonderNet was able to achieve almost perfect accuracy on
+                 this hard extrapolation task, whereas ACT remained at chance level. It is interesting to see
+                 how PonderNet increased its thinking time to 5 steps, which is almost twice as much as the
+                 ones in the interpolation set (see Fig. 1a), showing the capability of our method to adapt
+                 its computation to the complexity of the task.
+                 3.2 bAbI
+                 We then turn our attention to the bAbI question answering dataset (Weston et al., 2015),
+                 which consists of 20 diﬀerent tasks. This task was chosen as it proved to be diﬃcult for
+                 standard neural network architecture that do not employ adaptive computation (Dehghani
+                 et al., 2018). In particular we trained our model on the joint 10k training set. Also, please
+                 see Appendix C for further training and evaluation details.
+                    Table 1 reports the averaged accuracy of our model and the other baselines on bAbI.
+                 Our model is able to match state of the art results, but it achieves them faster and with a
+                 lower average error. The comparison with Universal transformer (Dehghani et al., 2018, UT)
+                 is interesting as it uses the same transformer architecture as PonderNet, but the compute
+                 time is optimised with ACT. Interestingly, to solve 20 tasks, Universal Transformer takes
+                 10161 steps, whereas our methods 1658, hence conﬁrming that approach uses less compute
+                 than ACT.
+                  Architecture                                  Average Error Tasks Solved
+                  Memory Networks (Sukhbaatar et al., 2015)        4.2± 0.2          17
+                  DNC(Graves, 2016)                                3.8± 0.6          18
+                  Universal Transformer (Dehghani et al., 2018)    0.29± 1.4         20
+                  Transformer+PonderNet                            0.15± 0.9         20
+                   Table 1: bAbI. Test results chosen by validation loss. Average error is calculated over 5 seeds
+                 3.3 Paired associative inference
+                 Finally, we tested PonderNet on the Paired associative inference task (PAI) (Banino et al.,
+                 2020). This task is thought to capture the essence of reasoning – the appreciation of distant
+                 relationships among elements distributed across multiple facts or memories and it has been
+                 shown to beneﬁt from the addition of adaptive computation. Please refer to Appendix D
+                 for further details on the task and the training regime.
+                    Table 2 reports the averaged accuracy of our model and the other baselines on PAI.
+                 Our model is able to match the results of MEMO, which was speciﬁcally designed with this
+                 task in mind. More interestingly, our model although is using the same architecture as UT
+                 (Dehghani et al., 2018) is able to achieve higher accuracy. For the complete set of results
+                 please see Table 7 in Appendix D.
+                                                       6
+                                            Ponder Net: Learning to Ponder
+                      Length                                          UT     MEMO         PonderNet
+                      3 items (trained on: A-B-C - accuracy on A-C)   85.60  98.26(0.67)  97.86(3.78)
+                   Table 2: Inference trial accuracy. PonderNet results chosen by validation loss, averaged on 3 seeds.
+                   For Universal Transformer (UT) and MEMO the results were taken from Banino et al. (2020)
+                   4. Discussion
+                   We introduced PonderNet, a new algorithm for learning to adapt the computational com-
+                   plexity of neural networks. It optimizes a novel objective function that combines prediction
+                   accuracy with a regularization term that incentivizes exploration over the pondering time.
+                   We demonstrated on the parity task that a neural network equipped with PonderNet can
+                   increase its computation to extrapolate beyond the data seen during training. Also, we
+                   showed that our methods achieved the highest accuracy in complex domains such as ques-
+                   tion answering and multi-step reasoning. Finally, adapting existing recurrent architectures
+                   to work with PonderNet is very easy: it simply requires to augment the step function with
+                   an additional halting unit, and to add an extra term to the loss. Critically, we showed that
+                   this extra loss term is robust to the choice of λp, the hyper-parameter that deﬁnes a prior
+                   on how likely is that the network will halt, which is an important advancement over ACT.
+                   References
+                   Andrea Banino, Adri`a Puigdom`enech Badia, Raphael K¨oster, Martin J. Chadwick, Vinicius
+                     Zambaldi, Demis Hassabis, Caswell Barry, Matthew Botvinick, Dharshan Kumaran, and
+                     Charles Blundell. MEMO: A deep network for ﬂexible combination of episodic memories.
+                     In International Conference on Learning Representations, 2020.
+                   Tolga Bolukbasi, Joseph Wang, Ofer Dekel, and Venkatesh Saligrama. Adaptive neural
+                     networks for eﬃcient inference. In Proceedings of the 34th International Conference on
+                     Machine Learning-Volume 70, pages 527–536. JMLR. org, 2017.
+                   Victor Campos Camunez, Brendan Jou, Xavier Gir´o Nieto, Jordi Torres Vin˜als, and Shih-
+                     Fu Chang. Skip RNN: learning to skip state updates in recurrent neural networks. In
+                     Sixth International Conference on Learning Representations: Monday April 30-Thursday
+                     May03, 2018, Vancouver Convention Center, Vancouver:[proceedings], pages 1–17, 2018.
+                   JunyoungChung,SungjinAhn,andYoshuaBengio. Hierarchicalmultiscalerecurrentneural
+                     networks. arXiv preprint arXiv:1609.01704, 2016.
+                   Zihang Dai, Zhilin Yang, Yiming Yang, Jaime Carbonell, Quoc V Le, and Ruslan Salakhut-
+                     dinov. Transformer-xl: Attentive language models beyond a ﬁxed-length context. arXiv
+                     preprint arXiv:1901.02860, 2019.
+                   Mostafa Dehghani, Stephan Gouws, Oriol Vinyals, Jakob Uszkoreit, and Luk    asz Kaiser.
+                     Universal transformers. arXiv preprint arXiv:1807.03819, 2018.
+                                                             7
+                                                          Banino, Balaguer, Blundell
+                       J. Deng, W. Dong, R. Socher, L.-J. Li, K. Li, and L. Fei-Fei. ImageNet: A Large-Scale
+                         Hierarchical Image Database. In CVPR09, 2009.
+                       Alex Graves. Adaptive computation time for recurrent neural networks. arXiv preprint
+                         arXiv:1603.08983, 2016.
+                       Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for
+                         image recognition. In Proceedings of the IEEE conference on computer vision and pattern
+                         recognition, pages 770–778, 2016.
+                       Diederik P Kingma and Jimmy Ba. Adam: A method for stochastic optimization. arXiv
+                         preprint arXiv:1412.6980, 2014.
+                       Sainbayar Sukhbaatar, Jason Weston, Rob Fergus, et al. End-to-end memory networks. In
+                         Advances in Neural Information Processing Systems, pages 2440–2448, 2015.
+                       Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N
+                         Gomez, Luk     asz Kaiser, and Illia Polosukhin. Attention is all you need. In Advances
+                         in neural information processing systems, pages 5998–6008, 2017.
+                       Petar Veliˇckovi´c, Rex Ying, Matilde Padovano, Raia Hadsell, and Charles Blundell. Neural
+                         execution of graph algorithms. arXiv preprint arXiv:1910.10593, 2019.
+                       Jason Weston, Antoine Bordes, Sumit Chopra, Alexander M Rush, Bart van Merrinboer,
+                         Armand Joulin, and Tomas Mikolov. Towards AI-complete question answering: A set of
+                         prerequisite toy tasks. arXiv preprint arXiv:1502.05698, 2015.
+                       Ronald J Williams. Simple statistical gradient-following algorithms for connectionist rein-
+                         forcement learning. Machine learning, 8(3-4):229–256, 1992.
+                       Adams Wei Yu, Hongrae Lee, and Quoc V Le. Learning to skim text. arXiv preprint
+                         arXiv:1704.06877, 2017.
+                                                                           8
+                                                           Ponder Net: Learning to Ponder
+                         Appendix A. Comparison to ACT
+                         PonderNet builds on the ideas introduced in Adaptive Computation Time (ACT; Graves,
+                         2016). The main contribution of this paper is to reformulate how the network learns to halt
+                         in a probabilistic way. This has consequences in all aspects of the model, including: the
+                         architecture and forward computation; the loss used to train the network; the deployment
+                         of the model; and the limitation of how multiple pondering modules can be combined. We
+                         explain in more detail all these diﬀerences below.
+                         A.1 Forward computation
+                         PonderNet’s step function (that is computed on every step) is identical to the one proposed
+                         in ACT. Theybothassumeamappingy ,h                         , λ   =s(x,h ). Themaindiﬀerencebetween
+                                                                           n    n+1    n            n
+                         ACTandPonderNet’s forward computation is how the halting node λn is used.
+                                                                                                                              P
+                             In ACT, the network is unrolled for a number of steps N                          =min{N :           N λ ≥
+                                                                                                        ACT                      n=1 n
+                         1−}. ACT’s halting nodes learn to predict the overall probability that the network halted
+                         at step n, so that λ = p . The value of the halting node in the last step is replaced with
+                                                  n      n                      P
+                         a remainder quantity R = λ             =p =1− N−1λn. In ACT it would not make sense to
+                                                             N       N             n=1
+                         unroll the network for a larger number of steps than NACT because the sum of probabilities
+                         of halting would be > 1. When training ACT, higher values of N are not necessarily
+                         better, and N is being determined (and learnt) via the halting node λ . In PonderNet, any
+                                                                                                                 n
+                         suﬃciently high value of N can be used, and the unroll length of the network at training
+                         is distinguished from the learning of the halting policy (which is most critical for saving
+                         computation when deployed at evaluation).
+                             The output of ACT is not treated probabilistically but as a weighted average yˆ                              =
+                         P                                                                                                          ACT
+                            NACT yˆ λ     over the outputs at each step. The halting, as well as the output, are com-
+                            n=1     n n
+                         puted identically for training and evaluation. In PonderNet, the output is probabilistic. In
+                         training, we compute the output and halting probabilities across many steps so that we can
+                         compute a weighted average of the loss. In evaluation, the network returns its prediction
+                         as soon as a halt state is sampled.
+                             Finally, ACT considers the case of sequential data, where the step function can ponder
+                         dynamically for each new item in the input sequence. Given the introduction of attention
+                         mechanisms in the recent years (e.g. Transformers; Vaswani et al., 2017) that can process
+                         arrays with dynamic shapes, we suggest that pondering should be done holistically instead
+                         of independently for each item in the sequence. This can be useful in learning e.g. how
+                         many message-passing steps to do in a graph network (Veliˇckovi´c et al., 2019).
+                         A.2 Training loss
+                         ACT proposes a heuristic training loss that combines two intuitive costs: the accuracy of
+                         the model, and the cost of computation. These two costs are in diﬀerent units, and not
+                         easily comparable. Since N                is not diﬀerentiable with respect to λn, ACT utilizes the
+                                                   P        ACT
+                         remainder R = 1 −            N−1 as a proxy for minimizing the total number of computational
+                                                      n=1
+                         steps. This is unlike in PonderNet, where the expected number of steps can be computed
+                                                                P
+                         (and diﬀerentiated) exactly as            N np .
+                                                                   n=1     n
+                                                                                  9
+                                       Banino, Balaguer, Blundell
+                  In PonderNet, however, we propose that naively minimizing the number of steps (subject
+                to good performance) is not necessarily a good objective. Instead, we propose that matching
+                a prior halting distribution has multiple beneﬁts: a) it provides an incentive for exploring
+                alternative halting strategies; b) it provides robustness of the learnt step function, which
+                may improve generalization; c) the KL is in same units as information-theoretic losses such
+                as cross-entropy; and d) it provides an incentive to not ponder for longer than the prior.
+                  NotethatinPonderNet, wecomputethelossforeverypossiblenumberofcomputational
+                steps, and then minimize the expectation (weighted average) over those. This is unlike
+                in ACT where the expectation is taken over the predictions, and a loss is computed by
+                comparing the average prediction with the target. This has the consequence that combining
+                multiple networks is easier in ACT than in PonderNet. One could easily chain multiple
+                ACTmodules next to each other, and the size of the network during training would grow
+                linearly with the number of modules. However, the network size when chaining PonderNet
+                modules grows exponentially because the loss would need to be estimated conditioned on
+                each PonderNet module halting at each step.
+                  InPonderNetwehaveintroducedtwolosshyper-parametersλp andβ,incomparisontoa
+                single hyper-parameter τ in ACT that trades-oﬀ accuracy with computational complexity.
+                We note that, while τ and β are superﬁcially similar (they both apply a weight to the
+                regularization term), their eﬀect is not equivalent because the regularization of ACT and
+                PonderNet have diﬀerent interpretation.
+                A.3 Evaluation
+                ACT’s predictions are computed identically during training and evaluation. In both con-
+                texts, the maximum number of steps NACT is determined based on the inputs, and the
+                prediction is computed as a weighted average over the predictions in all steps. In Ponder-
+                Net, training and evaluation are performed diﬀerently. During evaluation, the network halts
+                probabilistically by sampling Λ , and either outputs the current prediction or performs an
+                                         n
+                additional computational step. During training, we are not interested in the predictions per
+                se but in the expected loss over steps, and so estimate this up to a maximum number of
+                steps N (the higher the better). This estimate will improve with higher probability that the
+                network has halted at some point during the ﬁrst N steps (i.e. the cumulative probability
+                of halting).
+                Appendix B. Parity.
+                B.1 Training and evaluation details
+                For this experiment we used the Parity task as explained by Graves (2016).
+                  All the models used the same architecture, a simple RNN with a single hidden layer con-
+                taining 128 tanh units and a single logistic sigmoid output unit. All models were optimized
+                using Adam (Kingma and Ba, 2014), with learning rate ﬁxed to 0.0003. The networks were
+                trained with binary cross-entropy loss to predict the corresponding target, 1 if there was an
+                odd number of ones and 0 if there was an even number of ones. We used minibatches of
+                size 128. For both architectures the weights were optimised using Adam (Kingma and Ba,
+                2014), with learning rate ﬁxed to 0.0003. For PonderNet we sampled uniformly 10 values
+                                                   10
+                       Ponder Net: Learning to Ponder
+          of λp in the range (0, 1]. For ACT we sampled uniformly 19 values of τ in the range [2e-4,
+          2e-2] and we added also 0, which correspond to not penalising the halting unit at all. For
+          both ACT and Ponder, N was set to 20. For PonderNet β was ﬁxed to 0.01
+          Appendix C. bAbI.
+          C.1 Training and evaluation details
+          For this experiment we used the English Question Answer dataset Weston et al. (2015). We
+          use the training and test datasets that they provide with the following pre-processing:
+           • All text is converted to lowercase.
+           • Periods and interrogation marks were ignored.
+           • Blank spaces are taken as word separation tokens.
+           • Commas only appear in answers, and they are not ignored. This means that, e.g.
+            for the path ﬁnding task, the answer ’n,s’ has its own independent label from the
+            answer ’n,w’. This also implies that every input (consisting of ’query’ and ’stories’)
+            corresponds to a single answer throughout the whole dataset.
+           • All the questions are stripped out from the text and put separately (given as ”queries”
+            to our system).
+           Attraining time, we sample a mini-batch of 64 queries from the training dataset, as well
+          as its corresponding stories (which consist of the text prior to the question). As a result, the
+          queries are a matrix of 128×11 tokens, and sentences are of size 128×320×11, where 128
+          is the batch size, 320 is the max number of stories, and 11 is the max sentence size. We pad
+          with zeros every query and group of stories that do not reach the max sentence and stories
+          size. For PonderNet, stories and query are used as their naturally corresponding inputs in
+          their architecture. The details of the network architecture are described in Section C.2.
+           After that mini-batch is sampled, we perform one optimization step using Adam Kingma
+          and Ba (2014). We also performed a search on hyperparameters to train on bAbI, with
+          ranges reported on Table 4. The network was trained for 2e4 epochs, each one formed by
+          100 batch updates.
+           For evaluation, we sample a batch of 10,000 elements from the dataset and compute
+          the forward pass in the same fashion as done in training. With that, we compute the mean
+          accuracy over those examples, as well as the accuracy per task for each of the 20 tasks of
+          bAbI. We report average values and standard deviation over the best 5 hyper parameters
+          we used.
+           For MEMO the results were taken from Banino et al. (2020) and for Universal trans-
+          former we used the results in Dehghani et al. (2018).
+          C.2 Transformer architecture and hyperparameters
+          WeusethesamearchitectureasdescribedinDehghanietal.(2018). Moreconcretely, weuse
+          the implementation and hyperparameters described as ’universal transformer small’ that is
+                               11
+                                              Banino, Balaguer, Blundell
+                  available at https://bit.ly/3frofUI. For completeness, we describe the hyperparameters
+                  used on Table 3.
+                     We also performed a search on hyperparameters to train on our tasks, with ranges
+                  reported on Table 4.
+                                  Parameter name                       Value
+                                  Optimizer algorithm                  Adam
+                                  Learning rate                         3e-4
+                                  Input embedding size                   128
+                                  Attention type              as in Vaswani et al. (2017)
+                                  Attention hidden size                  512
+                                  Attention number of heads               8
+                                  Transition function               MLP(1 Layer)
+                                  Transition hidden size                 128
+                                  Attention dropout rate                 0.1
+                                  Activation function                  RELU
+                                  N                                      10
+                                  β                                     0.01
+                                     Table 3: Hyperparameters used for bAbI experiments.
+                                          Parameter name             Value
+                                          Attention hidden size    {128, 512}
+                                          Transition hidden size   {128, 512}
+                                          λp                     uniform(0, 1.0]
+                          Table 4: Hyperparameters ranges used to search over with PonderNet on bAbI.
+                  Appendix D. Paired Associative Inference
+                  D.1 PAI - Task details
+                  For this task we used the dataset published in Banino et al. (2020), also the task is available
+                  at https://github.com/deepmind/deepmind-research/tree/master/memo
+                     To build the dataset, Banino et al. (2020) started with raw images from the ImageNet
+                  dataset (Deng et al., 2009), which were embedded using a pre-trained ResNet (He et al.,
+                  2016), resulting in embeddings of size 1000. Here we are focusing on the dataset with
+                  sequences of length three (i.e. A−B−C) items, which is composed of 1e6 training images,
+                  1e5 evaluation images and 2e5 testing images.
+                  A single entry in the batch is built by selecting N = 16 sequences from the relevant pool
+                  (e.g. training) and it’s composed by three items:
+                     • a memory,
+                     • a query,
+                     • a target.
+                                                            12
+                                            Ponder Net: Learning to Ponder
+                      Each memorycontent is created by storing all the possible pair wise association between
+                  the items in the sequence, e.g. A B and B C , A B and B C , ..., A B       and B C .
+                                                   1 1       1 1    2 2       2 2       N N        N N
+                  With N = 16, this process results in a memory with M = 32 rows each one with 2
+                  embeddings of size 1000.
+                  Each query is composed of 3 images, namely:
+                      • the cue
+                      • the match
+                      • the lure
+                  Thecue(e.g. A ) and the match (e.g. C ) are images extracted from the sequence; whereas
+                                 1                      1
+                  the lure is an image from the same memory content but from a diﬀerent sequence (e.g. C7).
+                  There are two types of queries - “direct” and “indirect”. In “direct” queries the cue and the
+                  match are sampled from the same memory slot. For example, if the sequence is A1 - B1 -
+                  C , then an example of direct query would be, A (cue) - B (match) - B   (lure). More of
+                    1                                            1         1            12
+                  interests here is the case of “indirect” queries, as they require an inference across multiple
+                  facts stored at diﬀerent location in memory. For instance, if we consider again the previous
+                  example sequence: A - B - C , then an example of inference trial would be A (cue) - C
+                                      1    1    1                                            1          1
+                  (match) - C (lure).
+                              6
+                      The queries are presented to the network as a concatenation of three image embedding
+                  vectors (the cue, the match and the lure), that is a 3 × 1000 dimensional vector. The cue
+                  is always placed in the ﬁrst position in the concatenation, but to avoid any trivial solution,
+                  the position of the match and lure are randomized. It is worth noting that the lure image
+                  always has the same position in the sequence (e.g. if the match image is a C the lure is also
+                  a C) but it is randomly drawn from a diﬀerent sequence that is also present in the current
+                  memory. This way the task can only be solved by appreciating the correct connection
+                  between the images, and this need to be done by avoiding the interference coming for other
+                  items in memory. For each entry in the batch we generated all possible queries that the
+                  current memory store could support and then one was selected at random. Finally, the
+                  batch was balanced, i.e. half of the elements were direct queries and the other half was
+                  indirect. Finally, the targets represent the ImageNet class-ID of the matches.
+                  To summarize, for each entry in each batch:
+                      • Memory was of size 32∗2∗1000
+                      • Queries were of size 1 ∗ 3 ∗ 1000
+                      • Target was of size 1
+                  D.2 PAI - Architecture details
+                  We used an architecture similar to Universal Transformers (Dehghani et al., 2018, UT),
+                  but we augmented the transformer with a memory as in Dai et al. (2019). The number
+                  of layers in the encoder and the decoder was learnt, but constrained to be the same. This
+                  number was identiﬁed as the “pondering time” in our PonderNet architecture. Also, we set
+                  an upper bound N to the number of layers. The initial state h was a learnt embedding of
+                                                                              0
+                                                             13
+                                                       Banino, Balaguer, Blundell
+                      the input. On each step, the state was updated by applying the encoder layer once, that
+                      is: h    =encoder(h ). Note that in this case PonderNet only received information about
+                           n+1               n
+                      the inputs through its state. The prediction was computed by applying the decoder layer
+                      an equal number of times to the pondering step, that is yˆ          =decoder(...(decoder(h        )).
+                                                                                     n+1                            n+1
+                      With this architecture, PonderNet was able to optimize how many times to apply the
+                      encoder and the decoder layers to improve its performance in this task.
+                         The weights were optimised using Adam (Kingma and Ba, 2014), using polynomial
+                      weight decay with a maximum learning rate of 0.0003 and learning rate linear warm-up for
+                      the ﬁrst epoch. The mini-batch size was of size 128. For completeness, we describe the
+                      hyperparameters used on Table 5. We also performed a search on hyperparameters to train
+                      on our tasks, with ranges reported on Table 6.
+                                         Parameter name                              Value
+                                         Optimizer algorithm                         Adam
+                                         Input embedding size                         256
+                                         Attention type                   as in Vaswani et al. (2017)
+                                         Attention hidden size                        512
+                                         Attention number of heads                      8
+                                         Transition function                    MLP(2 Layers)
+                                         Transition hidden size                       128
+                                         Attention dropout rate                        0.1
+                                         β                                            0.01
+                                             Table 5: Hyperparameters used for PAI experiments.
+                                                  Parameter name                  Value
+                                                  Attention hidden size         {256, 512}
+                                                  Transition hidden size       {128, 1024}
+                                                  λp                          uniform(0, 0.5]
+                                                  N                                [7, 10]
+                                Table 6: Hyperparameters ranges used to search over with PonderNet on PAI.
+                      D.3 PAI - Results based on query type
+                      The result reported below in Table 7 are from the evaluation set at the end of training.
+                      Each evaluation set contains 600 items.
+                                                 Table 7: Paired Associative - length 3: A-B-C
+                                                  Trial   MEMO           UT       PonderNet
+                                                  Type
+                                                  A-B     99.82(0.30)    97.43    98.01(2.39)
+                                                  B-C     99.76(0.38)    98.28    97.43(1.97)
+                                                  A-C     98.26(0.67)    85.60    97.86(3.78)
+                                                                       14
+                       Ponder Net: Learning to Ponder
+           For MEMO and for Universal transformer the results were taken from Banino et al.
+          (2020).
+                               15
+                        Banino, Balaguer, Blundell
+          Appendix E. Broader impact statement
+          In this work we introduced PonderNet, a new method that enables neural networks to adapt
+          their computational complexity to the task they are trying to solve. Neural networks achieve
+          state of the art in a wide range of applications, including natural language processing,
+          reinforcement learning, computer vision and more. Currently, they require much time,
+          expensive hardware and energy to train and to deploy. They also often fail to generalize
+          and to extrapolate to conditions beyond their training.
+           PonderNetexpandsthecapabilities of neural networks, by letting them decide to ponder
+          for an indeﬁnite amount of time (analogous to how both humans and computers think). This
+          can be used to reduce the amount of compute and energy at inference time, which makes it
+          particularly well suited for platforms with limited resources such as mobile phones. Addi-
+          tionally, our experiments show that enabling neural networks to adapt their computational
+          complexity has also beneﬁts for their performance (beyond the computational requirements)
+          whenevaluatingoutsideofthetrainingdistribution, whichisoneofthelimitingfactorswhen
+          applying neural networks for real-world problems.
+           Weencourageotherresearchers to pursue the questions we have considered on this work.
+          We believe that biasing neural network architectures to behave more like algorithms, and
+          less like “ﬂat” mappings, will help develop deep learning methods to their the full potential.
+                               16

@@ -1,0 +1,401 @@
+          #include <linux/platform_device.h>
+          #include <linux/multi.h>
+          #include <linux/ckevent.h>
+          #include <asm/io.h>
+          #include <asm/prom.h>
+          #include <asm/e820.h>
+          #include <asm/system_info.h>
+          #include <asm/setew.h>
+          #include <asm/pgproto.h>
+          #define REG_PG    vesa_slot_addr_pack
+          #define PFM_NOCOMP  AFSR(0, load)
+          #define STACK_DDR(type)     (func)
+          #define SWAP_ALLOCATE(nr)     (e)
+          #define emulate_sigs()  arch_get_unaligned_child()
+          #define access_rw(TST)  asm volatile("movd %%esp, %0, %3" : : "r" (0));   \
+            if (__type & DO_READ)
+          static void stat_PC_SEC __read_mostly offsetof(struct seq_argsqueue, \
+                    pC>[1]);
+          static void
+          os_prefix(unsigned long sys)
+          {
+          #ifdef CONFIG_PREEMPT
+            PUT_PARAM_RAID(2, sel) = get_state_state();
+            set_pid_sum((unsigned long)state, current_state_str(),
+                     (unsigned long)-1->lr_full; low;
+          }
+        There are too many fun parts to cover- I could probably write an entire blog post on just this part. I’ll cut it short
+        for now, but here is 1MB of sampled Linux code for your viewing pleasure.
+        Generating Baby Names
+        Lets try one more for fun. Lets feed the RNN a large text ﬁle that contains 8000 baby names listed out, one per
+        line (names obtained from here). We can feed this to the RNN and then generate new names! Here are some
+        example names, only showing the ones that do not occur in the training data (90% don’t):
+        Rudi Levette Berice Lussa Hany Mareanne Chrestina Carissy Marylen Hammine Janye Marlise Jacacrie
+        Hendred Romand Charienna Nenotto Ette Dorane Wallen Marly Darine Salina Elvyn Ersia Maralena Minoria Ellia
+        Charmin Antley Nerille Chelon Walmor Evena Jeryly Stachon Charisa Allisa Anatha Cathanie Geetra Alexie Jerin
+        Cassen Herbett Cossie Velen Daurenge Robester Shermond Terisa Licia Roselen Ferine Jayn Lusine
+        Charyanne Sales Sanny Resa Wallon Martine Merus Jelen Candica Wallin Tel Rachene Tarine Ozila Ketia
+        Shanne Arnande Karella Roselina Alessia Chasty Deland Berther Geamar Jackein Mellisand Sagdy Nenc
+        Lessie Rasemy Guen Gavi Milea Anneda Margoris Janin Rodelin Zeanna Elyne Janah Ferzina Susta Pey
+        Castina
+        You can see many more here. Some of my favorites include “Baby” (haha), “Killie”, “Char”, “R”, “More”, “Mars”,
+        “Hi”, “Saddie”, “With” and “Ahbort”. Well that was fun. Of course, you can imagine this being quite useful
+        inspiration when writing a novel, or naming a new startup :)
+        Understanding what’s going on
+        We saw that the results at the end of training can be impressive, but how does any of this work? Lets run two
+        quick experiments to brieﬂy peek under the hood.
+        The evolution of samples while training
+        First, it’s fun to look at how the sampled text evolves while the model trains. For example, I trained an LSTM of
+        Leo Tolstoy’s War and Peace and then generated samples every 100 iterations of training. At iteration 100 the
+        model samples random jumbles:
+          tyntd-iafhatawiaoihrdemot  lytdws  e ,tfti, astai f ogoh eoase rrranbyne 'nhthnee e 
+          plia tklrgd t o idoe ns,smtt   h ne etie h,hregtrs nigtike,aoaenns lng
+        However, notice that at least it is starting to get an idea about words separated by spaces. Except sometimes it
+        inserts two spaces. It also doesn’t know that comma is amost always followed by a space. At 300 iterations we
+        see that the model starts to get an idea about quotes and periods:
+          "Tmont thithey" fomesscerliund
+          Keushey. Thom here
+          sheulke, anmerenith ol sivh I lalterthend Bleipile shuwy fil on aseterlome
+          coaniogennc Phe lism thond hon at. MeiDimorotion in ther thize."
+        The words are now also separated with spaces and the model starts to get the idea about periods at the end of
+        a sentence. At iteration 500:
+          we counter. He stutn co des. His stanted out one ofler that concossions and was 
+          to gearang reay Jotrets and with fre colt otf paitt thin wall. Which das stimn 
+        the model has now learned to spell the shortest and most common words such as “we”, “He”, “His”, “Which”,
+        “and”, etc. At iteration 700 we’re starting to see more and more English-like text emerge:
+          Aftair fall unsuch that the hall for Prince Velzonski's that me of
+          her hearly, and behs to so arwage fiving were to it beloge, pavu say falling misfort 
+          how, and Gogition is so overelical and ofter.
+        At iteration 1200 we’re now seeing use of quotations and question/exclamation marks. Longer words have now
+        been learned as well:
+          "Kite vouch!" he repeated by her
+          door. "But I would be done and quarts, feeling, then, son is people...."
+        Until at last we start to get properly spelled words, quotations, names, and so on by about iteration 2000:
+          "Why do what that day," replied Natasha, and wishing to himself the fact the
+          princess, Princess Mary was easier, fed in had oftened him.
+          Pierre aking his soul came to the packs and drove up his father-in-law women.
+        The picture that emerges is that the model ﬁrst discovers the general word-space structure and then rapidly
+        starts to learn the words; First starting with the short words and then eventually the longer ones. Topics and
+        themes that span multiple words (and in general longer-term dependencies) start to emerge only much later.
+        Visualizing the predictions and the “neuron” firings in the RNN
+        Another fun visualization is to look at the predicted distributions over characters. In the visualizations below we
+        feed a Wikipedia RNN model character data from the validation set (shown along the blue/green rows) and
+        under every character we visualize (in red) the top 5 guesses that the model assigns for the next character. The
+        guesses are colored by their probability (so dark red = judged as very likely, white = not very likely). For
+        example, notice that there are stretches of characters where the model is extremely conﬁdent about the next
+        letter (e.g., the model is very conﬁdent about characters during the http://www. sequence).
+        The input character sequence (blue/green) is colored based on the ﬁring of a randomly chosen neuron in the
+        hidden representation of the RNN. Think about it as green = very excited and blue = not very excited (for those
+        familiar with details of LSTMs, these are values between [-1,1] in the hidden state vector, which is just the gated
+        and tanh’d LSTM cell state). Intuitively, this is visualizing the ﬁring rate of some neuron in the “brain” of the RNN
+        while it reads the input sequence. Different neurons might be looking for different patterns; Below we’ll look at 4
+        different ones that I found and thought were interesting or interpretable (many also aren’t):
+        The neuron highlighted in this image seems to get very excited about URLs and turns off outside of the URLs. The LSTM is likely
+                                             using this neuron to remember if it is inside a URL or not.
+        The highlighted neuron here gets very excited when the RNN is inside the [[ ]] markdown environment and turns off outside of it.
+          Interestingly, the neuron can't turn on right after it sees the character "[", it must wait for the second "[" and then activate. This
+                         task of counting whether the model has seen one or two "[" is likely done with a different neuron.
+         Here we see a neuron that varies seemingly linearly across the [[ ]] environment. In other words its activation is giving the RNN
+        a time-aligned coordinate system across the [[ ]] scope. The RNN can use this information to make different characters more or
+                                     less likely depending on how early/late it is in the [[ ]] scope (perhaps?).
+         Here is another neuron that has very local behavior: it is relatively silent but sharply turns off right after the ﬁrst "w" in the "www"
+         sequence. The RNN might be using this neuron to count up how far in the "www" sequence it is, so that it can know whether it
+                                                should emit another "w", or if it should start the URL.
+        Of course, a lot of these conclusions are slightly hand-wavy as the hidden state of the RNN is a huge, high-
+        dimensional and largely distributed representation. These visualizations were produced with custom
+        HTML/CSS/Javascript, you can see a sketch of what’s involved here if you’d like to create something similar.
+        We can also condense this visualization by excluding the most likely predictions and only visualize the text,
+        colored by activations of a cell. We can see that in addition to a large portion of cells that do not do anything
+        interpretible, about 5% of them turn out to have learned quite interesting and interpretible algorithms:
+        Again, what is beautiful about this is that we didn’t have to hardcode at any point that if you’re trying to predict
+        the next character it might, for example, be useful to keep track of whether or not you are currently inside or
+        outside of quote. We just trained the LSTM on raw data and it decided that this is a useful quantitity to keep
+        track of. In other words one of its cells gradually tuned itself during training to become a quote detection cell,
+        since this helps it better perform the ﬁnal task. This is one of the cleanest and most compelling examples of
+        where the power in Deep Learning models (and more generally end-to-end training) is coming from.
+        Source Code
+        I hope I’ve convinced you that training character-level language models is a very fun exercise. You can train
+        your own models using the char-rnn code I released on Github (under MIT license). It takes one large text ﬁle
+        and trains a character-level model that you can then sample from. Also, it helps if you have a GPU or otherwise
+        training on CPU will be about a factor of 10x slower. In any case, if you end up training on some data and
+        getting fun results let me know! And if you get lost in the Torch/Lua codebase remember that all it is is just a
+        more fancy version of this 100-line gist.
+        Brief digression. The code is written in Torch 7, which has recently become my favorite deep learning
+        framework. I’ve only started working with Torch/LUA over the last few months and it hasn’t been easy (I spent a
+        good amount of time digging through the raw Torch code on Github and asking questions on their gitter to get
+        things done), but once you get a hang of things it offers a lot of ﬂexibility and speed. I’ve also worked with Caffe
+        and Theano in the past and I believe Torch, while not perfect, gets its levels of abstraction and philosophy right
+        better than others. In my view the desirable features of an effective framework are:
+           1.  CPU/GPU transparent Tensor library with a lot of functionality (slicing, array/matrix operations, etc. )
+           2.  An entirely separate code base in a scripting language (ideally Python) that operates over Tensors and
+               implements all Deep Learning stuff (forward/backward, computation graphs, etc)
+           3.  It should be possible to easily share pretrained models (Caffe does this well, others don’t), and crucially
+           4.  NO compilation step (or at least not as currently done in Theano). The trend in Deep Learning is towards
+               larger, more complex networks that are are time-unrolled in complex graphs. It is critical that these do not
+               compile for a long time or development time greatly suffers. Second, by compiling one gives up
+               interpretability and the ability to log/debug effectively. If there is an option to compile the graph once it has
+               been developed for efﬁciency in prod that’s ﬁne.
+        Further Reading
+        Before the end of the post I also wanted to position RNNs in a wider context and provide a sketch of the current
+        research directions. RNNs have recently generated a signiﬁcant amount of buzz and excitement in the ﬁeld of
+        Deep Learning. Similar to Convolutional Networks they have been around for decades but their full potential has
+        only recently started to get widely recognized, in large part due to our growing computational resources. Here’s
+        a brief sketch of a few recent developments (deﬁnitely not complete list, and a lot of this work draws from
+        research back to 1990s, see related work sections):
+        In the domain of NLP/Speech, RNNs transcribe speech to text, perform machine translation, generate
+        handwritten text, and of course, they have been used as powerful language models (Sutskever et al.) (Graves)
+        (Mikolov et al.) (both on the level of characters and words). Currently it seems that word-level models work
+        better than character-level models, but this is surely a temporary thing.
+        Computer Vision. RNNs are also quickly becoming pervasive in Computer Vision. For example, we’re seeing
+        RNNs in frame-level video classiﬁcation, image captioning (also including my own work and many others),
+        video captioning and very recently visual question answering. My personal favorite RNNs in Computer Vision
+        paper is Recurrent Models of Visual Attention, both due to its high-level direction (sequential processing of
+        images with glances) and the low-level modeling (REINFORCE learning rule that is a special case of policy
+        gradient methods in Reinforcement Learning, which allows one to train models that perform non-differentiable
+        computation (taking glances around the image in this case)). I’m conﬁdent that this type of hybrid model that
+        consists of a blend of CNN for raw perception coupled with an RNN glance policy on top will become pervasive
+        in perception, especially for more complex tasks that go beyond classifying some objects in plain view.
+        Inductive Reasoning, Memories and Attention. Another extremely exciting direction of research is oriented
+        towards addressing the limitations of vanilla recurrent networks. One problem is that RNNs are not inductive:
+        They memorize sequences extremely well, but they don’t necessarily always show convincing signs of
+        generalizing in the correct way (I’ll provide pointers in a bit that make this more concrete). A second issue is
+        they unnecessarily couple their representation size to the amount of computation per step. For instance, if you
+        double the size of the hidden state vector you’d quadruple the amount of FLOPS at each step due to the matrix
+        multiplication. Ideally, we’d like to maintain a huge representation/memory (e.g. containing all of Wikipedia or
+        many intermediate state variables), while maintaining the ability to keep computation per time step ﬁxed.
+        The ﬁrst convincing example of moving towards these directions was developed in DeepMind’s Neural Turing
+        Machines paper. This paper sketched a path towards models that can perform read/write operations between
+        large, external memory arrays and a smaller set of memory registers (think of these as our working memory)
+        where the computation happens. Crucially, the NTM paper also featured very interesting memory addressing
+        mechanisms that were implemented with a (soft, and fully-differentiable) attention model. The concept of soft
+        attention has turned out to be a powerful modeling feature and was also featured in Neural Machine Translation
+        by Jointly Learning to Align and Translate for Machine Translation and Memory Networks for (toy) Question
+        Answering. In fact, I’d go as far as to say that
+            The concept of attention is the most interesting recent architectural innovation in neural networks.
+        Now, I don’t want to dive into too many details but a soft attention scheme for memory addressing is convenient
+        because it keeps the model fully-differentiable, but unfortunately one sacriﬁces efﬁciency because everything
+        that can be attended to is attended to (but softly). Think of this as declaring a pointer in C that doesn’t point to a
+        speciﬁc address but instead deﬁnes an entire distribution over all addresses in the entire memory, and
+        dereferencing the pointer returns a weighted sum of the pointed content (that would be an expensive
+        operation!). This has motivated multiple authors to swap soft attention models for hard attention where one
+        samples a particular chunk of memory to attend to (e.g. a read/write action for some memory cell instead of
+        reading/writing from all cells to some degree). This model is signiﬁcantly more philosophically appealing,
+        scalable and efﬁcient, but unfortunately it is also non-differentiable. This then calls for use of techniques from
+        the Reinforcement Learning literature (e.g. REINFORCE) where people are perfectly used to the concept of non-
+        differentiable interactions. This is very much ongoing work but these hard attention models have been explored,
+        for example, in Inferring Algorithmic Patterns with Stack-Augmented Recurrent Nets, Reinforcement Learning
+        Neural Turing Machines, and Show Attend and Tell.
+        People. If you’d like to read up on RNNs I recommend theses from Alex Graves, Ilya Sutskever and Tomas
+        Mikolov. For more about REINFORCE and more generally Reinforcement Learning and policy gradient methods
+        (which REINFORCE is a special case of) David Silver’s class, or one of Pieter Abbeel’s classes.
+        Code. If you’d like to play with training RNNs I hear good things about keras or passage for Theano, the code
+        released with this post for Torch, or this gist for raw numpy code I wrote a while ago that implements an
+        efﬁcient, batched LSTM forward and backward pass. You can also have a look at my numpy-based NeuralTalk
+        which uses an RNN/LSTM to caption images, or maybe this Caffe implementation by Jeff Donahue.
+        Conclusion
+        We’ve learned about RNNs, how they work, why they have become a big deal, we’ve trained an RNN character-
+        level language model on several fun datasets, and we’ve seen where RNNs are going. You can conﬁdently
+        expect a large amount of innovation in the space of RNNs, and I believe they will become a pervasive and
+        critical component to intelligent systems.
+        Lastly, to add some meta to this post, I trained an RNN on the source ﬁle of this blog post. Unfortunately, at
+        about 46K characters I haven’t written enough data to properly feed the RNN, but the returned sample
+        (generated with low temperature to get a more typical sample) is:
+          I've the RNN with and works, but the computed with program of the 
+          RNN with and the computed of the RNN with with and the code
+        Yes, the post was about RNN and how well it works, so clearly this works :). See you next time!
+        EDIT (extra links):
+        Videos:
+               I gave a talk on this work at the London Deep Learning meetup (video).
+        Discussions:
+               HN discussion
+               Reddit discussion on r/machinelearning
+               Reddit discussion on r/programming
+        Replies:
+               Yoav Goldberg compared these RNN results to n-gram maximum likelihood (counting) baseline
+               @nylk trained char-rnn on cooking recipes. They look great!
+               @MrChrisJohnson trained char-rnn on Eminem lyrics and then synthesized a rap song with robotic voice
+               reading it out. Hilarious :)
+               @samim trained char-rnn on Obama Speeches. They look fun!
+               João Felipe trained char-rnn irish folk music and sampled music
+               Bob Sturm also trained char-rnn on music in ABC notation
+               RNN Bible bot by Maximilien
+               Learning Holiness learning the Bible
+               Terminal.com snapshot that has char-rnn set up and ready to go in a browser-based virtual machine
+               (thanks @samim)
+        29 Comments                                                                                                              1   Login
+                                                                                                                                
+          G Join the discussion…
+                   LOG IN WITH                             OR SIGN UP WITH DISQUS   ?
+dFG                                                         Name
+           34          Share                                                                                        Best    Newest    Oldest
+                  Alexander Patrakov                                                                                                − ⚑
+                  9 years ago
+                  I wonder what happens if we teach these networks on non-text, but on compressed audio 9les, bit by bit, with
+                  speci9c target: low-bitrate speech codecs with 9xed frame size. E.g. Codec2 already has explicit indication
+                  whether this is a voiced frame, and an approximation of its excitation and pitch. IOW: will it speak?
+                        8       1   Reply Share ›
+                             mertnesvat        > Alexander Patrakov                                                                 − ⚑
+                             8 years ago
+                             it would be fun to try :)
+                                  0        0   Reply Share ›
+           I      InHnum                                                                                                            − ⚑
+                  9 years ago
+                  This approach seems to generate samples with roughly correct syntax and entropy of characters similar to that
+                  of the source texts but the output is totally devoid of any meaning - it is structured gibberish - just like dreams
+                  are.
+                  The article though is still an interesting one, thanks.
+                        3       0   Reply Share ›
+                  Houshalter                                                                                                        − ⚑
+                  9 years ago
+                  RNNs are very suboptimal for language. To learn to recognize a sequence you need to learn many seperate
+                  neurons, with many parameters. Each neuron learns to represent a single time step of that sequence. E.g. to
+                  recognize the word "cat", one neuron must keep track that the last letter was "c", another neuron must learn to
+                  keep track of the second to last letter being "c", and another neuron must learn that the last letter was "a", and
+                  so on.
+                  So you need a dozen neurons for each letter just to learn to mimic what a simple markov chain can do. If you
+                  want to do computations based on sequences of words, you need to learn tons of neurons to represent each
+                  word, based on how many timesteps in the past it occurred.
+                  Alternatively you can just feed it into a simple 1d convolutional neural network operating in the time domain,
+                  and the convolution naturally favors learning these kinds of relationships.
+                        5       1   Reply Share ›
+                  Max Loh                                                                                                           − ⚑
+                  6 months ago
+                  Why did you delete my comment? Please don't delete this nor the article itself. Nearly 10 years later, this post
+                  still serves as the best showcase and historical time capsule of what was considered possible by AI experts in
+                  2015. It is an EXCELLENT sanity check against non-technical people in 2024 claiming that LLMs are no more
+                  intelligent than a calculator, which for some reason has become the new in-vogue anti-AI mantra. It is, in my
+                  mind, the most ironic thing, that the non-technical people are claiming that non-coders are the ones who
+                  believe a neural net is capable of any emergent inferences/intelligence whatsoever. Let this article be a
+                  reminder of what a computer is "supposed" to be capable of, before the advent of neural nets.
+                        2       0   Reply Share ›
+                  allen7575                                                                                                         − ⚑
+                  7 years ago
+                  What If we drop those 95% uninterpretable cells out? Are the 95% cells
+                  just no function? or just for redundancy in case other cells
+                  malfunction?
+                        1       0   Reply Share ›
+                  mattmcirvin                                                                                                       − ⚑
+                  9 years ago
+                  ...similarly, @samim's Robama 9gured out pretty clearly what kinds of formulae occur at the beginning and end
+                  of a Presidential speech, which I don't think a simple Markov sort of model would do.
+                        1       0   Reply Share ›
+                  Paul Le Meur                                                                                                      − ⚑
+                  10 months ago
+                  Thanks alot. This is a wonderful introduction. It would be even nicer with some connections to modern large
+                  language models, and perhaps just a glimpse of the jungle of applications besides text generation; because the
+                  reader can make some guesses but if he goes look elsewhere he won't have the same notation as here so it
+                  won't be straightforward to relate to the notations, assumptions, and other conventions used here. Thanks
+                  again.
+                        0       0   Reply Share ›
+                     C Camilo Martin               > Paul Le Meur                                                                   − ⚑
+                             8 months ago
+                             This is from 9 years ago. This is an archaeological artifact, not a living document.
+                                  2        0   Reply Share ›
+          M Massimo Buonaiuto                                                                                                       − ⚑
+                  4 years ago
+                  Wonderful post indeed. Thanks!
+                        0       0   Reply Share ›
+                  Rahul Raj                                                                                                         − ⚑
+                  4 years ago
+                  Loved it. Thanks.
+                        0       0   Reply Share ›
+          A André                                                                                                                   − ⚑
+                  5 years ago
+                  Hello,
+                  May I use your images in my article? I will give full credit.
+                        0       0   Reply Share ›
+                  Brian Jack                                                                                                        − ⚑
+                  6 years ago
+                  Has anyone thought more about the long-term context issue such as variable scope? This issue of not learning
+                  variable scope is probably also related to the latex RNN not remembering when it was in a proof or a lemma.
+                  Seems the "long" in LSTM is not long enough.
+                        0       0   Reply Share ›
+                  SuckCocker                                                                                                        − ⚑
+                  6 years ago
+                  in short: SKYNET is not far away. Be proud to be a part of it!
+                        0       0   Reply Share ›
+                  Aris                                                                                                              − ⚑
+                  9 years ago
+                  Which category of RNN (one-one, one-many, many-one, many-many) that character-level model belongs to? My
+                  understanding is it's a one to one model, since it's character to character. It'll be great to see your next blogs
+                  about more general cases for RNN.
+                        0       0   Reply Share ›
+           F feras                                                                                                                  − ⚑
+                  9 years ago
+                  It is so impressive work and I'm so interested in your result. I have a question for you. if we can train the system
+                  to imitate a language or a person. then by training the network with a speci9c person could we decide if other
+                  text belongs to the same person r not? solving semantic text meaning would so easier though.
+                        0       0   Reply Share ›
+                  gwern                                                                                                             − ⚑
+                  9 years ago
+                  I tried training char-rnn on CSS. Worked pretty well: http://www.gwern.net/AB%20t...
+                  There could be some usability improvements, though:
+                  - it would be *really* good if we could run GPU-created NNs on our CPUs or vice-versa. I paid Amazon $25 for
+                  the work because my laptop GPU drivers currently are broken, and now I can't run them on my laptop even if I
+                  think of something I might want to (slowly) test or sample, which is unfortunate.
+                  - validation/checkpointing seem congated. It'd be nice if I could grab a checkpoint at any time without waiting
+                  for the hardwired number of iterations to elapse. (Perhaps char-rnn could catch Control-c?)
+                  - when you specify ./data/$DATA/input.txt, train.lua crashes with a totally opaque error message, rather than
+                  reminding you that the data dir argument needs a directory rather than 9le. This confused me for a while.
+                  - sampling seems to be greedy and I've seen sampling fall into repetition on some datasets (the data URI issue
+                  with my CSS may regect this, and someone else found that after training on IRC logs, the samples might just
+                  repeat); is it possible that something like beam search attempting to maximize joint probability would yield
+                  better results?
+                        0       0   Reply Share ›
+                             karpathy   Mod        > gwern                                                                          − ⚑
+                             9 years ago
+                             Hey gwern! It's very nice to see you stumble by and play with the code, it looks like you got quite far
+                             for a 9rst attempt. And thanks a lot for the comments, I don't get as much detailed feedback as you'd
+                             think so it's very valuable when it does come.
+                             - I know that the GPU-CPU checkpoints is a pain point I just have to 9nd time to 9x this. A quick hack
+                             is a small script that converts a GPU checkpoint to a CPU checkpoint. One has to iterate over
+                             checkpoint.protos (which stores the networks), convert every element of this to CPU with :goat(), and
+                             then save the checkpoint back. I'll see if I can 9nd time tonight, if not I'll do it tomorrow and push to
+                             repo. There is a cleaner longer-term solution that will eliminate the issue of having to think about this,
+                             I'll get to that too hopefully soon.
+                             - Good points about val/checkpoint congation and data_dir gag, I'll add more helpful error messages.
+                             - usually you see repeats when people force a low temperature. The very long data URIs are an issue
+                             and as you point out this can be mitigated with seq_length, but not if they are on average thousands
+                             of characters long. I'm not sure how to 9x that. Also as you point out beam search could give better
+                             and more joint samples, but I'm not sure if this would 9x the URI issue.
+                                  0        0   Reply Share ›
+                                       gwern        > karpathy                                                                      − ⚑
+                                       9 years ago   edited
+                                       Oh yes, before I forget, there seems to be an issue with non-ASCII text. I hit some crashes
+                                       while training which seemed to be connected to Unicode but 9ltering with 'iconv' made them
+                                       go away.
+                                       > but not if they are on average thousands of characters long
+                                       I took a look at the 20MB corpus again, and it seems most of the data URIs are fairly short, a
+                                       few hundred at most, but there are a few which are as long as 7118 characters: 171, 235,
+                                       235, 239, 239, 243, 407, 595, 659, 1431, 1431, 1431, 1431, 1431, 1431, 3755, 3755, 3755,
+                                       3755, 3755, 3755, 7118 (Probably there are some even longer ones in the full 1GB corpus.)
+                                       https://www.dropbox.com/s/q... $ for LINE in `cat 20mb-datauris.txt`; do echo $LINE | wc --
+                                       char; done | sort -g
+                                       > Also as you point out beam search could give better and more joint samples, but I'm not
+                                       sure if this would 9x the URI issue.
+                                       My thinking was that with a lot of RAM, the beam search would probably be able to sample
+                                       ')', which ends the data URI and then makes regular CSS far more probable; and then since
+                                       regular CSS is far more common than data URIs, after a few more characters a 9nished data
+                                       URI+CSS would overall/globally look better than continuing the data URI. So possibly the
+                                       beam search can use the later high probability CSS to 'pull' the RNN out of being forgetfully
+                                       greedily stuck in the generating-data-URI local optima. Just speculating there.
+                                             0       0   Reply Share ›
+                                                  karpathy   Mod       > gwern                                                      − ⚑
+                                                  9 years ago
+                                                  also RE: your comment on HN regarding DQN, see if this helps at all:
+                                                  http://cs.stanford.edu/peop...
+                                                       0        0   Reply Share ›
+                                                  karpathy   Mod       > gwern                                                      − ⚑
+                                                  9 years ago
+                                                  I'm aware of ASCII issue. There is a patch for utf8 on Github but apparently it
+                                                  seriously blows up the space needed to store the data.
+                                                  Also btw I just pushed the GPU -> CPU conversion script to Github.
+                                                       0        0   Reply Share ›
+                  mattmcirvin                                                                                                       − ⚑
+                  9 years ago   edited
+                  Just going by eyeball, the difference I can see between Yoav Goldberg's simple n-gram-based model for
+                  pseudo-Shakespeare and the RNN is that the RNN is better at getting the line lengths right (if, indeed, the
+                  newlines in these examples were generated by the model, which I'm assuming they were).
+                        0       0   Reply Share ›
+                  xiaosae                                                                                                           − ⚑
+                  9 years ago

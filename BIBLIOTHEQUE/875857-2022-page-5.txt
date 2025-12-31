@@ -1,0 +1,69 @@
+                  Assumption 0.4 gives rise to a second interpretation of             within a torch.no_grad()block.Withthisﬁxedpoint,
+               JFB. Namely, the full column rank of M enables us to                   explicit_model evaluates and returns S (T (u?,d))
+                                                                                                                                       Θ Θ d
+               rewrite pΘ as a preconditioned gradient, i.e.                          to y in train mode (to create the computational graph).
+                                     I        0  + d`                             Thus, our scheme coincides with standard backpropagation
+                            pΘ = M                   M           ,        (19)        throughanexplicitmodelwithonelatentspacelayer.Onthe
+                                           0   JΘ            dΘ                       other hand, standard implicit models backpropagate by solv-
+                                   |          {z           }                          ing a linear system to apply J−1 as in (14). That approach
+                                    preconditioning term                                                              Θ
+                                                                                      requires users to manually update the parameters, use more
+               where M+ is the Moore-Penrose pseudo inverse (Moore                    computationalresources,andmakeconsiderations(e.g.con-
+                                                                                      ditioning of J−1) for each architecture used.
+               1920; Penrose 1955). These insights lead to our main result.                          Θ
+               Theorem0.2. If Assumptions 0.1, 0.2, 0.3, and 0.4 hold for              Implicit Forward + Proposed Backprop
+               given weights Θ and data d, then
+                          p ,− d h`(y ,S (T (u,d))i                       (20)         u_fxd_pt = find_fixed_point(d)
+                           Θ               d   Θ Θ                                     y = explicit_model(u_fxd_pt, d)
+                                   dΘ                         u=u?
+                                                                  d                    loss = criterion(y, labels)
+               is a descent direction for `(yd,NΘ(d)) with respect to Θ.               loss.backward()
+                  Theorem 0.2 shows we can avoid difﬁcult computations                 optimizer.step()
+               associated with J−1 in (14) (i.e. solving an associated lin-
+                                  Θ
+               ear system/adjoint equation) in implicit network literature                Figure 3: Sample PyTorch code for backpropagation
+               (Chen et al. 2018; Dupont, Doucet, and Teh 2019; Bai,
+               Kolter, and Koltun 2019; Winston and Kolter 2020). Thus,               NeumannBackpropagation The inverse of the Jacobian
+               our scheme more naturally applies to general multilayered              in (12) can be expanded using a Neumann series, i.e.
+               TΘandissubstantiallysimplertocode.Ourschemeisjuxta-                                                                  
+                                                                                                                     −1     ∞            k
+               posed in Figure 4 with classic and Jacobian-based schemes.                      J−1 = I− dTΘ              =X dTΘ .                (22)
+                  Twoadditional considerations must be made when deter-                          Θ             du                  du
+               miningtheefﬁcacyoftrainingamodelusing(20)ratherthan                                                          k=0
+               Jacobian-based gradients (14).                                         Thus, JFB is a zeroth-order approximation to the Neumann
+                  I DoesuseofpΘin(20)degradetraining/testingperfor-                   series. In particular, JFB resembles the Neumann-RBP ap-
+                     mancerelative to (14)?                                           proach for recurrent networks (Liao et al. 2018). However,
+                  I Is the term p     in (20) resilient to errors in estimates        Neumann-RBP does not guarantee a descent direction or
+                                   Θ                                                  guidelines on how to truncate the Neumann series. This is
+                     of the ﬁxed point u??
+                                         d                                            generally difﬁcult to achieve in theory and practice (Aicher,
+                  The ﬁrst answer is our training scheme takes a different            Foti, and Fox 2020). Our work differs from (Liao et al.
+               path to minimizers than using gradients with the implicit              2018) in that we focus purely on implicit networks, prove
+               model. Thus, for nonconvex problems, one should not ex-                descent guarantees for JFB, and provide simple PyTorch
+               pect the results to be the same. In our experiments in Section         implementations. Similar approaches exist in hyperparam-
+               , using (20) is competitive (14) for all tests (when applied to        eter optimization, where truncated Neumann series are is
+               nearly identical models). The second inquiry is partly an-             used to approximate second-order updates during train-
+               swered by the corollary below, which states JFB yields de-             ing (Luketina et al. 2016; Lorraine, Vicol, and Duvenaud
+               scent even for approximate ﬁxed points.                                2020). Finally, similar zeroth-order truncations of the Neu-
+               Corollary 0.1. Given weights Θ and data d, there exists                mann series have been employed, albeit without proof, in
+               ε > 0 such that if uε ∈ U satisﬁes kuε − u?k ≤ ε and                   Meta-learning (Finn, Abbeel, and Levine 2017; Rajeswaran
+                                      d                    d     d                    et al. 2019) and in training transformers (Geng et al. 2021).
+               the assumptions of Theorem 0.2 hold, then
+                          pε , − d h`(yd,SΘ(TΘ(u,d))i                     (21)                               Experiments
+                           Θ       dΘ                         u=uε                    This section shows the effectiveness of JFB using PyTorch
+                                                                  d
+               is a descent direction of `(y ,N (d)) with respect to Θ.               (Paszke et al. 2017). All networks are ResNet-based such
+                                            d    Θ                                                                7
+                                                                                      that Assumption 0.3 holds. One can ensure Assumption 0.1
+                  Wearenotawareofanyanalogousresults for error toler-                 holds (e.g. via spectral normalization). Yet, in our experi-
+               ances in the implicit depth literature.                                ments we found this unnecessary since tuning the weights
+                                                                                                                                        8
+               CodingBackpropagation AkeyfeatureofJFBisitssim-                        automatically encouraged contractive behavior. All exper-
+               plicity of implementation. In particular, the backpropagation          iments are run on a single NVIDIA TITAN X GPU with
+               of our scheme is similar to that of a standard backpropa-              12GBRAM.Furtherdetailsareintheappendix.
+               gation. We illustrate this in the sample of PyTorch (Paszke               7AweakerversionofAssumption0.2alsoholdsinpractice,i.e.
+               et al. 2017) code in Figure 3. Here explicit_modelrep-                 differentiability almost everywhere.
+               resents S (T (u;d)). The ﬁxed point u? = u_fxd_pt is                      8We found (9) held for batches of data during training, even
+                         Θ Θ                              d
+               computed by successively applying TΘ (see Algorithm 1)                 whenusingbatchnormalization. See appendix for more details.
+                                                                               6652

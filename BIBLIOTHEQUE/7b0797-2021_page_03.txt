@@ -1,0 +1,57 @@
+                                        Training data-efﬁcient image transformers & distillation through attention
+              (key, value) vector pairs. A query vector q ∈ Rd is matched     NLP (Devlin et al., 2018), and departs from the typical
+               against a set of k key vectors (packed together into a matrix  pooling layers used in computer vision to predict the class.
+               K ∈ Rk×d) using inner products. These inner products           The transformer thus process batches of (N + 1) tokens
+               are then scaled and normalized with a softmax function to      of dimension D, of which only the class vector is used to
+               obtain k weights. The output of the attention is the weighted  predict the output. This architecture forces the self-attention
+               sumofasetof                                      k×d           to spread information between the patch tokens and the class
+                             kvaluevectors(packedintoV ∈ R          ). For
+               a sequence of N query vectors (packed into Q ∈ RN×d), it       token: at training time the supervision signal comes only
+               produces an output matrix (of size N × d):                     from the class embedding, while the patch tokens are the
+                                                            √                 model’s only variable input.
+                  Attention(Q,K,V) = Softmax(QK⊤/ d)V,                 (1)
+              where the Softmax function is applied on each row of the        Fixing the positional encoding across resolutions.     Tou-
+               input matrix. The √d term provides proper normalization.       vron et al. (2019) show that it is desirable to use a lower
+              Vaswani et al. (2017) propose a self-attention layer. Query,    training resolution and ﬁne-tune the network at the larger
+               key and values matrices are themselves computed from a         resolution. This speeds up the full training and improves
+               sequence of N input vectors (packed into X ∈ RN×D):            the accuracy under prevailing data augmentation schemes.
+               Q=XW ,K=XW ,V =XW ,usinglineartransfor-                        Whenincreasing the resolution of an input image, we keep
+                         Q            K            V                          the patch size the same, therefore the number N of input
+               mations WQ,WK,WV withtheconstraintk = N,meaning                patches does change. Due to the architecture of transformer
+               that the attention is in between all the input vectors.        blocks and the class token, the model and classiﬁer do not
+               Finally, Multi-head self-attention layer (MSA) is deﬁned by    needtobemodiﬁedtoprocessmoretokens. Incontrast, one
+               consideringhattention“heads”, iehself-attentionfunctions       needs to adapt the positional embeddings, because there are
+               applied to the input. Each head provides a sequence of size    N of them, one for each patch. Dosovitskiy et al. (2020)
+               N×d. Thesehsequences are rearranged into a N × dh              interpolate the positional encoding when changing the res-
+               sequence that is reprojected by a linear layer into N × D.     olution and demonstrate that this method works with the
+                                                                              subsequent ﬁne-tuning stage.
+               Transformerblockforimages.         Togetafull transformer
+               block as in (Vaswani et al., 2017), we add a Feed-Forward
+               Network (FFN) on top of the MSA layer. This FFN is             4. Distillation through attention
+               composed of two linear layers separated by a GeLu acti-        In this section, we assume we have access to a strong image
+              vation (Hendrycks & Gimpel, 2016). The ﬁrst linear layer        classiﬁer as a teacher model. It could be a convnet, or a
+               expands the dimension from D to 4D, and the second layer       mixture of classiﬁers. We address the question of how to
+               reduces it back from 4D back to D. Both MSA and FFN are        learn a transformer by exploiting this teacher. As we will
+               operating as residual operators thank to skip-connections,     see in Section 5 by comparing the trade-off between accu-
+               and with a layer normalization (Ba et al., 2016).              racy and image throughput, it can be beneﬁcial to replace a
+               In order to get a transformer to process images, our work      convolutional neural network by a transformer. This section
+               builds upon the ViT model (Dosovitskiy et al., 2020). It       covers two axes of distillation: hard versus soft distillation,
+               is a simple and elegant architecture that processes an input   and classical distillation vs distillation token.
+               imageasifit was a sequence of input tokens. The ﬁxed-size
+               input RGB image is decomposed into a batch of N patches        Soft distillation   (Hinton et al., 2015; Wei et al., 2020)
+               of a ﬁxed size of 16×16 pixels (N = 14×14). Each patch         minimizes the Kullback-Leibler divergence between the
+               is projected with a linear layer that conserves its overall    softmax of the teacher and the softmax of the student model.
+               dimension 3×16×16 = 768.                                       Let Zt be the logits of the teacher model, Zs the logits of the
+              Thetransformer block described above is invariant to the or-    student model. Wedenotebyτ thetemperatureforthedistil-
+               derofthepatchembeddings,andthusignorestheirpositions.          lation, λ the coefﬁcient balancing the Kullback–Leibler di-
+              Thepositionalinformationisincorporatedasﬁxed(Vaswani            vergence loss (KL) and the cross-entropy (L     ) on ground
+               et al., 2017) or trainable (Gehring et al., 2017) positional                                                CE
+               embeddings. They are added before the ﬁrst transformer         truth labels y, and ψ the softmax function. The distillation
+               block to the patch tokens, which are then fed to the stack of  objective is
+               transformer blocks.                                                      L       =(1−λ)L (ψ(Z ),y)
+                                                                                          global            CE       s
+                                                                                                +λτ2KL(ψ(Z /τ),ψ(Z /τ)).               (2)
+               The class token    is a trainable vector, appended to the                                       s          t
+               patch tokens before the ﬁrst layer, that goes through the
+               transformer layers, and is then projected with a linear layer  Hard-label distillation.   Weintroduce a variant of distil-
+               to predict the class. This class token is inherited from       lation where we take the hard decision of the teacher as a

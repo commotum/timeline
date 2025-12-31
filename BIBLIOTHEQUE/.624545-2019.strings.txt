@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+  <!-- Beautiful Jekyll | MIT license | Copyright Dean Attali 2016 -->
+  <head>
+  <meta charset="utf-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Chapter 4: Deep Equilibrium Models</title>
+  <meta name="author" content="Zico Kolter, David Duvenaud, Matt Johnson" />
+  <link rel="alternate" type="application/rss+xml" title="Deep Implicit Layers - Web page to accompany NeurIPS 2020 tutorial" href="/feed.xml" />
+      <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/font-awesome/4.6.0/css/font-awesome.min.css" />
+      <link rel="stylesheet" href="/css/bootstrap.min.css" />
+      <link rel="stylesheet" href="/css/bootstrap-social.css" />
+      <link rel="stylesheet" href="/css/main.css" />
+      <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic" />
+      <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Raleway::400,700,300" />
+      <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800" />
+    <!-- Facebook OpenGraph tags -->
+  <meta property="og:title" content="Chapter 4: Deep Equilibrium Models" />
+  <meta property="og:description" content="# Chapter 4: Deep Equilibrium Models This chapter introduces another class of emerging implicit layer models, the Deep Equilibrium (DEQ) Model [[Bai et al.,2019](https://arxiv.org/abs/1909.01377)]. These models have recently demonstrated impressive performance on a variety of large-scale vision and NLP tasks, often showing competetive performance relative to the state of the...">
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="http://implicit-layers-tutorial.org/deep_equilibrium_models/" />
+  <link rel="canonical" href="http://implicit-layers-tutorial.org/deep_equilibrium_models/" />
+  <!-- Twitter summary cards -->
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:site" content="@@zicokolter, @DavidDuvenaud, @SingularMattrix" />
+  <meta name="twitter:creator" content="@@zicokolter, @DavidDuvenaud, @SingularMattrix" />
+  <meta name="twitter:title" content="Chapter 4: Deep Equilibrium Models" />
+  <meta name="twitter:description" content="# Chapter 4: Deep Equilibrium Models This chapter introduces another class of emerging implicit layer models, the Deep Equilibrium (DEQ) Model [[Bai et al.,2019](https://arxiv.org/abs/1909.01377)]. These models have recently demonstrated impressive performance on a variety of large-scale vision and NLP tasks, often showing competetive performance relative to the state of the...">
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+      jax: ["input/TeX", "output/HTML-CSS"],
+      tex2jax: {
+        inlineMath: [ ['$', '$'], ["$$", "$$"] ],
+        processEscapes: true,
+        skipTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+      },
+      "HTML-CSS": {
+        linebreaks: {
+          automatic: true
+        },
+        scale: 90,
+        fonts: ["TeX"],
+        mtextFontInherit: false,
+        matchFontHeight: true
+      },
+      "TeX": {
+        extensions: ["AMSmath.js", "AMSsymbols.js", "mediawiki-texvc.js"],
+      }
+      //,
+      //displayAlign: "left",
+      //displayIndent: "2em"
+    });
+</script>
+  <script src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=default" type="text/javascript"></script>
+   <script type="text/x-mathjax-config">
+     MathJax.Hub.Config({
+         tex2jax: {inlineMath: [['$','$'], ['\\(','\\)']]}
+     });
+    </script>
+    <script type="text/javascript" src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+</head>
+  <body>
+    <nav class="navbar navbar-default navbar-fixed-top navbar-custom">
+  <div class="container">
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#main-navbar">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      
+        <a class="navbar-brand" href="http://implicit-layers-tutorial.org">Deep Implicit Layers</a>
+      
+    </div>
+    <div class="collapse navbar-collapse" id="main-navbar">
+      <ul class="nav navbar-nav navbar-right">
+      
+        
+          <li>
+            
+            
+<a href="/introduction">Chapter 1</a>
+          </li>
+        
+        
+        
+          <li>
+            
+            
+<a href="/implicit_functions">Chapter 2</a>
+          </li>
+        
+        
+        
+          <li>
+            
+            
+<a href="/neural_odes">Chapter 3</a>
+          </li>
+        
+        
+        
+          <li>
+            
+            
+<a href="/deep_equilibrium_models">Chapter 4</a>
+          </li>
+        
+        
+        
+          <li>
+            
+            
+<a href="/differentiable_optimization">Chapter 5</a>
+          </li>
+        
+        
+      </ul>
+    </div>
+  </div>
+</nav>
+    <div class="intro-header"></div>
+<div role="main" class="container">
+  <h1 id="chapter-4-deep-equilibrium-models">Chapter 4: Deep Equilibrium Models</h1>
+<p>This chapter introduces another class of emerging implicit layer models, the Deep Equilibrium (DEQ) Model [<a href="https://arxiv.org/abs/1909.01377">Bai et al.,2019</a>].  These models have recently demonstrated impressive performance on a variety of large-scale vision and NLP tasks, often showing competetive performance relative to the state of the art (using traditional explicit models) [<a href="https://arxiv.org/abs/2006.08656">Bai et al., 2020</a>].  However, the core idea of this approach, that of specifying a layer that finds the fixed point of some iterative procedure, dates back to some of the original work in recurrent backpropagation [<a href="https://www.semanticscholar.org/paper/A-learning-rule-for-asynchronous-perceptrons-with-a-Almeida/8be3f21ab796bd9811382b560507c1c679fae37f">Almeida,1987</a>, <a href="https://papers.nips.cc/paper/1987/file/735b90b4568125ed6c3f678819b6e058-Paper.pdf">Pineda,1987</a>].  DEQ Models, then are largely a 
+modern
+ variant of these approach, with the conceptual additions of 1) extending these approaches using modern deep architectures, where the goal is to express the <em>entire</em> deep network as an equilibrium computation; and 2) attempting to find the fixed point directly via root finding rather than fixed point iteration alone.</p>
+<p>This chapter will introduce the intuition behind these DEQ models, discuss some of the theoretial aspects of the approaches, and then present a medium-scale implementation of the methods using a ResNet-like convolutional block, applied to CIFAR10.</p>
+<h2 id="deep-networks-and-fixed-point-equations">Deep networks and fixed point equations</h2>
+<p>As a starting point for introducing the DEQ model, we will begin with a simple deep network formulation, and then use this to motivate the notion of a fixed point iteration layer, like we originally presented in Chapter 1.</p>
+<p>A typical $k$-layer deep network $h : \mathcal{X} \rightarrow \mathcal{Y}$ is defined by a stack of layers that looks something like the following</p>
+\[\begin{split}
+z_1 &amp;= x \\
+z_{i+1} &amp; = \sigma(W_i z_i + b_i), \; i=1,\ldots,k-1 \\
+h(x) &amp;= W_k z_k + b_k
+\end{split}\]
+<p>To be clear, 
+ deep networks have forms that are quite different, with convolutional layers, residual connections, normalizations, attention layers, etc.  But this is nonetheless instructive to start with a simple network like this.  We could draw this network graphically like the following:</p>
+<div class="center-text">
+  <p><img src="https://drive.google.com/uc?id=1mAg0_knXQCOc6bkKJ8QOdFy0OZBjWV-N" width="468" /></p>
+</div>
+<p>It turns out, perhaps somewhat surprisingly (though we will show below, from a mathematical standpoint, that maybe it
+s not as surprising as it first sounds), that we can largely replace the different $W_i$ weights at each layer with the <em>same</em> weight $W$ (and same bias $b$), and the deep network still works will in practice.  This notion of weight tied networks (not in the DEQ context, but simply as a strategy for improving network performance in practice), has several examples in the literature [<a href="https://arxiv.org/abs/1810.06682">Bai et al., 2018</a>, <a href="https://arxiv.org/abs/1807.03819">Dehghani et al.,2018</a>, <a href="https://arxiv.org/abs/1909.11942">Lan et al., 2019</a>].  For a reason that will become clear in a moment, we also want to add an <em>input injection</em> to these layers, which adds a (linear transform) of the input $Ux$ not just into the first layer, but into every layer after that.  In others, we can describe this new model with the equations</p>
+\[\begin{split}
+z_1 &amp;= 0 \\
+z_{i+1} &amp; = \sigma(W z_i + Ux + b), \; i=1,\ldots,k-1 \\
+h(x) &amp; = W_k z_k + b_k
+\end{split}\]
+<p>(since the output $h(x)$ can be a different size as the hidden unit, we typically use a separate weight to produce the final output of the function), which can be illustrated graphically as follows:</p>
+<div class="center-text">
+  <p><img src="https://drive.google.com/uc?id=1zmFZmJs09N_-YbUB_6jlmtE8x3S3lSiI" width="468" /></p>
+</div>
+<p>However, now something odd appears.  The key iteration of the deep network is the layer</p>
+\[z_{i+1} = \sigma(W z_i + Ux + b).\]
+<p>Importantly, this is the <em>same</em> layer that is being applied repeatedly to the hidden unit.  If we were to repeat this update an infinite number of times, we would essentially be modeling an infinitely deep network of the form above.  But what would happen at this infinite limit?   In fact a few different things could happen: the network output $z_i$, $i \rightarrow \infty$ could blow up, diverging to some large value; or, the output could osscilate around different values, either periodically or chaoticallyl; but in practice, what we find is that for most 
+typical
+ deep layers the valued actually converge to a <em>fixed point</em> or <em>equilibrium point</em>, that is, a point $z^\star$ where the further application of the layer doesn
+t change the value, i.e.</p>
+\[z^\star = \sigma(W z^\star + U x + b).\]
+<p>In other words, this infinitely deep model looks exactly like a typical fixed point iteration, where we repeat an update until the value remains unchanged.  The goal of a DEQ model is to directly find this equilibrium point $z^\star$, without necessarily peforming the forward iteration itself, but by directly attempting to find a root of this equilibrium equation.</p>
+<p>However, why do we this that such a fixed point does indeed exist? A heuristic argument is that this kind of convergence precisely characterizes the stability of common deep networks: since we have developed network architectures that are already stable for very deep networks (or otherwise we could not train them), we have in a sense already biased our design towards layers that tend towards stable fixed points.  And recent work has investigated classes of DEQs for which such a fixed point is guaranteed to exist and be unique [<a href="https://arxiv.org/abs/2006.08591">Winston and Kolter, 2020</a>].  For the purposes of this chapter, however, we largely ignore stating anything formal about the guaranteed existence, and treat this kind of stability largely as an empirical issue.</p>
+<p>Finally, this formulation also indicates why input injection $Ux$ is required in the model.  Because the equilibrium point doesn
+t depend on any 
+initial
+ value of $z_1$, if we did not have input injection then the output of the network would not, in fact, depend on its input.  Input injection thus serves as a manner to ensure that the equilibrium point indeed depends on the input to the function, despite having an infinitely deep network.</p>
+<h2 id="properties-of-deqs-representational-power-and-implicit-differentiation">Properties of DEQs: Representational power, and implicit differentiation</h2>
+<p>Having defined the basic model, we will now address some fundamental questions about the representational capacity of DEQ models, and discuss how to apply the implicit function theorem we discussed in previous chapters, to compute gradients of and through these DEQ layers.  For the purposes of this section, we will generalize the form of the DEQ previously stated, and simply refer the DEQ function $f(z,x)$ (i.e., in our previous form $f(x,y) = \sigma(Wz + Ux + b)$, and we are attempting to find a fixed point</p>
+\[z^\star = f(z^\star,x).\]
+<h3 id="power-of-the-deq-representation">Power of the DEQ representation</h3>
+<p>How powerful is the DEQ representation?  Perhaps somewhat surprisingly (though the fact is quite obvious in retrospect), we can be very precise about the representational power of deep networks built upon this kind of equilibrium computation.  Specifically, <strong><em>any deep network</em> (of any depth, with any connectivity), can be represeented as a <em>single layer</em> DEQ model.</strong>  Furthermore, this does not involve the kind of exponential parameter blowup common in single layer universal function approximation theorems: with the <em>same</em> number of parameters, a single layer DEQ can represent any network.</p>
+<p>The proof of this fact is quite simple.  To see the intuition, consider a traditional composition of two functions $y = g_2(g_1(x))$.  We can transform this into a single layer DEQ by simply concatentating all the intermediate terms of this function into a long vector,</p>
+\[f(z,x) = f\left (\left [ \begin{array}{c}z_1 \\ z_2 \end{array} \right ], x \right ) = \left [ \begin{array}{c} g_1(x) \\ g_2(z_1) \end{array} \right ].\]
+<p>Note that at an equilibrium point of this function $z^\star$, we have that</p>
+\[z^\star = f(z^\star, x) \; \Longleftrightarrow \; z_1^\star = g_1(x), \;z_2^\star = g_2(z_1^\star) = g_2(g_1(x))\]
+<p>i.e., if we compute an equilibirum point of this function, then the second component $z^\star_2$ is precisely the output of the original concatenated network.  This logic of course applies to any computation graph, we can concatentate all intermediate products of a computation graph into the vector $z$, and have the function $f$ be the function that applies the 
+ computation in the graph to each of these elements.</p>
+<p>While this construction theoretically shows the power of a single DEQ layer, we should emphasize that this is <em>not</em> a construction that we actually use it practice.  Applying e.g., normal fixed point iteration within this model would be much less efficient that simply computing the original network, and we would need to store the entire vector of computations in memory anyway (which is specifically a point we are trying to avoid).  But the constrution hopefully <em>does</em> give some intuition about why computing an equilibrium of a 
+single
+ DEQ layer is a strictly more powerful than a single explicit layer.</p>
+<h3 id="one-implicit-layer-is-all-you-need">One (implicit) layer is all you need</h3>
+<p>For those familiar with the deep learning ethos, you may be tempted at this point to think: 
+since a single DEQ layer is as powerful as arbitrary stacked 
+explicit
+ layers, could we stack <em>these</em> DEQ layers to obtain something even more powerful?
+  Unfortunately (or perhaps fortunately?) the answer is no.  In fact, is it also the case for DEQs that <strong>a single DEQ layer can model any number of 
+stacked
+ DEQ layers as well.</strong>  The proof of this fact is very similar to the previous example.  Suppose we had a system that first computed an equilibrium of the function $z_1^\star = f_1(z_1^\star,x)$, then next computed an second equilibrium using $z_1^\star$ as input, i.e., $z_2^\star = f(z_2^\star, z_1^\star)$.  Again, however, it is possible to set this joint problem up as a single equilibrium problem instead, namely computing an equilibrium point of the system</p>
+\[z^\star = \left [ \begin{array}{c} z^\star_1 \\ z^\star_2 \end{array} \right] = \left[  \begin{array}{c} f_1(z^\star, x) \\ f_2(z_2^\star, z_1^\star) \end{array} \right ] = f(z^\star, x)\]
+<p>i.e., we can just trivially concatenate the two equilibrium solutions to get the solution of a joint equilibrium problem over two solutions.  Overall, this is indeed a key advantage to the equilibrium modeling approach, that this operation is sufficient to describe both traditional computational graphs (of any depth) <em>and</em> equilibrium models (of any 
+depth
+) with a single equilibrium layer.</p>
+<h3 id="implicit-differentiation-of-equilibrium-layers">Implicit differentiation of equilibrium layers</h3>
+<p>Finally, we derive the form of implicit backpropagation specific to DEQ models (actually, specific to any fixed point iteration layer more generally, but we will focus largely on the specific form of the DEQ model here).</p>
+<p>As discussed in previous chapters, we apply implicit differentiation here first considering the fixed point solution</p>
+\[z^\star = f(z^\star, x).\]
+<p>Our goal will be to compute the vector-Jacobian product $\left (\frac{\partial z^\star(\cdot)}{\partial (\cdot)}\right)^T y$ for some vector $y$, where $(\cdot)$ here is a stand-in for any quantity we want to differentiate the fixed point with respect to (i.e, the input $x$, or any parameters of the function $f$, both of which of course will affect the final fixed point $z^\star$).  Since this vector-Jacobian product is the key aspect to integrating these DEQ layers within backpropagation, such a routine allows us to integrate the DEQ layer within standard automatic differentiation tools.</p>
+<p>The derivation of the vector-Jacobian product largely mirrors that in previous chapters, but we include the full derivation again here for completeness.  Differentiating both sides of the fixed point solution, we have</p>
+\[\frac{\partial z^\star(\cdot)}{\partial (\cdot)} = \frac{\partial f(z^\star(\cdot), x)}{\partial (\cdot)} = \frac{\partial f(z^\star, x)}{\partial z^\star} \frac{z^\star(\cdot)}{\partial (\cdot)} + \frac{\partial f(z^\star, x)}{\partial (\cdot)}\]
+<p>where we use $z^\star(\cdot)$ to denote the case where $z^\star$ is being treated as an implicit function of the quantity we
+re differentiating with respect to (e.g., the parameters of $f$ or the input $x$), and $z^\star$ alone when we are just refering to the value at equilibrium (e.g., in the last expression).  The second equality in this line simply follows by applying the multivariate chain rule.  Then, rearranging terms, we get an explicit expression for the Jacobian</p>
+\[\frac{\partial z^\star(\cdot)}{\partial (\cdot)} = \left ( I - \frac{\partial f(z^\star, x)}{\partial z^\star} \right )^{-1} \frac{\partial f(z^\star, x)}{\partial (\cdot)}\]
+<p>where all the right hand side terms can be computed with using 
+traditional
+ automatic differentiation.</p>
+<p>Finally, to compute the vector-Jacobian product, we have that</p>
+\[\left (\frac{\partial z^\star(\cdot)}{\partial (\cdot)} \right)^T y = \left (\frac{\partial f(z^\star, x)}{\partial (\cdot)} \right )^T  \left ( I - \frac{\partial f(z^\star, x)}{\partial z^\star} \right )^{-T} y.\]
+<p>Let
+s consider how we compute this quantity practice.  The key term of interest here is the solution of the linear system (which we will abbreviate as $g$)</p>
+\[g = \left (I - \frac{\partial f(z^\star, x)}{\partial z^\star} \right )^{-T} y\]
+<p>which will will rearrange as</p>
+\[g = \left(\frac{\partial f(z^\star, x)}{\partial z^\star} \right )^T g + y.\]
+<p>The key point here is that this expression is <em>also</em> actually a (linear) fixed point equation, here in the quantity $g$.  Convergence of the naive forward iteration here requires that the Jacobian $\frac{\partial f(z^\star, x)}{\partial z^\star}$ be a stable matrix (maximum eigenvalue has magnitude less than one), which is also the condition for local stability of the forward iteration at its convergence point.  But we will not discuss this point too much here and just rely on the fact, as in the forward iteration, that these iterations typically <em>are</em> stable in practice.</p>
+<p>Thus, the process of deriving the vector-Jacobian product for a DEQ layer can be reduced to two steps.</p>
+  <li>Solve the fixed point equation</li>
+</ol>
+\[g = \left(\frac{\partial f(z^\star, x)}{\partial z^\star} \right )^T g + y.\]
+<p>either by direct inversion or (more likely) via some iterative procedure that requires only multiplying by $\left(\frac{\partial f(z^\star, x)}{\partial z^\star} \right )^T$ (which itself can be done via typical automatic differentiation, as this itself is a vector-Jacobian product).</p>
+  <li>Compute the final Jacobian vector product as</li>
+</ol>
+\[\left (\frac{\partial z^\star(\cdot)}{\partial (\cdot)} \right)^T y = \left (\frac{\partial f(z^\star, x)}{\partial (\cdot)} \right )^T g\]
+<p>(where again this product is itself a vector-Jacobian product, computable via normal automatic differentiation).</p>
+<h2 id="implementation-of-deq-models">Implementation of DEQ Models</h2>
+<p>Having discussed the more algorithmic and theoretical aspects, the remainder of this chapte will discuss how to implement and train a DEQ model, with a completel example that will train a convolutional DEQ model on the CIFAR10 benchmark (to a level of 81.6% accuracy, which is certainly nothing remarkable, but this is for a very small and basic model, with ~200K parameters, and of course more involved DEQ approaches can do substantially better).</p>
+<h2 id="designing-the-layer-f">Designing the layer $f$</h2>
+<p>Since a DEQ model ultimately finds the equilibrium point of a single function $z^\star = f(z^\star, x)$, the choice of $f$ will of course primarily determine the performance of the resulting model.  And while we introduced the original DEQ model in the context of a simple feedforward layer</p>
+\[f(z,x) = \sigma(Wz + Ux + b)\]
+<p>in practice we do want to incorporate some additional structure in the layer rather than just this generic feedforward model.  Thus, the 
+layer
+ of the DEQ model should be considered more as a 
+ than truly a single layer in the traditional sense.  And since there has been a great deal of work designing practical cell structures in deep learning models (e.g., residual cells in vison networks, transformer cells in many languagee tasks, etc), a natural choice for the DEQ function $f$ is similarly one of these traditional cells.</p>
+<p>Additionally, although we write the function $f$ as a function of the actual input the network $x$, in practice we can precompute any transformations applied to the input, i.e., precompute $\bar{x} = Ux + b$, and then treat the DEQ function as a function $f(z,\bar{x})$, which eliminates the need to repeatedly apply the same operations to the input.  To keep notation more consistent, thoughm, we
+ll still just refer to the DEQ function as $f(z,x)$, even if eventually $x$ will be some (typically just linear) function of the input.</p>
+<p>In this chapter, since we
+re focusing on a vision task, we
+ll consider a residual cell as our function.  Specifically, we consider a form like the following:</p>
+<div class="center-text">
+  <p><img src="https://drive.google.com/uc?id=1dj5ygGGZvx7k3JSp-YWwPND0khXacCyo" width="866" /></p>
+</div>
+<p>which can be written functionally as</p>
+\[f(z,x) = \mathrm{norm}(\mathrm{ReLU}(z + \mathrm{norm}(x + W_2*(\mathrm{norm}(\mathrm{ReLU}(W_1 * z))))))\]
+<p>and where $*$ denotes convolution with the filter $W_1$ or $W_2$ and $\mathrm{norm}$ represents some normalization operation (we use GroupNorm in our example).</p>
+<p>One additional oddity of DEQ models is that the weights of these convolutional operators typically need to be initialized with smaller values than layers in traditional networks.  For simplicity we simply initialize all weights in out layer as random samples from $\mathcal{N}(0,0.01)$, though the preise ideal scaling laws for the variance terms are still not well understood (though a reasonably wide range of this smaller variance initiailzation works well).</p>
+<p>Putting this all together, we could implement the $f$ function in PyTorch using the following code.</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">import</span> <span class="nn">torch</span>
+<span class="kn">import</span> <span class="nn">torch.nn</span> <span class="k">as</span> <span class="n">nn</span>
+<span class="kn">import</span> <span class="nn">torch.nn.functional</span> <span class="k">as</span> <span class="n">F</span>
+<span class="k">class</span> <span class="nc">ResNetLayer</span><span class="p">(</span><span class="n">nn</span><span class="p">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">n_channels</span><span class="p">,</span> <span class="n">n_inner_channels</span><span class="p">,</span> <span class="n">kernel_size</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">num_groups</span><span class="o">=</span><span class="mi">8</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">().</span><span class="n">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="p">.</span><span class="n">conv1</span> <span class="o">=</span> <span class="n">nn</span><span class="p">.</span><span class="n">Conv2d</span><span class="p">(</span><span class="n">n_channels</span><span class="p">,</span> <span class="n">n_inner_channels</span><span class="p">,</span> <span class="n">kernel_size</span><span class="p">,</span> <span class="n">padding</span><span class="o">=</span><span class="n">kernel_size</span><span class="o">//</span><span class="mi">2</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="p">.</span><span class="n">conv2</span> <span class="o">=</span> <span class="n">nn</span><span class="p">.</span><span class="n">Conv2d</span><span class="p">(</span><span class="n">n_inner_channels</span><span class="p">,</span> <span class="n">n_channels</span><span class="p">,</span> <span class="n">kernel_size</span><span class="p">,</span> <span class="n">padding</span><span class="o">=</span><span class="n">kernel_size</span><span class="o">//</span><span class="mi">2</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="p">.</span><span class="n">norm1</span> <span class="o">=</span> <span class="n">nn</span><span class="p">.</span><span class="n">GroupNorm</span><span class="p">(</span><span class="n">num_groups</span><span class="p">,</span> <span class="n">n_inner_channels</span><span class="p">)</span>
+        <span class="bp">self</span><span class="p">.</span><span class="n">norm2</span> <span class="o">=</span> <span class="n">nn</span><span class="p">.</span><span class="n">GroupNorm</span><span class="p">(</span><span class="n">num_groups</span><span class="p">,</span> <span class="n">n_channels</span><span class="p">)</span>
+        <span class="bp">self</span><span class="p">.</span><span class="n">norm3</span> <span class="o">=</span> <span class="n">nn</span><span class="p">.</span><span class="n">GroupNorm</span><span class="p">(</span><span class="n">num_groups</span><span class="p">,</span> <span class="n">n_channels</span><span class="p">)</span>
+        <span class="bp">self</span><span class="p">.</span><span class="n">conv1</span><span class="p">.</span><span class="n">weight</span><span class="p">.</span><span class="n">data</span><span class="p">.</span><span class="n">normal_</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mf">0.01</span><span class="p">)</span>
+        <span class="bp">self</span><span class="p">.</span><span class="n">conv2</span><span class="p">.</span><span class="n">weight</span><span class="p">.</span><span class="n">data</span><span class="p">.</span><span class="n">normal_</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mf">0.01</span><span class="p">)</span>
+        
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">z</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="bp">self</span><span class="p">.</span><span class="n">norm1</span><span class="p">(</span><span class="n">F</span><span class="p">.</span><span class="n">relu</span><span class="p">(</span><span class="bp">self</span><span class="p">.</span><span class="n">conv1</span><span class="p">(</span><span class="n">z</span><span class="p">)))</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="p">.</span><span class="n">norm3</span><span class="p">(</span><span class="n">F</span><span class="p">.</span><span class="n">relu</span><span class="p">(</span><span class="n">z</span> <span class="o">+</span> <span class="bp">self</span><span class="p">.</span><span class="n">norm2</span><span class="p">(</span><span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="p">.</span><span class="n">conv2</span><span class="p">(</span><span class="n">y</span><span class="p">))))</span>
+</code></pre></div></div>
+<p>There is one additional point worth making in this section.  In general, for most DEQ applications we will choose <code class="language-plaintext highlighter-rouge">n_channels</code> in the above layer to be smaller than <code class="language-plaintext highlighter-rouge">n_inner_channels</code>.  This is because, for finding the equilibrium point of a DEQ, we want to compute the equilibrium over a relatively 
+small
+ hidden unit; but to increase the representative power of the network, on the other hand, we want a realtively <em>large</em> number of parameters.  And one way to achieve this is to have the hidden layer 
+internal
+ to the residual cell be larger than the hidden unit exposed to the DEQ model.  This is akin to the 
+bottleneck
+ structure that
+s common in many deep architectures (including the larger ResNets), but with the added insight that we typically want to find the fixed point relative to the small hidden unit, as this makes for a simpler (and more memory-efficient) equilibrium point computation.</p>
+<h3 id="implementation-of-the-forward-pass">Implementation of the forward pass</h3>
+<p>The 
+forward
+ pass of a DEQ layer requires actually computing the fixed point</p>
+\[z^\star = f(z^\star, x)\]
+<p>for the function $f$ defined above, or any other single cell.  And while it would be possible in many cases to do this by simply iterating the forward iteration</p>
+\[z^{k+1} = f(z^k,x)\]
+<p>in practice there are much more efficient fixed point iteration methods, that improve peformance substantially over the naive forward iteration, typically with some additional memory cost (but still often nothing prohibitive).</p>
+<p>One of the more common methods for fixed point acceleration is Anderson Acceleration [<a href="https://users.wpi.edu/~walker/Papers/Walker-Ni,SINUM,V49,1715-1735.pdf">Walker and Ni, 2011</a>].  We will just state the algorithm rather than motivating it fully, but the basic approach here is quite simple: rather than compute $z^{k+1}$ as just $f(z^k,x)$, i.e., the function $f$ applied to the last iteration, update it to be some linear combination of $f$ applied to $m$ previous iterates</p>
+\[z^{k+1} = \sum_{i=1}^m \alpha_i f(z^{k-i+1},x)\]
+<p>where $\alpha$ is some set of coefficients with $\sum_{i=1}^m \alpha_i = 1$ (though some $\alpha$ terms can also be negative), and where $m$ is a constant that determine the 
+memory
+ of the update (for the first $m$ iterations, of course only have coefficients on each of the iterates so far).  To compute $\alpha$, we solve the optimziation problem</p>
+\[\DeclareMathOperator*{\minimize}{minimize}
+\minimize_\alpha, \;\; \|G \alpha\|_2^2, \;\; \mbox{subject to} \;\; 1^T \alpha = 1\]
+<p>where</p>
+\[G = \left [ \begin{array}{ccc} f(z^{k},x) - z^k &amp; \cdots &amp; f(z^{k-m+1},x) - z^{k-m+1} \end {array} \right ].\]
+<p>This can be analytically solved by solving the the linear system</p>
+\[\left [ \begin{array} {cc} 0 &amp; 1^T \\ 1 &amp; G^T G \end{array} \right ] \left [ \begin{array}{c} \nu \\ \alpha \end{array} \right ] = \left [ \begin{array}{c} 1 \\  0 \end{array} \right ].\]
+<p>We can also further extend the iterations to either a generalized udpate</p>
+\[z^{k+1} = (1-\beta) \sum_{i=1}^m \alpha_i z^{k-1+1} + \beta \sum_{i=1}^m \alpha_i f(z^{k-i+1},x)\]
+<p>for some $\beta &gt; 0$.  When $\beta &lt; 1$, this corresponds to a 
+damped
+ version of the Anderson udpate, but when $\beta &gt; 1$, this corresponds to an 
+overprojected
+ version (i.e., is has a <em>negative</em> weight on the previous iterates), but which may actually converge faster.</p>
+<p>Because we typically handle batches of samples at once, we typically need to run Anderson acceleration in a 
+batched
+ version to compute this the fixed point separately for example example in a batch.  The function can be implemented in PyTorch with the following code (it
+s not critical to understand this code fully, but it simply implements the explicit solve above in order to find a solution to $\alpha$ for all examples in the batch).</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">def</span> <span class="nf">anderson</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">x0</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">lam</span><span class="o">=</span><span class="mf">1e-4</span><span class="p">,</span> <span class="n">max_iter</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">tol</span><span class="o">=</span><span class="mf">1e-2</span><span class="p">,</span> <span class="n">beta</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">):</span>
+    <span class="s">""" Anderson acceleration for fixed point iteration. """</span>
+    <span class="n">bsz</span><span class="p">,</span> <span class="n">d</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">W</span> <span class="o">=</span> <span class="n">x0</span><span class="p">.</span><span class="n">shape</span>
+    <span class="n">X</span> <span class="o">=</span> <span class="n">torch</span><span class="p">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">bsz</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">d</span><span class="o">*</span><span class="n">H</span><span class="o">*</span><span class="n">W</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">x0</span><span class="p">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">x0</span><span class="p">.</span><span class="n">device</span><span class="p">)</span>
+    <span class="n">F</span> <span class="o">=</span> <span class="n">torch</span><span class="p">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">bsz</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">d</span><span class="o">*</span><span class="n">H</span><span class="o">*</span><span class="n">W</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">x0</span><span class="p">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">x0</span><span class="p">.</span><span class="n">device</span><span class="p">)</span>
+    <span class="n">X</span><span class="p">[:,</span><span class="mi">0</span><span class="p">],</span> <span class="n">F</span><span class="p">[:,</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">x0</span><span class="p">.</span><span class="n">view</span><span class="p">(</span><span class="n">bsz</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">f</span><span class="p">(</span><span class="n">x0</span><span class="p">).</span><span class="n">view</span><span class="p">(</span><span class="n">bsz</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">X</span><span class="p">[:,</span><span class="mi">1</span><span class="p">],</span> <span class="n">F</span><span class="p">[:,</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">F</span><span class="p">[:,</span><span class="mi">0</span><span class="p">],</span> <span class="n">f</span><span class="p">(</span><span class="n">F</span><span class="p">[:,</span><span class="mi">0</span><span class="p">].</span><span class="n">view_as</span><span class="p">(</span><span class="n">x0</span><span class="p">)).</span><span class="n">view</span><span class="p">(</span><span class="n">bsz</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">H</span> <span class="o">=</span> <span class="n">torch</span><span class="p">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">bsz</span><span class="p">,</span> <span class="n">m</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span> <span class="n">m</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">x0</span><span class="p">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">x0</span><span class="p">.</span><span class="n">device</span><span class="p">)</span>
+    <span class="n">H</span><span class="p">[:,</span><span class="mi">0</span><span class="p">,</span><span class="mi">1</span><span class="p">:]</span> <span class="o">=</span> <span class="n">H</span><span class="p">[:,</span><span class="mi">1</span><span class="p">:,</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="n">torch</span><span class="p">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">bsz</span><span class="p">,</span> <span class="n">m</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">x0</span><span class="p">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">x0</span><span class="p">.</span><span class="n">device</span><span class="p">)</span>
+    <span class="n">y</span><span class="p">[:,</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="n">res</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">max_iter</span><span class="p">):</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">m</span><span class="p">)</span>
+        <span class="n">G</span> <span class="o">=</span> <span class="n">F</span><span class="p">[:,:</span><span class="n">n</span><span class="p">]</span><span class="o">-</span><span class="n">X</span><span class="p">[:,:</span><span class="n">n</span><span class="p">]</span>
+        <span class="n">H</span><span class="p">[:,</span><span class="mi">1</span><span class="p">:</span><span class="n">n</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">:</span><span class="n">n</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">torch</span><span class="p">.</span><span class="n">bmm</span><span class="p">(</span><span class="n">G</span><span class="p">,</span><span class="n">G</span><span class="p">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">2</span><span class="p">))</span> <span class="o">+</span> <span class="n">lam</span><span class="o">*</span><span class="n">torch</span><span class="p">.</span><span class="n">eye</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">x0</span><span class="p">.</span><span class="n">dtype</span><span class="p">,</span><span class="n">device</span><span class="o">=</span><span class="n">x0</span><span class="p">.</span><span class="n">device</span><span class="p">)[</span><span class="bp">None</span><span class="p">]</span>
+        <span class="n">alpha</span> <span class="o">=</span> <span class="n">torch</span><span class="p">.</span><span class="n">solve</span><span class="p">(</span><span class="n">y</span><span class="p">[:,:</span><span class="n">n</span><span class="o">+</span><span class="mi">1</span><span class="p">],</span> <span class="n">H</span><span class="p">[:,:</span><span class="n">n</span><span class="o">+</span><span class="mi">1</span><span class="p">,:</span><span class="n">n</span><span class="o">+</span><span class="mi">1</span><span class="p">])[</span><span class="mi">0</span><span class="p">][:,</span> <span class="mi">1</span><span class="p">:</span><span class="n">n</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>   <span class="c1"># (bsz x n)
+</span>        
+        <span class="n">X</span><span class="p">[:,</span><span class="n">k</span><span class="o">%</span><span class="n">m</span><span class="p">]</span> <span class="o">=</span> <span class="n">beta</span> <span class="o">*</span> <span class="p">(</span><span class="n">alpha</span><span class="p">[:,</span><span class="bp">None</span><span class="p">]</span> <span class="o">@</span> <span class="n">F</span><span class="p">[:,:</span><span class="n">n</span><span class="p">])[:,</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="p">(</span><span class="mi">1</span><span class="o">-</span><span class="n">beta</span><span class="p">)</span><span class="o">*</span><span class="p">(</span><span class="n">alpha</span><span class="p">[:,</span><span class="bp">None</span><span class="p">]</span> <span class="o">@</span> <span class="n">X</span><span class="p">[:,:</span><span class="n">n</span><span class="p">])[:,</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">F</span><span class="p">[:,</span><span class="n">k</span><span class="o">%</span><span class="n">m</span><span class="p">]</span> <span class="o">=</span> <span class="n">f</span><span class="p">(</span><span class="n">X</span><span class="p">[:,</span><span class="n">k</span><span class="o">%</span><span class="n">m</span><span class="p">].</span><span class="n">view_as</span><span class="p">(</span><span class="n">x0</span><span class="p">)).</span><span class="n">view</span><span class="p">(</span><span class="n">bsz</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">res</span><span class="p">.</span><span class="n">append</span><span class="p">((</span><span class="n">F</span><span class="p">[:,</span><span class="n">k</span><span class="o">%</span><span class="n">m</span><span class="p">]</span> <span class="o">-</span> <span class="n">X</span><span class="p">[:,</span><span class="n">k</span><span class="o">%</span><span class="n">m</span><span class="p">]).</span><span class="n">norm</span><span class="p">().</span><span class="n">item</span><span class="p">()</span><span class="o">/</span><span class="p">(</span><span class="mf">1e-5</span> <span class="o">+</span> <span class="n">F</span><span class="p">[:,</span><span class="n">k</span><span class="o">%</span><span class="n">m</span><span class="p">].</span><span class="n">norm</span><span class="p">().</span><span class="n">item</span><span class="p">()))</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">res</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">tol</span><span class="p">):</span>
+            <span class="k">break</span>
+    <span class="k">return</span> <span class="n">X</span><span class="p">[:,</span><span class="n">k</span><span class="o">%</span><span class="n">m</span><span class="p">].</span><span class="n">view_as</span><span class="p">(</span><span class="n">x0</span><span class="p">),</span> <span class="n">res</span>
+</code></pre></div></div>
+<p>Let
+s see what this looks like in practice.  We can try to evaluate the fixed point iteration for some random input $x$, plotting the average (relative) residual over all the batches</p>
+\[\frac{\|f(z^k,x) - z^k\|_2}{\|f(z^k,x)\|_2}\]
+<p>for each iteration.</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="n">plt</span>
+<span class="o">%</span><span class="n">matplotlib</span> <span class="n">inline</span>
+<span class="n">X</span> <span class="o">=</span> <span class="n">torch</span><span class="p">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span><span class="mi">64</span><span class="p">,</span><span class="mi">32</span><span class="p">,</span><span class="mi">32</span><span class="p">)</span>
+<span class="n">f</span> <span class="o">=</span> <span class="n">ResNetLayer</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span><span class="mi">128</span><span class="p">)</span>
+<span class="n">Z</span><span class="p">,</span> <span class="n">res</span> <span class="o">=</span> <span class="n">anderson</span><span class="p">(</span><span class="k">lambda</span> <span class="n">Z</span> <span class="p">:</span> <span class="n">f</span><span class="p">(</span><span class="n">Z</span><span class="p">,</span><span class="n">X</span><span class="p">),</span> <span class="n">torch</span><span class="p">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">X</span><span class="p">),</span> <span class="n">tol</span><span class="o">=</span><span class="mf">1e-4</span><span class="p">,</span> <span class="n">beta</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>
+<span class="n">plt</span><span class="p">.</span><span class="n">figure</span><span class="p">(</span><span class="n">dpi</span><span class="o">=</span><span class="mi">150</span><span class="p">)</span>
+<span class="n">plt</span><span class="p">.</span><span class="n">semilogy</span><span class="p">(</span><span class="n">res</span><span class="p">)</span>
+<span class="n">plt</span><span class="p">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s">"Iteration"</span><span class="p">)</span>
+<span class="n">plt</span><span class="p">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s">"Relative residual"</span><span class="p">)</span>
+</code></pre></div></div>
+<!-- _includes/image.html -->
+<div class="image-wrapper">
+        <img src="output_0.png" alt="" />
+</div>
+<p>We can compare this to the naive forward iteration, to see some of the advantages of Anderson acceleration.  Beacuse this systemm is relatively stable, the difference (2x the iterations) is not <em>that</em> substantial, but as training of the full DEQ model progresses, the differences between Anderson acceleration and simple forward interation becomes even more stark.</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">def</span> <span class="nf">forward_iteration</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">x0</span><span class="p">,</span> <span class="n">max_iter</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">tol</span><span class="o">=</span><span class="mf">1e-2</span><span class="p">):</span>
+    <span class="n">f0</span> <span class="o">=</span> <span class="n">f</span><span class="p">(</span><span class="n">x0</span><span class="p">)</span>
+    <span class="n">res</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_iter</span><span class="p">):</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">f0</span>
+        <span class="n">f0</span> <span class="o">=</span> <span class="n">f</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="n">res</span><span class="p">.</span><span class="n">append</span><span class="p">((</span><span class="n">f0</span> <span class="o">-</span> <span class="n">x</span><span class="p">).</span><span class="n">norm</span><span class="p">().</span><span class="n">item</span><span class="p">()</span> <span class="o">/</span> <span class="p">(</span><span class="mf">1e-5</span> <span class="o">+</span> <span class="n">f0</span><span class="p">.</span><span class="n">norm</span><span class="p">().</span><span class="n">item</span><span class="p">()))</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">res</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">tol</span><span class="p">):</span>
+            <span class="k">break</span>
+    <span class="k">return</span> <span class="n">f0</span><span class="p">,</span> <span class="n">res</span>
+<span class="n">Z</span><span class="p">,</span> <span class="n">res</span> <span class="o">=</span> <span class="n">forward_iteration</span><span class="p">(</span><span class="k">lambda</span> <span class="n">Z</span> <span class="p">:</span> <span class="n">f</span><span class="p">(</span><span class="n">Z</span><span class="p">,</span><span class="n">X</span><span class="p">),</span> <span class="n">torch</span><span class="p">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">X</span><span class="p">),</span> <span class="n">tol</span><span class="o">=</span><span class="mf">1e-4</span><span class="p">)</span>
+<span class="n">plt</span><span class="p">.</span><span class="n">figure</span><span class="p">(</span><span class="n">dpi</span><span class="o">=</span><span class="mi">150</span><span class="p">)</span>
+<span class="n">plt</span><span class="p">.</span><span class="n">semilogy</span><span class="p">(</span><span class="n">res</span><span class="p">)</span>
+<span class="n">plt</span><span class="p">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s">"Iteration"</span><span class="p">)</span>
+<span class="n">plt</span><span class="p">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s">"Relative residual"</span><span class="p">)</span>
+</code></pre></div></div>
+<!-- _includes/image.html -->
+<div class="image-wrapper">
+        <img src="output_1.png" alt="" />
+</div>
+<h3 id="implementing-the-backward-pass">Implementing the backward pass</h3>
+<p>The backward pass, as described above, requires that we first find a solution to the linear fixed point equation</p>
+\[g = \left(\frac{\partial f(z^\star, x)}{\partial z^\star} \right )^T g + y.\]
+<p>and then that we compute the final vector Jacobian product as</p>
+\[\left (\frac{\partial z^\star(\cdot)}{\partial (\cdot)} \right)^T y = \left (\frac{\partial f(z^\star, x)}{\partial (\cdot)} \right )^T g.\]
+<p>The two vector-Jacobian product in each of these terms $\left(\frac{\partial f(z^\star, x)}{\partial z^\star} \right )^T g$ and $\left (\frac{\partial f(z^\star, x)}{\partial (\cdot)} \right )^T g$ are both 
+standard
+ vector-Jacobian products that can be computed using existing automatic differentation tools.</p>
+<p>This means that implementing a generic DEQ layer, capable of using any function $f$, inside a library like PyTorch is actually very straightforward.  All of it can be done within a standard <code class="language-plaintext highlighter-rouge">nn.Module</code> class (rather than e.g., an explicit <code class="language-plaintext highlighter-rouge">autograd.Function</code> class that requires separate implementation of forward/backward passes), exploiting the built-in automatic differentiation tools to compute all needed derivatives.  It essentially involves three steps, which we described in a less generic (and less elegant, since we computed the Jacobian explicitly) form in Chapter 1, but which we now highlight again.</p>
+  <li>Compute the fixed point $z^\star = f(z^\star,x)$ (using e.g. Anderson acceleration), <em>outside</em> the autodiff tape (in PyTorch, this means running it inside of a <code class="language-plaintext highlighter-rouge">with torch.no_grad():</code> block).</li>
+  <li>Re-engage the autodiff tape by calling $z := f(z,x)$ once, at the equilibrium point.  This engages the existing automatic differentiation library to compute the $\left (\frac{\partial f(z^\star, x)}{\partial (\cdot)} \right )^T$ multiplication.</li>
+  <li>Add a backwards hook that takes the incoming backward gradient $y$ and solve the fixed point equation $g = \left(\frac{\partial f(z^\star, x)}{\partial z^\star} \right )^T g + y$ again using, e.g. Anderson Acceleration.
+In total, the code is quite short, and looks like the following.</li>
+</ol>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">import</span> <span class="nn">torch.autograd</span> <span class="k">as</span> <span class="n">autograd</span>
+<span class="k">class</span> <span class="nc">DEQFixedPoint</span><span class="p">(</span><span class="n">nn</span><span class="p">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">solver</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">().</span><span class="n">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="p">.</span><span class="n">f</span> <span class="o">=</span> <span class="n">f</span>
+        <span class="bp">self</span><span class="p">.</span><span class="n">solver</span> <span class="o">=</span> <span class="n">solver</span>
+        <span class="bp">self</span><span class="p">.</span><span class="n">kwargs</span> <span class="o">=</span> <span class="n">kwargs</span>
+        
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="c1"># compute forward pass and re-engage autograd tape
+</span>        <span class="k">with</span> <span class="n">torch</span><span class="p">.</span><span class="n">no_grad</span><span class="p">():</span>
+            <span class="n">z</span><span class="p">,</span> <span class="bp">self</span><span class="p">.</span><span class="n">forward_res</span> <span class="o">=</span> <span class="bp">self</span><span class="p">.</span><span class="n">solver</span><span class="p">(</span><span class="k">lambda</span> <span class="n">z</span> <span class="p">:</span> <span class="bp">self</span><span class="p">.</span><span class="n">f</span><span class="p">(</span><span class="n">z</span><span class="p">,</span> <span class="n">x</span><span class="p">),</span> <span class="n">torch</span><span class="p">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="o">**</span><span class="bp">self</span><span class="p">.</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="n">z</span> <span class="o">=</span> <span class="bp">self</span><span class="p">.</span><span class="n">f</span><span class="p">(</span><span class="n">z</span><span class="p">,</span><span class="n">x</span><span class="p">)</span>
+        
+        <span class="c1"># set up Jacobian vector product (without additional forward calls)
+</span>        <span class="n">z0</span> <span class="o">=</span> <span class="n">z</span><span class="p">.</span><span class="n">clone</span><span class="p">().</span><span class="n">detach</span><span class="p">().</span><span class="n">requires_grad_</span><span class="p">()</span>
+        <span class="n">f0</span> <span class="o">=</span> <span class="bp">self</span><span class="p">.</span><span class="n">f</span><span class="p">(</span><span class="n">z0</span><span class="p">,</span><span class="n">x</span><span class="p">)</span>
+        <span class="k">def</span> <span class="nf">backward_hook</span><span class="p">(</span><span class="n">grad</span><span class="p">):</span>
+            <span class="n">g</span><span class="p">,</span> <span class="bp">self</span><span class="p">.</span><span class="n">backward_res</span> <span class="o">=</span> <span class="bp">self</span><span class="p">.</span><span class="n">solver</span><span class="p">(</span><span class="k">lambda</span> <span class="n">y</span> <span class="p">:</span> <span class="n">autograd</span><span class="p">.</span><span class="n">grad</span><span class="p">(</span><span class="n">f0</span><span class="p">,</span> <span class="n">z0</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">retain_graph</span><span class="o">=</span><span class="bp">True</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="n">grad</span><span class="p">,</span>
+                                               <span class="n">grad</span><span class="p">,</span> <span class="o">**</span><span class="bp">self</span><span class="p">.</span><span class="n">kwargs</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">g</span>
+                
+        <span class="n">z</span><span class="p">.</span><span class="n">register_hook</span><span class="p">(</span><span class="n">backward_hook</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">z</span>
+</code></pre></div></div>
+<p>For those familiar with PyTorch, you may note that we prefer to call <code class="language-plaintext highlighter-rouge">autograd.grad</code> directly (rather than the higher order functions <code class="language-plaintext highlighter-rouge">autograd.functions.vjp</code>, etc) because it lets us repeatedly multiply by this Jacobian without re-running the forward pass.  One minor downside of the simplicity here is that it does require two additional calls to $f$ than are strictly necessary: once to re-engage the gradient tape as described in Step 2 above, and once to set up the <code class="language-plaintext highlighter-rouge">f0</code> variable (which needs to be separate from <code class="language-plaintext highlighter-rouge">z</code>).  However, given that we typically need to call $f$ multiple times for the forward solve itself, this adds relatively little computational overhead.</p>
+<p>To verify that this layer is computing gradients correctly, we can use the <code class="language-plaintext highlighter-rouge">gradcheck</code> function to verify that the analytic gradients match with numerically computed gradients.  Note that owning to our use of <code class="language-plaintext highlighter-rouge">nn.Module</code> in this somewhat non-standard manner (as opposed to an <code class="language-plaintext highlighter-rouge">autograd.Function</code> class), this will only test gradients with respect to the input to the layer $x$ (and not with respect to the parameters), though we could also verify those by setting up a separate function if needed.  We should also emphasize that the function above will <em>not</em> work with double backprop, though again this can be adressed with some additional effect if needed.</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">from</span> <span class="nn">torch.autograd</span> <span class="kn">import</span> <span class="n">gradcheck</span>
+<span class="c1"># run a very small network with double precision, iterating to high precision
+</span><span class="n">f</span> <span class="o">=</span> <span class="n">ResNetLayer</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span><span class="mi">2</span><span class="p">,</span> <span class="n">num_groups</span><span class="o">=</span><span class="mi">2</span><span class="p">).</span><span class="n">double</span><span class="p">()</span>
+<span class="n">deq</span> <span class="o">=</span> <span class="n">DEQFixedPoint</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">anderson</span><span class="p">,</span> <span class="n">tol</span><span class="o">=</span><span class="mf">1e-10</span><span class="p">,</span> <span class="n">max_iter</span><span class="o">=</span><span class="mi">500</span><span class="p">).</span><span class="n">double</span><span class="p">()</span>
+<span class="n">gradcheck</span><span class="p">(</span><span class="n">deq</span><span class="p">,</span> <span class="n">torch</span><span class="p">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">2</span><span class="p">,</span><span class="mi">3</span><span class="p">,</span><span class="mi">3</span><span class="p">).</span><span class="n">double</span><span class="p">().</span><span class="n">requires_grad_</span><span class="p">(),</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">check_undefined_grad</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+</code></pre></div></div>
+<pre>
+</pre>
+<p>Finally, let
+s take a look at using the layer above to compute a forward and backward pass, and look at the relative residuals for both the forward and backward iterations.</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">f</span> <span class="o">=</span> <span class="n">ResNetLayer</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span><span class="mi">128</span><span class="p">)</span>
+<span class="n">deq</span> <span class="o">=</span> <span class="n">DEQFixedPoint</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">anderson</span><span class="p">,</span> <span class="n">tol</span><span class="o">=</span><span class="mf">1e-4</span><span class="p">,</span> <span class="n">max_iter</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">beta</span><span class="o">=</span><span class="mf">2.0</span><span class="p">)</span>
+<span class="n">X</span> <span class="o">=</span> <span class="n">torch</span><span class="p">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span><span class="mi">64</span><span class="p">,</span><span class="mi">32</span><span class="p">,</span><span class="mi">32</span><span class="p">)</span>
+<span class="n">out</span> <span class="o">=</span> <span class="n">deq</span><span class="p">(</span><span class="n">X</span><span class="p">)</span>
+<span class="p">(</span><span class="n">out</span><span class="o">*</span><span class="n">torch</span><span class="p">.</span><span class="n">randn_like</span><span class="p">(</span><span class="n">out</span><span class="p">)).</span><span class="nb">sum</span><span class="p">().</span><span class="n">backward</span><span class="p">()</span>
+</code></pre></div></div>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">plt</span><span class="p">.</span><span class="n">figure</span><span class="p">(</span><span class="n">dpi</span><span class="o">=</span><span class="mi">150</span><span class="p">)</span>
+<span class="n">plt</span><span class="p">.</span><span class="n">semilogy</span><span class="p">(</span><span class="n">deq</span><span class="p">.</span><span class="n">forward_res</span><span class="p">)</span>
+<span class="n">plt</span><span class="p">.</span><span class="n">semilogy</span><span class="p">(</span><span class="n">deq</span><span class="p">.</span><span class="n">backward_res</span><span class="p">)</span>
+<span class="n">plt</span><span class="p">.</span><span class="n">legend</span><span class="p">([</span><span class="s">'Forward'</span><span class="p">,</span> <span class="s">'Backward'</span><span class="p">])</span>
+<span class="n">plt</span><span class="p">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s">"Iteration"</span><span class="p">)</span>
+<span class="n">plt</span><span class="p">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s">"Residual"</span><span class="p">)</span>
+</code></pre></div></div>
+<!-- _includes/image.html -->
+<div class="image-wrapper">
+        <img src="output_2.png" alt="" />
+</div>
+<p>Here we see that (perhaps not too surprisingly, owning to the fact is it solving a linear rather than a nonlinear system), the backward pass typically converges a bit faster than the forward pass; however, this will not always be the case in practice, and indeed we will see below that after training, the backward pass frequently in fact converges to lower precision that the forward pass.</p>
+<h2 id="training-your-deq">Training your DEQ</h2>
+<p>Let
+s finally put all of this together to actually train a convolutional DEQ model on CIFAR10.  The following code will take a few hours to run on a single GPU, which may seem exessive for a model that achieve only slightly larger than 80% accuracy, though we should make the following caveats:</p>
+  <li>We are effectively running a <em>fully convolutional</em> network on CIFAR10 here, which maintains reasonbly large channels for the whole 32x32 image without down sampling.  Most reasonable networks do a large amount of downsampling before having any high-channel-count layers, and while we could also certainly do this for the DEQ, we wanted to emphasize the simplicty of a model that simply performs convolutions over the original input scale.</li>
+  <li>The model is very small, with less than 100K parameters.  ResNets of this size achieve a comparable level of accuracy.</li>
+  <li>We are using no data augmentation (though for a model this small, adding data augmentation only gives a relatively small benefit).</li>
+</ol>
+<p>Addressing both points above, and incorporating a cell $f$ the integrates information at multiple scales, one can achieve results competetive with the state of the art [<a href="https://arxiv.org/abs/2006.08656">Bai et al., 2020</a>] (though, it should be emphasized, with runtimes that <em>are</em> indeed still slower than comparable feedforward models with the same number of paraemters).</p>
+<p>The following model demonstrates the full DEQ model we consider, with a DEQ layer applied to the residual cell described above, a convolutional input injection, and a linear layer applied after average pooling of the DEQ output.  In pratice, it
+s also important to apply some form of normalization before and after the DEQ layer: here we simply use Batch Norm, which works well to 
+standardize
+ the size of the input as seen by the fixed point iteration.</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">device</span> <span class="o">=</span> <span class="n">torch</span><span class="p">.</span><span class="n">device</span><span class="p">(</span><span class="s">"cuda:0"</span> <span class="k">if</span> <span class="n">torch</span><span class="p">.</span><span class="n">cuda</span><span class="p">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s">"cpu"</span><span class="p">)</span>
+<span class="n">torch</span><span class="p">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">chan</span> <span class="o">=</span> <span class="mi">48</span>
+<span class="n">f</span> <span class="o">=</span> <span class="n">ResNetLayer</span><span class="p">(</span><span class="n">chan</span><span class="p">,</span> <span class="mi">64</span><span class="p">,</span> <span class="n">kernel_size</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">nn</span><span class="p">.</span><span class="n">Sequential</span><span class="p">(</span><span class="n">nn</span><span class="p">.</span><span class="n">Conv2d</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span><span class="n">chan</span><span class="p">,</span> <span class="n">kernel_size</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">padding</span><span class="o">=</span><span class="mi">1</span><span class="p">),</span>
+                      <span class="n">nn</span><span class="p">.</span><span class="n">BatchNorm2d</span><span class="p">(</span><span class="n">chan</span><span class="p">),</span>
+                      <span class="n">DEQFixedPoint</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">anderson</span><span class="p">,</span> <span class="n">tol</span><span class="o">=</span><span class="mf">1e-2</span><span class="p">,</span> <span class="n">max_iter</span><span class="o">=</span><span class="mi">25</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="mi">5</span><span class="p">),</span>
+                      <span class="n">nn</span><span class="p">.</span><span class="n">BatchNorm2d</span><span class="p">(</span><span class="n">chan</span><span class="p">),</span>
+                      <span class="n">nn</span><span class="p">.</span><span class="n">AvgPool2d</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span><span class="mi">8</span><span class="p">),</span>
+                      <span class="n">nn</span><span class="p">.</span><span class="n">Flatten</span><span class="p">(),</span>
+                      <span class="n">nn</span><span class="p">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">chan</span><span class="o">*</span><span class="mi">4</span><span class="o">*</span><span class="mi">4</span><span class="p">,</span><span class="mi">10</span><span class="p">)).</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+</code></pre></div></div>
+<p>Now let
+s include the boilerplate dataloader and training code.  There
+s nothing particularly fancy here: we are no data augmentation, a cosine annealing learning rate schedule, and training with the Adam optimizer for 50 epochs (these element can all very likely be improved upon).</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># CIFAR10 data loader
+</span><span class="kn">from</span> <span class="nn">torchvision</span> <span class="kn">import</span> <span class="n">datasets</span><span class="p">,</span> <span class="n">transforms</span>
+<span class="kn">from</span> <span class="nn">torch.utils.data</span> <span class="kn">import</span> <span class="n">DataLoader</span>
+<span class="n">cifar10_train</span> <span class="o">=</span> <span class="n">datasets</span><span class="p">.</span><span class="n">CIFAR10</span><span class="p">(</span><span class="s">"."</span><span class="p">,</span> <span class="n">train</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">download</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="n">transforms</span><span class="p">.</span><span class="n">ToTensor</span><span class="p">())</span>
+<span class="n">cifar10_test</span> <span class="o">=</span> <span class="n">datasets</span><span class="p">.</span><span class="n">CIFAR10</span><span class="p">(</span><span class="s">"."</span><span class="p">,</span> <span class="n">train</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">download</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="n">transforms</span><span class="p">.</span><span class="n">ToTensor</span><span class="p">())</span>
+<span class="n">train_loader</span> <span class="o">=</span> <span class="n">DataLoader</span><span class="p">(</span><span class="n">cifar10_train</span><span class="p">,</span> <span class="n">batch_size</span> <span class="o">=</span> <span class="mi">100</span><span class="p">,</span> <span class="n">shuffle</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">num_workers</span><span class="o">=</span><span class="mi">8</span><span class="p">)</span>
+<span class="n">test_loader</span> <span class="o">=</span> <span class="n">DataLoader</span><span class="p">(</span><span class="n">cifar10_test</span><span class="p">,</span> <span class="n">batch_size</span> <span class="o">=</span> <span class="mi">100</span><span class="p">,</span> <span class="n">shuffle</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">num_workers</span><span class="o">=</span><span class="mi">8</span><span class="p">)</span>
+</code></pre></div></div>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># standard training or evaluation loop
+</span><span class="k">def</span> <span class="nf">epoch</span><span class="p">(</span><span class="n">loader</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">opt</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">lr_scheduler</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+    <span class="n">total_loss</span><span class="p">,</span> <span class="n">total_err</span> <span class="o">=</span> <span class="mf">0.</span><span class="p">,</span><span class="mf">0.</span>
+    <span class="n">model</span><span class="p">.</span><span class="nb">eval</span><span class="p">()</span> <span class="k">if</span> <span class="n">opt</span> <span class="ow">is</span> <span class="bp">None</span> <span class="k">else</span> <span class="n">model</span><span class="p">.</span><span class="n">train</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">X</span><span class="p">,</span><span class="n">y</span> <span class="ow">in</span> <span class="n">loader</span><span class="p">:</span>
+        <span class="n">X</span><span class="p">,</span><span class="n">y</span> <span class="o">=</span> <span class="n">X</span><span class="p">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span> <span class="n">y</span><span class="p">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">yp</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">X</span><span class="p">)</span>
+        <span class="n">loss</span> <span class="o">=</span> <span class="n">nn</span><span class="p">.</span><span class="n">CrossEntropyLoss</span><span class="p">()(</span><span class="n">yp</span><span class="p">,</span><span class="n">y</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">opt</span><span class="p">:</span>
+            <span class="n">opt</span><span class="p">.</span><span class="n">zero_grad</span><span class="p">()</span>
+            <span class="n">loss</span><span class="p">.</span><span class="n">backward</span><span class="p">()</span>
+            <span class="n">opt</span><span class="p">.</span><span class="n">step</span><span class="p">()</span>
+            <span class="n">lr_scheduler</span><span class="p">.</span><span class="n">step</span><span class="p">()</span>
+                
+        <span class="n">total_err</span> <span class="o">+=</span> <span class="p">(</span><span class="n">yp</span><span class="p">.</span><span class="nb">max</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">y</span><span class="p">).</span><span class="nb">sum</span><span class="p">().</span><span class="n">item</span><span class="p">()</span>
+        <span class="n">total_loss</span> <span class="o">+=</span> <span class="n">loss</span><span class="p">.</span><span class="n">item</span><span class="p">()</span> <span class="o">*</span> <span class="n">X</span><span class="p">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">total_err</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">loader</span><span class="p">.</span><span class="n">dataset</span><span class="p">),</span> <span class="n">total_loss</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">loader</span><span class="p">.</span><span class="n">dataset</span><span class="p">)</span>
+</code></pre></div></div>
+<p>The following code will now train a model to ~81% accuracy over 50 epochs.  Again, this code will take a few hours to run on a single GPU (and likely longer in Colab), but it hopefully gives an impression of the relative ease of building these medium-scale DEQ models.</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">import</span> <span class="nn">torch.optim</span> <span class="k">as</span> <span class="n">optim</span>
+<span class="n">opt</span> <span class="o">=</span> <span class="n">optim</span><span class="p">.</span><span class="n">Adam</span><span class="p">(</span><span class="n">model</span><span class="p">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">)</span>
+<span class="k">print</span><span class="p">(</span><span class="s">"# Parmeters: "</span><span class="p">,</span> <span class="nb">sum</span><span class="p">(</span><span class="n">a</span><span class="p">.</span><span class="n">numel</span><span class="p">()</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">model</span><span class="p">.</span><span class="n">parameters</span><span class="p">()))</span>
+<span class="n">max_epochs</span> <span class="o">=</span> <span class="mi">50</span>
+<span class="n">scheduler</span> <span class="o">=</span> <span class="n">optim</span><span class="p">.</span><span class="n">lr_scheduler</span><span class="p">.</span><span class="n">CosineAnnealingLR</span><span class="p">(</span><span class="n">opt</span><span class="p">,</span> <span class="n">max_epochs</span><span class="o">*</span><span class="nb">len</span><span class="p">(</span><span class="n">train_loader</span><span class="p">),</span> <span class="n">eta_min</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">50</span><span class="p">):</span>
+    <span class="k">print</span><span class="p">(</span><span class="n">epoch</span><span class="p">(</span><span class="n">train_loader</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">opt</span><span class="p">,</span> <span class="n">scheduler</span><span class="p">))</span>
+    <span class="k">print</span><span class="p">(</span><span class="n">epoch</span><span class="p">(</span><span class="n">test_loader</span><span class="p">,</span> <span class="n">model</span><span class="p">))</span> 
+</code></pre></div></div>
+</div>
+    <footer>
+  <div class="container">
+    <div class="row">
+        <div class="col-lg-8 col-lg-offset-2 col-md-10 col-md-offset-1">
+          <h4>Contact</h4>
+          <div class="text-muted">
+        
+Zico Kolter, David Duvenaud, Matt Johnson
+        
+&nbsp;&nbsp;&bull;&nbsp;&nbsp;
+        
+<a href="mailto:zkolter@cs.cmu.edu">zkolter@cs.cmu.edu</a>,
+          <a href="mailto:duvenaud@cs.toronto.edu">duvenaud@cs.toronto.edu</a>,
+          <a href="mailto:mattjj@google.com">mattjj@google.com</a>
+          &nbsp;&nbsp;&bull;&nbsp;&nbsp;
+          <a href="http://www.twitter.com/zicokolter">@zicokolter</a>,
+          <a href="http://www.twitter.com/DavidDuvenaud">@DavidDuvenaud</a>,
+          <a href="http://www.twitter.com/SingularMattrix">@SingularMattrix</a>
+          <br/>
+            
+          </div>
+        </div>
+    </div>
+  </div>
+</footer>
+    <!-- doing something a bit funky here because I want to be careful not to include JQuery twice! -->
+      <script>
+      
+if (typeof jQuery == 'undefined') {
+      
+  document.write('<script src="/js/jquery-1.11.2.min.js"></scr' + 'ipt>');
+      
+      </script>
+    <!-- doing something a bit funky here because I want to be careful not to include JQuery twice! -->
+<script src="/js/bootstrap.min.js"></script>
+    <!-- doing something a bit funky here because I want to be careful not to include JQuery twice! -->
+<script src="/js/main.js"></script>
+  </body>
+</html>

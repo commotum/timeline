@@ -1,0 +1,468 @@
+                                            Deterministic Policy Gradient Algorithms
+               DavidSilver                                                                                   DAVID@DEEPMIND.COM
+               DeepMindTechnologies, London, UK
+               GuyLever                                                                                     GUY.LEVER@UCL.AC.UK
+               University College London, UK
+               Nicolas Heess, Thomas Degris, Daan Wierstra, Martin Riedmiller                                     *@DEEPMIND.COM
+               DeepMindTechnologies, London, UK
+                                       Abstract                               case, as policy variance tends to zero, of the stochastic pol-
+                    In this paper we consider deterministic policy            icy gradient.
+                    gradient algorithms for reinforcement learning            Fromapracticalviewpoint, there is a crucial difference be-
+                    with continuous actions. The deterministic pol-           tween the stochastic and deterministic policy gradients. In
+                    icy gradient has a particularly appealing form: it        the stochastic case, the policy gradient integrates over both
+                    is the expected gradient of the action-value func-        state and action spaces, whereas in the deterministic case it
+                    tion.  This simple form means that the deter-             only integrates over the state space. As a result, computing
+                    ministic policy gradient can be estimated much            the stochastic policy gradient may require more samples,
+                    more efﬁciently than the usual stochastic pol-            especially if the action space has many dimensions.
+                    icy gradient.  To ensure adequate exploration,            Inordertoexplorethefullstateandactionspace,astochas-
+                    weintroduce an off-policy actor-critic algorithm          tic policy is often necessary. To ensure that our determinis-
+                    that learns a deterministic target policy from an         tic policy gradient algorithms continue to explore satisfac-
+                    exploratory behaviour policy. We demonstrate              torily, we introduce an off-policy learning algorithm. The
+                    that deterministic policy gradient algorithms can         basic idea is to choose actions according to a stochastic
+                    signiﬁcantly outperform their stochastic counter-         behaviour policy (to ensure adequate exploration), but to
+                    parts in high-dimensional action spaces.                  learn about a deterministic target policy (exploiting the ef-
+                                                                              ﬁciency of the deterministic policy gradient). We use the
+               1. Introduction                                                deterministic policy gradient to derive an off-policy actor-
+               Policy gradient algorithms are widely used in reinforce-       critic algorithm that estimates the action-value function us-
+               mentlearningproblemswithcontinuousactionspaces. The            ing a differentiable function approximator, and then up-
+               basic idea is to represent the policy by a parametric prob-    dates the policy parameters in the direction of the approx-
+               ability distribution π (a|s) = P[a|s;θ] that stochastically    imate action-value gradient. We also introduce a notion of
+                                    θ                                         compatiblefunctionapproximationfordeterministicpolicy
+               selects action a in state s according to parameter vector θ.   gradients, to ensure that the approximation does not bias
+               Policy gradient algorithms typically proceed by sampling       the policy gradient.
+               this stochastic policy and adjusting the policy parameters     We apply our deterministic actor-critic algorithms to sev-
+               in the direction of greater cumulative reward.                 eral benchmark problems: a high-dimensional bandit; sev-
+               In this paper we instead consider deterministic policies       eral standard benchmark reinforcement learning tasks with
+               a = µθ(s). It is natural to wonder whether the same ap-        low dimensional action spaces; and a high-dimensional
+               proach can be followed as for stochastic policies: adjusting   task for controlling an octopus arm. Our results demon-
+               the policy parameters in the direction of the policy gradi-    strate a signiﬁcant performance advantage to using deter-
+               ent. It was previously believed that the deterministic pol-    ministic policy gradients over stochastic policy gradients,
+               icy gradient did not exist, or could only be obtained when     particularly in high dimensional tasks. Furthermore, our
+               using a model (Peters, 2010). However, we show that the        algorithms require no more computation than prior meth-
+               deterministicpolicygradientdoesindeedexist,andfurther-         ods: the computational cost of each update is linear in the
+               more it has a simple model-free form that simply follows       actiondimensionalityandthenumberofpolicyparameters.
+               the gradient of the action-value function. In addition, we     Finally, there are many applications (for example in
+               show that the deterministic policy gradient is the limiting    robotics) where a differentiable control policy is provided,
+               Proceedings of the 31st International Conference on Machine    but where there is no functionality to inject noise into the
+               Learning,Beijing,China,2014. JMLR:W&CPvolume32. Copy-          controller. In these cases, the stochastic policy gradient is
+               right 2014 by the author(s).                                   inapplicable, whereas our methods may still be useful.
+                                                           Deterministic Policy Gradient Algorithms
+               2. Background                                                       the parameters θ of the policy in the direction of the perfor-
+               2.1. Preliminaries                                                  mancegradient∇θJ(πθ). Thefundamentalresultunderly-
+               We study reinforcement learning and control problems in             ing these algorithms is the policy gradient theorem (Sutton
+               whichanagentactsinastochasticenvironmentbysequen-                   et al., 1999),
+               tially choosing actions over a sequence of time steps, in                           Z    π    Z                 π
+               order to maximise a cumulative reward. We model the                    ∇θJ(πθ) = Sρ (s) A∇θπθ(a|s)Q (s,a)dads
+               problem as a Markov decision process (MDP) which com-                                                               π
+               prises: a state space S, an action space A, an initial state                      =Es∼ρπ,a∼πθ [∇θlogπθ(a|s)Q (s,a)]            (2)
+               distribution with density p1(s1), a stationary transition dy-       The policy gradient is surprisingly simple. In particular,
+               namics distribution with conditional density p(s        |s ,a )                                                  π
+                                                                   t+1 t    t      despite the fact that the state distribution ρ (s) depends on
+               satisfying the Markov property p(st+1|s1,a1,...,st,at) =            the policy parameters, the policy gradient does not depend
+               p(st+1|st,at), for any trajectory s1,a1,s2,a2,...,sT,aT             onthe gradient of the state distribution.
+               in state-action space, and a reward function r : S×A → R.           This theorem has important practical value, because it re-
+               Apolicy is used to select actions in the MDP. In general            duces the computation of the performance gradient to a
+               the policy is stochastic and denoted by π       : S → P(A),
+                                                            θ                      simple expectation. The policy gradient theorem has been
+               where P(A) is the set of probability measures on A and              used to derive a variety of policy gradient algorithms (De-
+               θ ∈ Rn is a vector of n parameters, and πθ(at|st) is                gris et al., 2012a), by forming a sample-based estimate of
+               the conditional probability density at at associated with           this expectation. One issue that these algorithms must ad-
+               the policy. The agent uses its policy to interact with the          dress is how to estimate the action-value function Qπ(s,a).
+               MDP to give a trajectory of states, actions and rewards,            Perhaps the simplest approach is to use a sample return rγ
+                                                                                                                                                t
+               h      = s ,a ,r ...,s ,a ,r        over S × A × R. The                                        π
+                 1:T       1   1  1     T   T   T                                  to estimate the value of Q (st,at), which leads to a variant
+               return rγ is the total discounted reward from time-step t           of the REINFORCEalgorithm (Williams, 1992).
+                        t  γ     P∞
+               onwards, r     =         γk−tr(sk,ak) where 0 < γ < 1.
+                           t        k=t                                            2.3. Stochastic Actor-Critic Algorithms
+               Value functions are deﬁned to be the expected total dis-
+               countedreward,Vπ(s) = E[rγ|S = s;π]andQπ(s,a) =                     The actor-critic is a widely used architecture based on the
+                                                1  1
+                    γ                      1
+               E[r |S =s,A =a;π]. The agent’s goal is to obtain a                  policy gradient theorem (Sutton et al., 1999; Peters et al.,
+                    1  1         1
+               policy which maximises the cumulative discounted reward             2005; Bhatnagar et al., 2007; Degris et al., 2012a). The
+               from the start state, denoted by the performance objective          actor-critic consists of two eponymouscomponents. Anac-
+               J(π) = E[rγ|π].                                                     tor adjusts the parameters θ of the stochastic policy π (s)
+                             1                                                                                                               θ
+               We denote the density at state s′ after transitioning for t         by stochastic gradient ascent of Equation 2. Instead of the
+               time steps from state s by p(s → s′,t,π). We also denote            unknown true action-value function Qπ(s,a) in Equation
+               the (improper) discounted state distribution by ρπ(s′) :=           2, an action-value function Qw(s,a) is used, with param-
+               R P∞ γt−1p1(s)p(s → s′,t,π)ds. We can then write                    eter vector w. A critic estimates the action-value function
+                 S   t=1                                                           Qw(s,a) ≈ Qπ(s,a) using an appropriate policy evalua-
+               the performance objective as an expectation,
+                                  Z    π    Z                                      tion algorithm such as temporal-difference learning.
+                        J(πθ) =       ρ (s)     πθ(s,a)r(s,a)dads                  In general, substituting a function approximator Qw(s,a)
+                                    S         A                                    for the true action-value function Qπ(s,a) may introduce
+                               =Es∼ρπ,a∼πθ [r(s,a)]                        (1)     bias. However, if the function approximator is compati-
+               where Es∼ρ[·] denotes the (improper) expected value with            ble such that i) Qw(s,a) = ∇θ logπθ(a|s)⊤w and ii) the
+                                                                2                  parameters w are chosen to minimise the mean-squared er-
+               respect to discounted state distribution ρ(s).      In the re-                                  h                          i
+               mainder of the paper we suppose for simplicity that A =                  2                          w            π        2
+                                                                                   ror ǫ (w) = Es∼ρπ,a∼πθ (Q (s,a)−Q (s,a)) , then
+               RmandthatS isacompactsubsetofRd.                                                      Sutton et al., 1999),
+                                                                                   there is no bias (
+               2.2. Stochastic Policy Gradient Theorem                                ∇ J(π ) = E        π      [∇ logπ (a|s)Qw(s,a)]         (3)
+               Policy gradient algorithms are perhaps the most popular                  θ    θ       s∼ρ ,a∼πθ     θ      θ
+               class of continuous action reinforcement learning algo-             Moreintuitively, condition i) says that compatible function
+               rithms. The basic idea behind these algorithms is to adjust         approximatorsarelinear in “features” of the stochastic pol-
+                   1To simplify notation, we frequently drop the random vari-      icy, ∇θ logπθ(a|s), and condition ii) requires that the pa-
+                                                                                   rameters are the solution to the linear regression problem
+               able in the conditional density and write p(st+1|st,at)      =      that estimates Qπ(s,a) from these features. In practice,
+               p(st+1|St = st,At = at); furthermore we superscript value           condition ii) is usually relaxed in favour of policy evalu-
+               functions by π rather than πθ.                                      ation algorithms that estimate the value function more ef-
+                   2The results in this paper may be extended to an average re-
+               wardperformanceobjective by choosing ρ(s) to be the stationary      ﬁciently by temporal-difference learning (Bhatnagar et al.,
+               distribution of an ergodic MDP.                                     2007; Degris et al., 2012b; Peters et al., 2005); indeed if
+                                                           Deterministic Policy Gradient Algorithms
+               both i) and ii) are satisﬁed then the overall algorithm is         then give a formal proof of the deterministic policy gradi-
+               equivalent to not using a critic at all (Sutton et al., 2000),     ent theorem from ﬁrst principles. Finally, we show that the
+               muchlike the REINFORCEalgorithm (Williams, 1992).                  deterministic policy gradient theorem is in fact a limiting
+               2.4. Off-Policy Actor-Critic                                       case of the stochastic policy gradient theorem. Details of
+                                                                                  the proofs are deferred until the appendices.
+               It is often useful to estimate the policy gradient off-policy
+               from trajectories sampled from a distinct behaviour policy         3.1. Action-Value Gradients
+               β(a|s) 6= πθ(a|s). In an off-policy setting, the perfor-           The majority of model-free reinforcement learning algo-
+               manceobjective is typically modiﬁed to be the value func-          rithms are based on generalised policy iteration: inter-
+               tion of the target policy, averaged over the state distribution    leaving policy evaluation with policy improvement (Sut-
+               of the behaviour policy (Degris et al., 2012b),                    ton and Barto, 1998). Policy evaluation methods estimate
+                                  Z                                               the action-value function Qπ(s,a) or Qµ(s,a), for ex-
+                       J (π ) =      ρβ(s)Vπ(s)ds                                 ample by Monte-Carlo evaluation or temporal-difference
+                        β   θ                                                     learning.   Policy improvement methods update the pol-
+                                  ZS Z                                            icy with respect to the (estimated) action-value function.
+                                          β              π
+                               = S Aρ (s)πθ(a|s)Q (s,a)dads                       The most common approach is a greedy maximisation (or
+                                                                                  soft maximisation)oftheaction-valuefunction, µk+1(s) =
+               Differentiating the performance objective and applying an          argmax Qµk(s,a).
+               approximation gives the off-policy policy-gradient (Degris               a
+                    , 2012b)                                                      In continuous action spaces, greedy policy improvement
+               et al.                                                             becomes problematic, requiring a global maximisation at
+               ∇θJβ(πθ) ≈ Z Z ρβ(s)∇θπθ(a|s)Qπ(s,a)dads                   (4)     every step. Instead, a simple and computationally attrac-
+                               S A                                                tive alternative is to move the policy in the direction of the
+                                          πθ(a|s)                    π          gradient of Q, rather than globally maximising Q. Specif-
+                           =E β                     ∇ logπ (a|s)Q (s,a)           ically, for each visited state s, the policy parameters θk+1
+                                s∼ρ ,a∼β β (a|s)      θ      θ
+                                             θ                                    are updated in proportion to the gradient ∇ Qµk(s,µ (s)).
+                                                                          (5)                                                   θ          θ
+                                                                                  Eachstate suggests a different direction of policy improve-
+               This approximation drops a term that depends on the                ment; these may be averaged together by taking an expec-
+               action-value gradient ∇ Qπ(s,a); Degris et al. (2012b)             tation with respect to the state distribution ρµ(s),
+                                         θ
+               argue that this is a good approximation since it can pre-                                           h                   i
+               serve the set of local optima to which gradient ascent con-                θk+1 = θk +αE              ∇ Qµk(s,µ (s))           (6)
+               verges. The Off-Policy Actor-Critic (OffPAC) algorithm                                        s∼ρµk     θ          θ
+               (Degris et al., 2012b) uses a behaviour policy β(a|s) to           Byapplying the chain rule we see that the policy improve-
+               generate trajectories. A critic estimates a state-value func-
+               tion, V v(s) ≈ V π(s), off-policy from these trajectories, by      ment may be decomposed into the gradient of the action-
+               gradient temporal-difference learning (Sutton et al., 2009).       value with respect to actions, and the gradient of the policy
+               An actor updates the policy parameters θ, also off-policy          with respect to the policy parameters.
+               from these trajectories, by stochastic gradient ascent of                                                                     
+               Equation 5. Instead of the unknown action-value function            θk+1 = θk +αE             ∇ µ (s) ∇ Qµk(s,a)
+               Qπ(s,a) in Equation 5, the temporal-difference error δ is                             s∼ρµk      θ θ       a           
+                                                                          t                                                            a=µθ(s)
+               used, δ = r      +γVv(s        )−Vv(s );thiscanbeshown                                                                         (7)
+                       t    t+1           t+1          t
+               to provide an approximation to the true gradient (Bhatna-
+               gar et al., 2007). Both the actor and the critic use an im-        Byconvention∇ µ (s)isaJacobianmatrixsuchthateach
+                                          π (a|s)                                                   θ θ
+               portance sampling ratio     θ      to adjust for the fact that     columnisthegradient∇ [µ (s)] ofthedthactiondimen-
+                                          βθ(a|s)                                                            θ  θ     d
+               actions were selected according to π rather than β.                sion of the policy with respect to the policy parameters θ.
+                                                                                  However, by changing the policy, different states are vis-
+               3. Gradients of Deterministic Policies                             ited and the state distribution ρµ will change. As a result
+               Wenowconsider how the policy gradient framework may                it is not immediately obvious that this approach guaran-
+               be extended to deterministic policies. Our main result is          tees improvement, without taking account of the change to
+               a deterministic policy gradient theorem, analogous to the          distribution. However, the theory below shows that, like
+               stochastic policy gradient theorem presented in the previ-         the stochastic policy gradient theorem, there is no need to
+               ous section. We provide several ways to derive and un-             compute the gradient of the state distribution; and that the
+               derstand this result. First we provide an informal intuition       intuitive update outlined above is following precisely the
+               behind the form of the deterministic policy gradient. We           gradient of the performance objective.
+                                                           Deterministic Policy Gradient Algorithms
+               3.2. Deterministic Policy Gradient Theorem                         4. Deterministic Actor-Critic Algorithms
+               Wenowformallyconsideradeterministicpolicyµθ : S →                  We now use the deterministic policy gradient theorem
+               Awithparametervectorθ ∈ Rn. Wedeﬁneaperformance                    to derive both on-policy and off-policy actor-critic algo-
+               objective J(µ ) = E[rγ|µ], and deﬁne probability dis-              rithms. We begin with the simplest case – on-policy up-
+                              θ           1
+               tribution p(s → s′,t,µ) and discounted state distribution          dates, using a simple Sarsa critic – so as to illustrate the
+               ρµ(s) analogously to the stochastic case. This again lets us       ideasasclearlyaspossible. Wethenconsidertheoff-policy
+               to write the performance objective as an expectation,              case, this time using a simple Q-learning critic to illustrate
+                                       Z    µ                                     the key ideas. These simple algorithms may have conver-
+                             J(µθ) =       ρ (s)r(s,µθ(s))ds                      gence issues in practice, due both to bias introduced by the
+                                         S                                        function approximator, and also the instabilities caused by
+                                     =Es∼ρµ[r(s,µθ(s))]                   (8)     off-policy learning. We then turn to a more principled ap-
+               We now provide the deterministic analogue to the policy            proach using compatible function approximation and gra-
+               gradient theorem. The proof follows a similar scheme to            dient temporal-difference learning.
+               (Sutton et al., 1999) and is provided in Appendix B.               4.1. On-Policy Deterministic Actor-Critic
+               Theorem 1 (Deterministic Policy Gradient Theorem).                 In general, behaving according to a deterministic policy
+               Suppose that the MDP satisﬁes conditions A.1 (see Ap-              will not ensure adequate exploration and may lead to sub-
+               pendix; these imply that ∇θµθ(s) and ∇aQµ(s,a) exist               optimal solutions. Nevertheless, our ﬁrst algorithm is an
+               andthat the deterministic policy gradient exists. Then,            on-policy actor-critic algorithm that learns and follows a
+                               Z                                                  deterministic policy. Its primary purpose is didactic; how-
+                                    µ                   µ                         ever, it may be useful for environments in which there is
+                 ∇θJ(µθ) = Sρ (s)∇θµθ(s) ∇aQ (s,a)|a=µθ(s)ds                      sufﬁcient noise in the environment to ensure adequate ex-
+                            =Es∼ρµh∇θµθ(s) ∇aQµ(s,a)|a=µθ(s)i (9)                 ploration, even with a deterministic behaviour policy.
+                                                                                  Like the stochastic actor-critic, the deterministic actor-
+               3.3. Limit of the Stochastic Policy Gradient                       critic consists of two components.       The critic estimates
+               The deterministic policy gradient theorem does not at ﬁrst         the action-value function while the actor ascends the gradi-
+               glance look like the stochastic version (Equation 2). How-         ent of the action-value function. Speciﬁcally, an actor ad-
+               ever, we now show that, for a wide class of stochastic             justs the parameters θ of the deterministic policy µθ(s) by
+               policies, including many bump functions, the determinis-           stochastic gradient ascent of Equation 9. As in the stochas-
+               tic policy gradient is indeed a special (limiting) case of the     tic actor-critic, we substitute a differentiable action-value
+               stochastic policy gradient. We parametrise stochastic poli-        function Qw(s,a) in place of the true action-value func-
+               cies π      by a deterministic policy µ     : S → A and a          tion Qµ(s,a). A critic estimates the action-value function
+                      µθ,σ                               θ                        Qw(s,a) ≈ Qµ(s,a), using an appropriate policy evalua-
+               variance parameter σ, such that for σ = 0 the stochastic           tion algorithm. For example, in the following deterministic
+               policy is equivalent to the deterministic policy, πµθ,0 ≡ µθ.      actor-critic algorithm, the critic uses Sarsa updates to esti-
+               Then we show that as σ → 0 the stochastic policy gradi-            mate the action-value function (Sutton and Barto, 1998),
+               ent converges to the deterministic gradient (see Appendix
+               Cforproof and technical conditions).                                      δ =r +γQw(s           , a   ) −Qw(s ,a )           (11)
+                                                                                          t    t           t+1   t+1           t   t
+               Theorem 2. Consider a stochastic policy πµ ,σ such that               w     =w +α δ∇ Qw(s,a )                                (12)
+                                                                θ                      t+1      t     w t w         t  t
+               π     (a|s) = ν (µ (s),a), where σ is a parameter con-                                                  w
+                 µθ,σ           σ   θ                                                 θt+1 = θt +αθ∇θµθ(st) ∇aQ (st,at)|a=µ (s)             (13)
+               trolling the variance and ν    satisfy conditions B.1 and the                                                          θ
+                                            σ
+               MDPsatisﬁesconditions A.1 and A.2. Then,                           4.2. Off-Policy Deterministic Actor-Critic
+                               lim∇ J(π        ) = ∇ J(µ )               (10)     Wenowconsideroff-policymethodsthatlearnadetermin-
+                               σ↓0   θ     µθ,σ       θ     θ                     istic target policy µθ(s) from trajectories generated by an
+                                                                                  arbitrary stochastic behaviour policy π(s,a). Asbefore, we
+               where on the l.h.s. the gradient is the standard stochastic        modify the performance objective to be the value function
+               policy gradient and on the r.h.s. the gradient is the deter-       of the target policy, averaged over the state distribution of
+               ministic policy gradient.                                          the behaviour policy,
+               This is an important result because it shows that the famil-                    Jβ(µθ) = Z ρβ(s)Vµ(s)ds
+               iar machinery of policy gradients, for example compatible
+               function approximation (Sutton et al., 1999), natural gradi-                               ZS
+               ents (Kakade, 2001), actor-critic (Bhatnagar et al., 2007),                             =     ρβ(s)Qµ(s,µ (s))ds
+                                                                                                                            θ
+               or episodic/batch methods (Peters et al., 2005), is also ap-                                S                                (14)
+               plicable to deterministic policy gradients.
+                                                         Deterministic Policy Gradient Algorithms
+                  ∇θJβ(µθ) ≈ Z ρβ(s)∇θµθ(a|s)Qµ(s,a)ds                         Proof. If w minimises the MSE then the gradient of ǫ2
+                                 S     h                               i       w.r.t. w must be zero. We then use the fact that, by condi-
+                             =Es∼ρβ ∇θµθ(s) ∇aQµ(s,a)|a=µθ(s)                  tion 1, ∇wǫ(s;θ,w) = ∇θµθ(s),
+                                                                      (15)                        ∇wMSE(θ,w)=0
+               This equation gives the off-policy deterministic policy gra-                  E[∇θµθ(s)ǫ(s;θ,w)] = 0
+               dient. Analogous to the stochastic case (see Equation 4),       Eh∇θµθ(s) ∇aQw(s,a)|a=µθ(s)i =
+               wehavedroppedatermthatdependson∇θQµθ(s,a);jus-                                             h                               i
+                                                                                                        E ∇ µ (s) ∇ Qµ(s,a)|
+               tiﬁcation similar to Degris et al. (2012b) can be made in                                      θ θ      a          a=µθ(s)
+               support of this approximation.                                                                 =∇J (µ )or∇ J(µ )
+               Wenowdevelop an actor-critic algorithm that updates the                                             θ β    θ      θ     θ
+               policy in the direction of the off-policy deterministic policy  For any deterministic policy µθ(s), there always exists a
+               gradient. We again substitute a differentiable action-value     compatible function approximator of the form Qw(s,a) =
+               function Qw(s,a)inplaceofthetrueaction-valuefunction            (a − µ (s))⊤∇ µ (s)⊤w + Vv(s), where Vv(s) may be
+                                                                                       θ        θ θ
+               Qµ(s,a)inEquation15. Acriticestimatestheaction-value            any differentiable baseline function that is independent of
+               function Qw(s,a) ≈ Qµ(s,a), off-policy from trajectories        the action a; for example a linear combination of state fea-
+               generatedbyβ(a|s),usinganappropriatepolicyevaluation            tures φ(s) and parameters v, V v(s) = v⊤φ(s) for param-
+               algorithm. In the following off-policy deterministic actor-     eters v. A natural interpretation is that V v(s) estimates
+               critic (OPDAC) algorithm, the critic uses Q-learning up-        the value of state s, while the ﬁrst term estimates the ad-
+               dates to estimate the action-value function.                    vantage Aw(s,a) of taking action a over action µθ(s) in
+                                                                               state s. The advantage function can be viewed as a linear
+                     δ =r +γQw(s          , µ (s    )) − Qw(s ,a )    (16)                                w                 ⊤
+                      t    t           t+1   θ  t+1            t  t            function approximator, A (s,a) = φ(s,a) w with state-
+                 w     =w +α δ∇ Qw(s,a )                              (17)                              def
+                   t+1      t     w t w        t  t                            action features φ(s,a) = ∇θµθ(s)(a − µθ(s)) and pa-
+                  θ    =θ +α ∇ µ (s )∇ Qw(s ,a )|                     (18)     rameters w. Note that if there are m action dimensions and
+                   t+1     t     θ  θ θ t      a      t   t a=µθ(s)
+               We note that stochastic off-policy actor-critic algorithms      n policy parameters, then ∇θµθ(s) is an n × m Jacobian
+               typically use importance sampling for both actor and critic     matrix, so the feature vector is n × 1, and the parameter
+               (Degris et al., 2012b). However, because the deterministic      vector w is also n × 1. A function approximator of this
+                                                                               form satisﬁes condition 1 of Theorem 3.
+               policy gradient removes the integral over actions, we can       Wenotethatalinearfunctionapproximatorisnotveryuse-
+               avoid importance sampling in the actor; and by using Q-         ful for predicting action-values globally, since the action-
+               learning, we can avoid importance sampling in the critic.       value diverges to ±∞ for large actions. However, it can
+               4.3. Compatible Function Approximation                          still be highly effective as a local critic. In particular, it
+                                                           w                   represents the local advantage of deviating from the cur-
+               In general, substituting an approximate Q (s,a) into the                       w                    ⊤          ⊤
+               deterministic policy gradient will not necessarily follow the   rent policy, A (s,µθ(s) + δ) = δ ∇θµθ(s) w, where δ
+               true gradient (nor indeed will it necessarily be an ascent di-  represents a small deviation from the deterministic policy.
+               rection at all). Similar to the stochastic case, we now ﬁnd a   As a result, a linear function approximator is sufﬁcient to
+               class of compatible function approximators Qw(s,a) such         select the direction in which the actor should adjust its pol-
+               that the true gradient is preserved. In other words, we ﬁnd     icy parameters.
+               a critic Qw(s,a) such that the gradient ∇ Qµ(s,a) can be        To satisfy condition 2 we need to ﬁnd the parameters w
+                                                         a                     that minimise the mean-squared error between the gradi-
+               replaced by ∇aQw(s,a), without affecting the determinis-        ent of Qw and the true gradient. This can be viewed as a
+               tic policy gradient. The following theorem applies to both      linear regression problem with “features” φ(s,a) and “tar-
+               on-policy, E[·] = Es∼ρµ[·], and off-policy, E[·] = Es∼ρβ[·],    gets” ∇ Qµ(s,a)|           . In other words, features of the
+                                                                                        a          a=µθ(s)
+               Theorem 3. A function approximator Qw(s,a) is com-              policy are used to predict the true gradient ∇ Qµ(s,a) at
+               patible with a deterministic policy µ (s), ∇ J (θ) =                                                           a
+                 h                               i     θ        θ β            state s. However, acquiring unbiased samples of the true
+               E ∇θµθ(s) ∇aQw(s,a)|               , if                         gradient is difﬁcult.   In practice, we use a linear func-
+                                         a=µθ(s)                               tion approximator Qw(s,a) = φ(s,a)⊤w to satisfy con-
+                 1. ∇ Qw(s,a)|            =∇µ(s)⊤w            and              dition 1, but we learn w by a standard policy evaluation
+                      a           a=µθ(s)      θ θ                             method(forexampleSarsaorQ-learning,fortheon-policy
+                 2. w minimises the mean-squared error, MSE(θ,w) =             or off-policy deterministic actor-critic algorithms respec-
+                    Eǫ(s;θ,w)⊤ǫ(s;θ,w)        where     ǫ(s;θ,w)       =     tively) that does not exactly satisfy condition 2. We note
+                    ∇ Qw(s,a)|            −∇Qµ(s,a)|                           that a reasonable solution to the policy evaluation prob-
+                      a           a=µθ(s)      a          a=µθ(s)              lem will ﬁnd Qw(s,a) ≈ Qµ(s,a) and will therefore ap-
+                                                        Deterministic Policy Gradient Algorithms
+               proximately (for smooth function approximators) satisfy        Es∼ρπ,a∼πθ ∇θ logπθ(a|s)∇θ logπθ(a|s)⊤; this metric
+               ∇ Qw(s,a)|           ≈ ∇ Qµ(s,a)|            .                 is invariant to reparameterisations of the policy (Bagnell
+                 a          a=µθ(s)      a          a=µθ(s)
+               Tosummarise, a compatible off-policy deterministic actor-      and Schneider, 2003). For deterministic policies, we use
+               critic (COPDAC) algorithm consists of two components.          the metric Mµ(θ) = Es∼ρµ ∇θµθ(s)∇θµθ(s)⊤ which
+               The critic is a linear function approximator that estimates    can be viewed as the limiting case of the Fisher informa-
+               the action-value from features φ(s,a) = a⊤∇θµθ(s). This        tion metric as policy variance is reduced to zero. By com-
+               maybelearnt off-policy from samples of a behaviour pol-        bining the deterministic policy gradient theorem with com-
+               icy β(a|s), for example using Q-learning or gradient Q-        patible function approximation we see that ∇θJ(µθ) =
+               learning. The actor then updates its parameters in the di-     Es∼ρµ ∇θµθ(s)∇θµθ(s)⊤w and so the steepest ascent
+               rection of the critic’s action-value gradient. The following   direction is simply Mµ(θ)−1∇θJβ(µθ) = w. This algo-
+               COPDAC-QalgorithmusesasimpleQ-learningcritic.                  rithm can be implemented by simplifying Equations 20 or
+                                                                              24toθt+1 = θt +αθwt.
+                    δ =r +γQw(s           , µ (s   )) − Qw(s ,a )     (19)
+                      t    t          t+1   θ   t+1           t  t
+                  θt+1 = θt +αθ∇θµθ(st) ∇θµθ(st)⊤wt                  (20)    5. Experiments
+                 wt+1 = wt +αwδtφ(st,at)                              (21)    5.1. Continuous Bandit
+                  v    =v +α δ φ(s )                                  (22)    Our ﬁrst experiment focuses on a direct comparison be-
+                   t+1     t     v t   t                                      tween the stochastic policy gradient and the determinis-
+               It is well-known that off-policy Q-learning may diverge        tic policy gradient.   The problem is a continuous ban-
+               when using linear function approximation. A more recent        dit problem with a high-dimensional quadratic cost func-
+               family of methods, based on gradient temporal-difference       tion, −r(a) = (a − a∗)⊤C(a − a∗). The matrix C is
+               learning, are true gradient descent algorithm and are there-   positive deﬁnite with eigenvalues chosen from {0.1,1},
+               foresuretoconverge(Suttonetal.,2009). Thebasicideaof           and a∗ = [4,...,4]⊤. We consider action dimensions of
+               these methods is to minimise the mean-squared projected        m = 10,25,50. Although this problem could be solved
+               Bellman error (MSPBE) by stochastic gradient descent;          analytically, given full knowledge of the quadratic, we are
+               full details are beyond the scope of this paper. Similar to    interested here in the relative performance of model-free
+               the OffPAC algorithm (Degris et al., 2012b), we use gradi-     stochastic and deterministic policy gradient algorithms.
+               ent temporal-difference learning in the critic. Speciﬁcally,   Forthestochasticactor-criticinthebandittask(SAC-B)we
+               weusegradient Q-learning in the critic (Maei et al., 2010),    use an isotropic Gaussian policy, πθ,y(·) ∼ N(θ,exp(y)),
+               and note that under suitable conditions on the step-sizes,     andadaptboththemeanandthevarianceofthepolicy. The
+               αθ,αw,αu, to ensure that the critic is updated on a faster     deterministic actor-critic algorithm is based on COPDAC,
+               time-scale than the actor, the critic will converge to the pa- using a target policy, µθ = θ and a ﬁxed-width Gaussian
+               rameters minimising the MSPBE (Sutton et al., 2009; De-        behaviour policy, β(·) ∼ N(θ,σ2). The critic Q(a) is sim-
+                                                                                                               β
+               gris et al., 2012b). The following COPDAC-GQ algorithm         ply estimated by linear regression from the compatible fea-
+               combines COPDACwithagradientQ-learning critic,                 tures to the costs: for SAC-B the compatible features are
+                    δ =r +γQw(s           , µ (s   )) − Qw(s ,a )     (23)    ∇θlogπθ(a); for COPDAC-Btheyare∇θµθ(a)(a−θ);a
+                      t    t          t+1   θ   t+1           t  t            bias feature is also included in both cases. For this exper-
+                  θt+1 = θt +αθ∇θµθ(st) ∇θµθ(st)⊤wt                  (24)    iment the critic is recomputed from each successive batch
+                 w     =w +α δφ(s ,a )                                        of 2m steps; the actor is updated once per batch. To eval-
+                   t+1      t    w t    t   t                                uate performance we measure the average cost per step in-
+                       −αwγφ(st+1,µθ(st+1)) φ(st,at)⊤ut               (25)    curred by the mean (i.e. exploration is not penalised for
+                  vt+1 = vt +αvδtφ(st)                                        the on-policy algorithm). We performed a parameter sweep
+                       −αvγφ(st+1) φ(st,at)⊤ut                       (26)    over all step-size parameters and variance parameters (ini-
+                                                                             tial y for SAC; σ2 for COPDAC). Figure 1 shows the per-
+                  u    =u +α δ −φ(s ,a )⊤u φ(s ,a )                   (27)                      β
+                   t+1     t     u   t      t   t    t     t  t               formance of the best performing parameters for each algo-
+               Like stochastic actor-critic algorithms, the computational     rithm, averaged over 5 runs. The results illustrate a signif-
+               complexity of all these updates is O(mn) per time-step.        icant performance advantage to the deterministic update,
+                                                                              which grows larger with increasing dimensionality.
+               Finally, we show that the natural policy gradient (Kakade,     We also ran an experiment in which the stochastic actor-
+               2001; Peters et al., 2005) can be extended to deter-           critic used the same ﬁxed variance σ2 as the deterministic
+               ministic policies.  The steepest ascent direction of our                                             β
+               performance objective with respect to any metric M(θ)          actor-critic, so that only the mean was adapted. This did
+               is given by M(θ)−1∇ J(µ ) (Toussaint, 2012).           The     not improve the performance of the stochastic actor-critic:
+                                       θ    θ                                 COPDAC-Bstill outperforms SAC-B by a very wide mar-
+               natural gradient is the steepest ascent direction with         gin that grows larger with increasing dimension.
+               respect to the Fisher information metric Mπ(θ)           =
+                                                                         Deterministic Policy Gradient Algorithms
+                                 15                                                                   greedy policy. Similarly, in our experiments COPDAC-Q
+                                 10                                                                   was used to learn a deterministic policy, off-policy, while
+                                  5                                                                   executing a noisy version of that policy. Note that we com-
+                                Return per episode                                                    pared on-policy and off-policy algorithms in our experi-
+                                  0                                                                   ments, which may at ﬁrst sight appear odd. However, it
+                                300                                                                   is analogous to asking whether Q-learning or Sarsa is more
+                                                                                                      efﬁcient, by measuring the greedy policy learnt by each al-
+                                200                                                                   gorithm (Sutton and Barto, 1998).
+                               Steps to target100                                                     Our actor-critic algorithms are based on model-free, in-
+                                  0                                                                   cremental, stochastic gradient updates; these methods are
+                                   0            100000Time steps200000          300000                suitable when the model is unknown, data is plentiful and
+                   Figure 3. Ten runs of COPDACona6-segmentoctopusarmwith                             computation is the bottleneck. It is straightforward in prin-
+                   20 action dimensions and 50 state dimensions; each point repre-                    ciple to extend these methods to batch/episodic updates, for
+                   sents the return per episode (above) and the number of time-steps                  example by using LSTDQ (Lagoudakis and Parr, 2003) in
+                   for the arm to reach the target (below).                                           place of the incremental Q-learning critic. There has also
+                   dimensional octopus arm with 4 segments (Heess et al.,                             been a substantial literature on model-based policy gradi-
+                   2012). Here, we apply deterministic policy gradients di-                           ent methods, largely focusing on deterministic and fully-
+                   rectly to a high-dimensional octopus arm with 6 segments.                          known transition dynamics (Werbos, 1990). These meth-
+                   Weapplied the COPDAC-Q algorithm, using a sigmoidal                                ods are strongly related to deterministic policy gradients
+                   multi-layer perceptron (8 hidden units and sigmoidal out-                          whenthetransition dynamics are also deterministic.
+                   putunits) to represent the policy µ(s). The advantage func-                        Wearenot the ﬁrst to notice that the action-value gradient
+                   tion Aw(s,a) was represented by compatible function ap-                            provides a useful signal for reinforcement learning. The
+                   proximation (see Section 4.3), while the state value func-                         NFQCAalgorithm(HafnerandRiedmiller,2011)usestwo
+                   tion V v(s) wasrepresentedbyasecondmulti-layerpercep-                              neural networks to represent the actor and critic respec-
+                                                                               3                      tively. The actor adjusts the policy, represented by the ﬁrst
+                   tron (40 hidden units and linear output units). The results                        neural network, in the direction of the action-value gradi-
+                   of 10 training runs are shown in Figure 3; the octopus arm                         ent, using an update similar to Equation 7. The critic up-
+                   converged to a good solution in all cases. A video of an 8                         dates the action-value function, represented by the second
+                   segment arm, trained by COPDAC-Q, is also available.4                              neural network, using neural ﬁtted-Q learning (a batch Q-
+                   6. Discussion and Related Work                                                     learning update for approximate value iteration). However,
+                                                                                                      its critic network is incompatible with the actor network; it
+                   Usingastochastic policy gradient algorithm, the policy be-                         is unclear how the local optima learnt by the critic (assum-
+                   comes more deterministic as the algorithm homes in on a                            ing it converges) will interact with actor updates.
+                   goodstrategy. Unfortunately this makes the stochastic pol-
+                   icy gradient harder to estimate, because the policy gradient                       7. Conclusion
+                   ∇θπθ(a|s) changes more rapidly near the mean. Indeed,                              We have presented a framework for deterministic policy
+                   the variance of the stochastic policy gradient for a Gaus-                         gradient algorithms.           These gradients can be estimated
+                   sian policy N(µ,σ2) is proportional to 1/σ2 (Zhao et al.,                          moreefﬁcientlythantheirstochasticcounterparts, avoiding
+                   2012), which grows to inﬁnity as the policy becomes deter-                         a problematic integral over the action space. In practice,
+                   ministic. This problem is compounded in high dimensions,                           the deterministic actor-critic signiﬁcantly outperformed its
+                   as illustrated by the continuous bandit task. The stochas-                         stochastic counterpart by several orders of magnitude in a
+                   tic actor-critic estimates the stochastic policy gradient in
+                   Equation 2. The inner integral, RA ∇θπθ(a|s)Qπ(s,a)da,                             bandit with 50 continuous action dimensions, and solved a
+                   is computed by sampling a high dimensional action space.                           challenging reinforcement learning problem with 20 con-
+                   In contrast, the deterministic policy gradient can be com-                         tinuous action dimensions and 50 state dimensions.
+                   puted immediately in closed form.                                                  Acknowledgements
+                   One may view our deterministic actor-critic as analogous,                          This work was supported by the European Community Seventh
+                   in a policy gradient context, to Q-learning (
+                                                                                Watkins and           Framework Programme (FP7/2007-2013) under grant agreement
+                   Dayan, 1992). Q-learning learns a deterministic greedy                             270327 (CompLACS), the Gatsby Charitable Foundation, the
+                   policy, off-policy, while executing a noisy version of the                         Royal Society, the ANR MACSi project, INRIA Bordeaux Sud-
+                       3Recall that the compatibility criteria apply to any differen-                 Ouest, Mesocentre de Calcul Intensif Aquitain, and the French
+                   tiable baseline, including non-linear state-value functions.                       National Grid Infrastructure via France Grille.
+                       4http://www0.cs.ucl.ac.uk/staff/D.Silver/
+                   web/Applications.html
+                                                         Deterministic Policy Gradient Algorithms
+               References                                                      Sutton, R. S., McAllester, D. A., Singh, S. P., and Man-
+               Bagnell, J. A. D. and Schneider, J. (2003). Covariant policy       sour, Y. (1999). Policy gradient methods for reinforce-
+                 search. In Proceeding of the International Joint Confer-         ment learning with function approximation. In Neural
+                 ence on Artiﬁcal Intelligence.                                   Information Processing Systems 12, pages 1057–1063.
+               Bhatnagar, S., Sutton, R. S., Ghavamzadeh, M., and Lee,         Sutton, R. S., Singh, S. P., and McAllester, D. A.
+                 M. (2007). Incremental natural actor-critic algorithms.          (2000).       Comparing policy-gradient       algorithms.
+                 In Neural Information Processing Systems 21.                     http://webdocs.cs.ualberta.ca/       sutton/papers/SSM-
+                                                                                  unpublished.pdf.
+               Degris, T., Pilarski, P. M., and Sutton, R. S. (2012a).
+                 Model-free reinforcement learning with continuous ac-         Toussaint, M. (2012).     Some notes on gradient descent.
+                 tion in practice. In American Control Conference.                http://ipvs.informatik.uni-stuttgart.
+                                                                                  de/mlr/marc/notes/gradientDescent.pdf.
+               Degris, T., White, M., and Sutton, R. S. (2012b). Linear        Watkins, C. and Dayan, P. (1992). Q-learning. Machine
+                 off-policy actor-critic. In 29th International Conference        Learning, 8(3):279–292.
+                 onMachineLearning.
+                              ´                                                Werbos, P. J. (1990). A menu of designs for reinforcement
+               Engel, Y., Szabo, P., and Volkinshtein, D. (2005). Learning        learningovertime. InNeuralnetworksforcontrol,pages
+                 to control an octopus arm with gaussian process tempo-           67–95. Bradford.
+                 ral difference methods. In Neural Information Process-
+                 ing Systems 18.                                               Williams, R. J. (1992).        Simple statistical gradient-
+               Hafner, R. and Riedmiller, M. (2011).        Reinforcement         following algorithms for connectionist reinforcement
+                 learning in feedback control. Machine Learning, 84(1-            learning. Machine Learning, 8:229–256.
+                 2):137–169.                                                   Zhao, T., Hachiya, H., Niu, G., and Sugiyama, M. (2012).
+               Heess, N., Silver, D., and Teh, Y. (2012). Actor-critic rein-      Analysisandimprovementofpolicygradientestimation.
+                 forcement learning with energy-based policies. JMLR              Neural Networks, 26:118–129.
+                 Workshop and Conference Proceedings: EWRL 2012,
+                 24:43–58.
+               Kakade, S. (2001). A natural policy gradient. In Neural
+                 Information Processing Systems 14, pages 1531–1538.
+               Lagoudakis, M. G. and Parr, R. (2003). Least-squares pol-
+                 icy iteration.  Journal of Machine Learning Research,
+                 4:1107–1149.
+                                      ´
+               Maei, H. R., Szepesvari, C., Bhatnagar, S., and Sutton,
+                 R. S. (2010). Toward off-policy learning control with
+                 function approximation. In 27th International Confer-
+                 ence on Machine Learning, pages 719–726.
+               Peters, J. (2010). Policy gradient methods. Scholarpedia,
+                 5(11):3698.
+               Peters, J., Vijayakumar, S., and Schaal, S. (2005). Natural
+                 actor-critic. In 16th European Conference on Machine
+                 Learning, pages 280–291.
+               Sutton, R. and Barto, A. (1998). Reinforcement Learning:
+                 anIntroduction. MIT Press.
+               Sutton, R. S., Maei, H. R., Precup, D., Bhatnagar, S., Sil-
+                                  ´
+                 ver, D., Szepesvari, C., and Wiewiora, E. (2009). Fast
+                 gradient-descent methods for temporal-difference learn-
+                 ing with linear function approximation. In 26th Interna-
+                 tional Conference on Machine Learning, page 125.

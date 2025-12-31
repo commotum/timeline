@@ -1,0 +1,44 @@
+                      BENGIO,DUCHARME,VINCENTANDJAUVIN
+           Running the model (both training and testing) on a parallel computer is a way to reduce compu-
+          tation time. We have explored parallelization on two types of platforms: shared-memory processor
+          machines and Linux clusters with a fast network.
+          3.1 Data-Parallel Processing
+          In the case of a shared-memory processor, parallelization is easily achieved, thanks to the very low
+          communication overhead between processors, through the shared memory. In that case we have
+          chosen a data-parallel implementation in which each processor works on a different subset of
+          the data. Each processor computes the gradient for its examples, and performs stochastic gradient
+          updates on the parameters of the model, which are simply stored in a shared-memory area. Our
+          ﬁrst implementation was extremely slow and relied on synchronization commands to make sure
+          that each processor would not write at the same time as another one in one of the above parameter
+          subsets. Most of the cycles of each processor were spent waiting for another processor to release a
+          lock on the write access to the parameters.
+           Instead we have chosen an asynchronous implementation where each processor can write at
+          any time in the shared-memory area. Sometimes, part of an update on the parameter vector by one
+          of the processors is lost, being overwritten by the update of another processor, and this introduces
+          a bit of noise in the parameter updates. However, this noise seems to be very small and did not
+          apparently slow down training.
+           Unfortunately, large shared-memory parallel computers are very expensive and their processor
+          speed tends to lag behind mainstream CPUs that can be connected in clusters. We have thus been
+          able to obtain much faster training on fast network clusters.
+          3.2 Parameter-Parallel Processing
+          If the parallel computer is a network of CPUs, we generally can’t afford to frequently exchange
+          all the parameters among the processors, because that represents tens of megabytes (almost 100
+          megabytes in the case of our largest network), which would take too much time through a local
+          network. Instead we have chosen to parallelize across the parameters, in particular the parame-
+          ters of the output units, because that is where the vast majority of the computation is taking place,
+          in our architecture. Each CPU is responsible for the computation of the unnormalized probability
+          for a subset of the outputs, and performs the updates for the corresponding output unit parame-
+          ters (weights going into that unit). This strategy allowed us to perform a parallelized stochastic
+          gradient ascent with a negligible communication overhead. The CPUs essentially need to commu-
+          nicate two informations: (1) the normalization factor of the output softmax, and (2) the gradients
+          on the hidden layer (denoted a below) and word feature layer (denoted x). All the CPUs duplicate
+          the computations that precede the computation of the output units activations, i.e., the selection of
+          word features and the computation of the hidden layer activation a, as well as the corresponding
+          back-propagation and update steps. However, these computations are a negligible part of the total
+          computation for our networks.
+           For example, consider the following architecture used in the experiments on the AP (Associated
+          Press) newsdata: the vocabulary sizeis |V|=17,964, thenumber ofhidden unitsish=60, theorder
+          of the model is n=6, the number of word features is m=100. Thetotal number ofnumerical opera-
+          tions to process a single training example is approximately |V|(1+nm+h)+h(1+nm)+nm(where
+          the terms correspond respectively to the computations of the output units, hidden units, and word
+                              1144

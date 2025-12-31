@@ -1,0 +1,53 @@
+             A. Object Detection Baselines                                   8 images (i.e., 1 per GPU) and the Fast R-CNN step has a
+                In this section we introduce our detection method based      mini-batch size of 16 images. The RPN step and Fast R-
+             on the baseline Faster R-CNN [32] system. The models are        CNNstepare both trained for 240k iterations with a learn-
+             initialized by the ImageNet classiﬁcation models, and then      ing rate of 0.001 and then for 80k iterations with 0.0001.
+             ﬁne-tuned on the object detection data. We have experi-            Table 8 shows the results on the MS COCO validation
+             mented with ResNet-50/101 at the time of the ILSVRC &           set. ResNet-101 has a 6% increase of mAP@[.5, .95] over
+             COCO2015detectioncompetitions.                                  VGG-16,whichisa28%relativeimprovement,solelycon-
+                Unlike VGG-16 used in [32], our ResNet has no hidden         tributed by the features learned by the better network. Re-
+             fc layers. We adopt the idea of “Networks on Conv fea-          markably, the mAP@[.5, .95]’s absolute increase (6.0%) is
+             ture maps” (NoC) [33] to address this issue. We compute         nearly as big as mAP@.5’s (6.9%). This suggests that a
+             the full-image shared conv feature maps using those lay-        deeper network can improve both recognition and localiza-
+             ers whose strides on the image are no greater than 16 pixels    tion.
+             (i.e., conv1, conv2 x, conv3 x, andconv4 x, totally91conv       B. Object Detection Improvements
+             layers in ResNet-101; Table 1). We consider these layers as
+             analogous to the 13 conv layers in VGG-16, and by doing            For completeness, we report the improvements made for
+             so, both ResNet and VGG-16haveconvfeaturemapsofthe              the competitions. These improvements are based on deep
+             same total stride (16 pixels). These layers are shared by a     features and thus should beneﬁt from residual learning.
+             region proposal network (RPN, generating 300 proposals)
+             [32] and a Fast R-CNN detection network [7]. RoI pool-          MSCOCO
+             ing [7] is performed before conv5 1. On this RoI-pooled         Boxreﬁnement. Our box reﬁnement partially follows the it-
+             feature, all layers of conv5 x and up are adopted for each      erative localization in [6]. In Faster R-CNN, the ﬁnal output
+             region, playing the roles of VGG-16’s fc layers. The ﬁnal       is a regressed box that is different from its proposal box. So
+             classiﬁcation layer is replaced by two sibling layers (classi-  for inference, we pool a new feature from the regressed box
+             ﬁcation and box regression [7]).                                and obtain a new classiﬁcation score and a new regressed
+                For the usage of BN layers, after pre-training, we com-      box. We combine these 300 new predictions with the orig-
+             pute the BN statistics (means and variances) for each layer     inal 300 predictions. Non-maximum suppression (NMS) is
+             on the ImageNet training set. Then the BN layers are ﬁxed       applied on the union set of predicted boxes using an IoU
+             during ﬁne-tuning for object detection. As such, the BN         threshold of 0.3 [8], followed by box voting [6]. Box re-
+             layers become linear activations with constant offsets and      ﬁnementimproves mAPbyabout2points(Table9).
+             scales, and BN statistics are not updated by ﬁne-tuning. We     Global context.  We combine global context in the Fast
+             ﬁxtheBNlayersmainlyforreducingmemoryconsumption                 R-CNN step. Given the full-image conv feature map, we
+             in Faster R-CNN training.                                       pool a feature by global Spatial Pyramid Pooling [12] (with
+             PASCALVOC                                                       a “single-level” pyramid) which can be implemented as
+                Following [7, 32], for the PASCAL VOC 2007 test set,         “RoI” pooling using the entire image’s bounding box as the
+             weusethe 5k trainval images in VOC 2007 and 16k train-          RoI. This pooled feature is fed into the post-RoI layers to
+             val images in VOC 2012 for training (“07+12”). For the          obtain a global context feature. This global feature is con-
+             PASCAL VOC 2012 test set, we use the 10k trainval+test          catenated with the original per-region feature, followed by
+             imagesinVOC2007and16ktrainvalimagesinVOC2012                    the sibling classiﬁcation and box regression layers. This
+             for training (“07++12”). The hyper-parameters for train-        new structure is trained end-to-end.   Global context im-
+             ing Faster R-CNN are the same as in [32]. Table 7 shows         proves mAP@.5byabout1point(Table9).
+             the results. ResNet-101 improves the mAP by >3% over            Multi-scale testing. In the above, all results are obtained by
+             VGG-16. This gain is solely because of the improved fea-        single-scale training/testing as in [32], where the image’s
+             tures learned by ResNet.                                        shorter side is s = 600 pixels. Multi-scale training/testing
+             MSCOCO                                                          has been developed in [12, 7] by selecting a scale from a
+                The MS COCO dataset [26] involves 80 object cate-            feature pyramid, and in [33] by using maxout layers. In
+             gories. We evaluate the PASCAL VOC metric (mAP @                our current implementation, we have performed multi-scale
+             IoU = 0.5) and the standard COCO metric (mAP @ IoU =            testing following [33]; we have not performed multi-scale
+             .5:.05:.95). We use the 80k images on the train set for train-  training because of limited time. In addition, we have per-
+             ing and the 40k images on the val set for evaluation. Our       formed multi-scale testing only for the Fast R-CNN step
+             detection system for COCO is similar to that for PASCAL         (but not yet for the RPN step). With a trained model, we
+             VOC. We train the COCO models with an 8-GPU imple-              computeconvfeaturemapsonanimagepyramid,wherethe
+             mentation, and thus the RPN step has a mini-batch size of       image’s shorter sides are s ∈ {200,400,600,800,1000}.
+                                                                         10

@@ -1,0 +1,602 @@
+                      A large-scale benchmark for few-shot program induction and synthesis 
+                                    *1                             *1                  1                 1                             1 
+                      Ferran Alet       Javier Lopez-Contreras         James Koppel  Maxwell Nye  Armando Solar-Lezama 
+                                                               1                          1                           1 
+                                       Tomás Lozano-Pérez  Leslie Pack Kaelbling  Joshua B. Tenenbaum 
+                                        Abstract 
+                    A landmark challenge for AI is to learn fexible, 
+                    powerful representations from small numbers of 
+                    examples.  On an important class of tasks, hy-
+                    potheses in the form of programs provide ex-
+                    treme generalization capabilities from surpris-
+                    ingly few examples. However, whereas large real 
+                    image benchmarks have spurred progress in meta-
+                    learning for deep networks, there is no compa-
+                    rably big, real program-synthesis dataset.  This 
+                    is because, while images are relatively easy to 
+                    label from internet meta-data or annotated by non-
+                    experts, generating meaningful input-output tests 
+                    for program induction has proven hard to scale. 
+                    In this work, we propose a new way of leverag-
+                    ing a collection of programs with associated unit 
+                    tests to create a much larger collection of test-
+                    program pairs.  We do so by extracting subpro-
+                    grams of each program and using the inputs of the 
+                    overall program to get tests for each subprogram.            Figure 1. Extracting interesting subprograms from the Sieve of 
+                    This allows us to create PROGRES, a large-scale              Erathostenes.  Some subprograms, like j  =  max (p, dn/pe) p, 
+                    few-shot program-induction benchmark of real                 are byproducts that are not directly used by the overall program, 
+                    programs and propose new challenges in this do-              but still implement purposeful functions. Line sub-sequences that 
+                    main.  We analyze the effect of multiple design              break the nesting structure result in invalid subprograms. 
+                    choices on transformer-based program induction 
+                    and synthesis algorithms, pointing to shortcom-
+                    ings of current methods and suggesting multiple 
+                    avenues for future work. 
+               1. Introduction 
+               Note:  since the camera-ready, we have made a fnal ver-
+               sion  of  the  dataset  with  more  programs  and  increased 
+               diversity.  The dataset description is the same, but met-
+               rics  and statistics change,  and get more detailed.  You 
+               can fnd it the updated PDF and materials at:  https: 
+               //lis.csail.mit.edu/progres.                                      Figure 2. Example of a task corresponding to the fltering subpro-
+                  *                   1                                          gram in fgure 1. The text context describes the overall program in 
+                   Equal contribution  Massachusetts Institute of Technology,    which the subprogram is embedded. The C++ function provides 
+               Cambridge Massachusetts, USA. Correspondence to: Ferran Alet      a possible implementation. Even though we standardize variable 
+               <alet@mit.edu>, Javier Lopez-Contreras <javierlc@mit.edu>.        names, there are still alternative implementations, such as using 
+               Proceedings of the    th                                          while instead of for. The Program Expression Graph (only a
+                                  38    International Conference on Machine      portion shown) provides a more canonical notation. 
+               Learning, PMLR 139, 2021. Copyright 2021 by the author(s). 
+                                                   Large-scale few-shot program induction and synthesis 
+               1.1. Motivation                                                  In a program induction task, input-output examples have 
+               One of the distinctive abilities of human intelligence is        to satisfy two more properties beyond satisfying the pro-
+               building fexible representations from small amounts of           gram’s pre-conditions. First, in the same way distribution 
+               data (Lake et al., 2015). Neural networks provide power-         shift between training and test data affects performance in 
+               ful representations, but require substantial amounts of data     a single-task, meta-training examples have to come from 
+               to train.  To alleviate these needs, a set of few-shot learn-    the same distribution as meta-test examples. Therefore, if 
+               ing challenges has catalyzed progress into building deep         we want our algorithms to generalize at deployment-time, 
+               meta-learning systems. These systems generalize from few         they have to be meta-trained on real, non-random input-
+               examples by learning powerful priors on large amounts of         output examples to avoid such a (meta-)domain shift. More-
+               previous tasks (Hospedales et al., 2020).                        over, for each program, the overall set of input-output tests 
+                                                                                must probe potential edge cases to distinguish the desired 
+               Programs often provide extreme generalization capabilities       program from possible alternatives, both for specifcation 
+               from surprisingly few examples, such as generalizing to          (training examples) and validation(testing) purposes.  In 
+               larger arrays or numbers outside the training range. How-        PROGRES input-output examples come from propagating 
+               ever, the combinatorial space of programs has proven hard        unit tests designed by humans; thus, we expect them to be 
+               to search.  Machine learning can then be used to learn to        natural and cover most edge cases. 
+               search more effciently, either by learning to predict (priors 
+               over) programs from examples, or directly learning a pre-        1.2. Generating a large program induction benchmark 
+               dictor that can answer future queries. To train such systems         from a real code-base 
+               we need a dataset of program induction tasks.                    Large repositories of human-generated code are already 
+               A program induction task is a supervised learning task           available, many with accompanying examples designed to 
+               whose input-output examples come from a program. For             probe the possible ways each program could fail.  These 
+               training tasks, we can optionally have access to the cor-        include many internal or open-source code-bases with unit 
+               responding implementation of such program, which en-             tests. Programming competitions are another paradigmatic 
+               ables learning to predict (priors over) programs from ex-        example: programmers compete to code solutions to a set 
+               amples. Sometimes we can also have access to a text de-          of problems, and their solutions are checked on hidden 
+               scribing other relevant context.  In this work, we present       input-output tests. PROGRES builds on programs from the 
+               PROGRES (Programs from Real Executed Subproblems),               competitive programming website codeforces.com. 
+               a large meta-dataset of program induction tasks, enabling        Directly using the programs and their test-cases from the 
+               future methods in few-shot program induction and synthesis.      website as a benchmark has a number of downsides. First, 
+               You can fnd an example of a task in fgure 2.                     programs written by humans are often signifcantly too com-
+               Multiple methods have created large synthetic program in-        plex for current program induction methods to solve. Sec-
+               duction datasets by sampling programs from a Domain Spe-         ond, even though CodeForces has millions of programs, they 
+               cifc Language (DSL) and feeding them random inputs to            only implement ∼ 5, 500 different programming problems. 
+               generate tests.  Because DSLs can generate an unlimited          In this work, we propose to leverage a program with an ac-
+               amount of programs, this method provides an easy way             companying test suite (defning a program induction task) to 
+               of creating large datasets.  This approach may work well         create a series of input-output examples for its subprograms. 
+               for hand-crafted DSLs where the language is highly tuned         Subprograms are subsequences of the overall program that 
+               to a specifc application.  There, a reasonable portion of        express an intermediate variable as a function of previous 
+               valid programs implement sensible functions and shorter          variables. As illustrated in fgure 1, subprograms in a pur-
+               programs tend to be more useful.  In contrast, in general-       poseful program are also likely to be useful. Moreover, by 
+               purpose languages like C++, the subset of interesting and        being shorter and simpler, subprograms provide a useful 
+               meaningful programs is an extremely small fraction of the        learning curriculum. Finally, since subprogram complexity 
+               set of compiling C++ programs. Thus, it is essential to use      ranges from a single line of code to entire programs, they 
+               real programs to learn about this set of interesting programs.   provide a relevant benchmark for both current and future 
+               In addition to real code, having meaningful input-output         program induction methods. 
+               tests has multiple advantages over evaluating random inputs.     In order to generate input-output examples for subprograms, 
+               Many programs have implicit pre-conditions for them to run       we use a program interpreter to propagate the inputs of the 
+               successfully. For instance, if we use an integer to index an     overall program line by line. Then, at each step in the execu-
+               array, it has to be both positive and smaller than the array’s   tion, we capture the value of all the relevant variables. From 
+               length; if a program compares two lists element-wise, the        these execution traces, we derive relevant input-output tests 
+               input lists must have equal length.                              for each subprogram. For more information, see section 3.2. 
+                                                    Large-scale few-shot program induction and synthesis 
+               We generate PROGRES by applying a C++ program inter-              Few-shot program induction and synthesis  Program 
+               preter to programs solving the 5,500 problems from Code-          synthesis (Shaw et al., 1975; Solar-Lezama et al., 2006; 
+               Forces.  This allows us to create a much larger dataset of        Gulwani et al., 2017) aims at generating code that satisfes 
+               more than 200,000 few-shot program-induction tasks of             a set of input-output examples.  Typically, these methods 
+               varying diffculty and style (sec. 3.4).  A careful analysis       are data effcient, often generalizing from few examples. 
+               of baselines (sec. 4.3) shows that there is both an initial       However, the combinatorial space of programs is hard to 
+               promise and a long road ahead in the quest for building           search, often restricting the capacity of the language or the 
+               effective solutions to this problem.                              size of programs.  Machine learning, and deep learning 
+               In summary, our contributions are the following:                  in particular, have been increasingly used to improve the 
+                                                                                 search over programs (Parisotto et al., 2016; Kalyan et al., 
+                 1.  We propose a generic method of building large, real         2018; Brockschmidt et al., 2018; Ellis et al., 2019; Nye et al., 
+                    program induction and synthesis benchmarks.                  2020). In this work, we implement one of these methods, 
+                                                                                 RobustFill (Devlin et al., 2017), as a baseline. We believe 
+                 2.  We provide a new dataset of more than 200, 000 pro-         that the substantial increase in data will facilitate further 
+                    gram induction tasks, with multiple challenges for the       progress in neural searchers. Finally, there have been demos 
+                    program synthesis and few-shot learning communities.         using GPT-3 (Brown et al., 2020) to predict short programs 
+                                                                                 from English descriptions. Inspired by this nascent line of 
+                 3.  We analyse the effect of adding different types of data     research, we modify the LSTM in the original RobustFill by 
+                    from PROGRES to a transformer-based algorithm.               a pretrained transformer (Lewis et al., 2019). 
+               2. Related work                                                   Program induction datasets  There have been multiple 
+               Learning to few-shot learn  meta-learning (Schmidhuber,           few-shot program induction datasets, such as those used in 
+               1987; Bengio et al., 1995; Thrun & Pratt, 1998) aims at learn-    FlashFill (Gulwani, 2011; Gulwani et al., 2015) and Dream-
+               ing priors from many tasks to generalize to a new task from       Coder (Ellis et al., 2020), as well as the Abstract Reasoning 
+               small amounts of data. Most of these methods assume that          Challenge(ARC) (Chollet, 2019), a list functions bench-
+               the input form is constant( (Iwata & Kumagai, 2020) being a       mark (Rule, 2020), or the SyGus competition (Alur et al., 
+               recent exception) and few-shot learning datasets are mainly       2017). Although these benchmarks contain many interesting 
+               image classifcation (Lake et al., 2015; Vinyals et al., 2016;     problems, they have been manually created by humans in-
+               Ren et al., 2018; Antoniou et al., 2020; Chen et al., 2019;       stead of being automatically generated from real programs. 
+               Triantafllou et al., 2019) or low-dimensional continuous          This creates a signifcant bias on the datasets (often being 
+               regression (Finn et al., 2017; Bauza et al., 2019). Moreover,     captured by a relatively simple Domain Specifc Language) 
+               deep learning-based meta-learning algorithms do not typi-         and restricts the amount of tasks to a few hundred tasks. In 
+               cally generalize broadly outside the data distribution, espe-     contrast, our benchmark, PROGRES, contains more than 
+               cially non-optimization-based approaches (Finn, 2018). To         200,000 tasks, two orders of magnitude more.  This will 
+               improve this, more compositional methods to meta-learning         allow neural-based methods, often data-ineffcient, to learn 
+               are increasingly being proposed (Alet et al., 2018; Bengio        to generalize or search in these domains. Larger program 
+               et al., 2019; Ke et al., 2019; Mendez & Eaton, 2020; Ruis         datasets have been shown to be useful to learn to search (Ba-
+               et al., 2020). PROGRES provides a relevant benchmark for          log et al., 2016; Shin et al., 2019).  However, in contrast 
+               these compositional few-shot learning methods.                    to PROGRES, these programs were randomly generated 
+                                                                                 from restricted DSLs, and therefore do not capture the struc-
+               Neural program induction  Neural networks are univer-             ture of real programs. 
+               sal approximators that have delivered great results in a wide 
+               variety of felds.  Motivated by these successes, multiple         Datasets  leveraging  competitive  programming  code 
+               works have applied neural or neuro-symbolic methods to            Data from programming competitions, and codeforces. 
+               latent program induction, where programs are represented          com in particular, has been used before to build several 
+               only implicitly, without any reference to a specifc DSL.          benchmarks.  Zavershynskyi et al. (2018) is probably closest 
+               Many of these approaches propose neural architectures             to our benchmark, combining a mixture of crowd-sourced 
+               inspired by computational modules (Graves et al., 2014;           descriptions of subprograms with input-output examples 
+               Kurach et al., 2015; Reed & De Freitas, 2015; Joulin &            for the entire programs (not subprograms).  Kulal et al. 
+               Mikolov, 2015; Graves et al., 2016; Dong et al., 2019; Li         (2019) improved and standardized the pseudo-code annota-
+               et al., 2020), training weights end-to-end. However, most         tion with line-by-line annotations and learned to translate 
+               of these works aim at learning a single task performed by         from single-line pseudo-code to instruction. While useful, 
+               a program. In contrast, PROGRES measures the ability to           language annotations are hard to scale because they have 
+               learn new tasks from few examples.                                to be crowd-sourced and require expertise. Moreover, they 
+                                                  Large-scale few-shot program induction and synthesis 
+               sidestep the major diffculty of program induction, as using       2.  20 pairs of input-outputs examples, 10 for training and 
+               a line-by-line description of the program in English reduces         10 for test, 
+               the inference to a translation problem. Codeforces has also       3.  a C++ function that solves these pairs, optionally with 
+               been used to build program repair tools. Tan et al. (2017)           variable names already standardized, 
+               build a dataset of small fxes by leveraging consecutive sub-
+               missions from users fxing their mistakes and  Kulal et al.        4.  a natural text describing the overall program the task 
+               (2019) learn to fx compile errors by synthetically perturbing        has been extracted from, 
+               correct programs and observing the compiler message. 
+                                                                                 5.  a Program Expression Graph form that further standard-
+               3. Description of the PROGRES dataset                                izes the C++ code (see subsec 3.3 for more details). 
+               We  call  our  dataset  PROGRES:  Programs  from  Real          Figure 2 shows an illustration for a single task. 
+               Executed Subproblems.                                           3.2. Implementation and design decisions 
+               3.1. Structure of the dataset                                    In this section we provide an overview of how we obtained 
+               In competitive programming there are regularly-scheduled        the data contained in PROGRES. The goal is to provide a 
+               contests, each with multiple new problems for humans to         better understanding on the data distribution, explaining how 
+               solve by coding their solutions as programs.  Each Code-        we computed the input-output examples as well as some lim-
+               Forces problem consists of a short text describing a back-      itations of our pipeline, which effectively constrain the pro-
+               story and the requirements for the program, as well as multi-   grams in our dataset to be in a (large) subset of C++. We ob-
+               ple test-cases (some public, some private) that the submitted   tain the original C++ programs from codeforces.com, 
+               program has to satisfy.  Because all user submissions are       leveraging the scraping and standarization done by SPoC 
+               public, for each problem there are hundreds of available        and DrRepair (Kulal et al., 2019; Yasunaga & Liang, 2020). 
+               programs that solve it, providing us with multiple pairs of     Since this scraping only contained simple programs solving 
+               (program, test suite) such that the entire program satisfes     very easy problems, we performed an additional scraping 
+               the test-cases. For each program we can obtain many sub-        to capture problems of all diffculties.  We obtain around 
+               programs: valid segments of code contained in the original      300,000 programs; however, since C++ is a compiled lan-
+               program, expressing an intermediate variable as a function      guage, it is not meant to be run line-by-line, which we 
+               of other variables.  To be valid, a subprogram has to be        need to do to obtain the subprograms. This process imposes 
+               correctly parenthesised: start and end at the same level of     some constraints, which restrict us to a subset of C++, which 
+               nesting and never go to a level above where it started in the   around 60,000 of the scraped programs satisfy. The most rel-
+               indentation nesting. For a correct subsequence of the overall   evant exclusions are classes, the queue and stack data-
+               program, we defne potential outputs as the variables modi-      structures, and the instructions break and continue. To 
+               fed on the last line and as inputs all the variables involved   effciently evaluate these programs we leveraged the MIT 
+               in the computations on that sequence that are not created       supercloud (Reuther et al., 2018), parallelizing program 
+               within the subprogram itself.                                   evaluations over 4800 CPU cores. 
+               Given a subprogram, we can generate the data for a single       To interpret C++ we use the Cling C++ interpreter (Vassilev 
+               task; consisting of 20 input-output pairs (10 training, 10      et al.). Cling performs an elaborate incremental just-in-time 
+               test). We obtain these pairs by running the entire program      compilation that keeps modifying the abstract syntax tree 
+               with a custom-made C++ interpreter based on Cling (Vas-         before executing the new line of code.  This allows us to 
+               silev et al.)(more details in section 3.2) and observing the    execute pieces of code and check the values of variables in 
+               intermediate values at every line. Note that the input distri-  between. Since these pieces of code have to be compiled, 
+               bution has a rich structure, as it comes from inputs designed   they have to be self-contained: functions have to be defned 
+               by humans after being processed by previous computations        entirely before being fed to Cling and loops and if statements 
+               in the overall program. Moreover, we also have access to        have to be given as a block. This would restrict the type of 
+               the natural text description of the overall program.  This      subprograms that we can obtain with vanilla Cling, since 
+               text alone does not specify the subprogram, but serves as a     we would not be able inspect the intermediate values within 
+               context to help guide the search.                               loops or functions. 
+               In PROGRES, a task consists of the following information:       We therefore implemented our own emulator on top of Cling 
+                                                                               to be able to obtain intermediate values for loops and if state-
+                                                                               ments. Instead of feeding the entire if/while statement 
+                 1.  a  type  signature  describing  the  variable  types      to Cling, the emulator frst sends its condition and then calls 
+                    (int,string,int[],etc) of all inputs and outputs,          the appropriate code depending on whether the condition 
+                                                    Large-scale few-shot program induction and synthesis 
+                                                        CONCODE         NAPS      SPoC     ARC  DreamCoder  SyGUS  PROGRES 
+                       Programming language                 Java        UAST       C++       -         DSL          DSL         C++ 
+                       Number of programs                2,184,310      17,477    18,356     -          215         829       274,612 
+                       Lines per program                    4.4          21.7      14.7      -         14.1         20.0         3.3 
+                       Additional input                documentation     –pseudocode–        -           -            -        context 
+                       Number of induction tasks              -           485      784     1000         215         829       274,612 
+                       Number of test cases (average)         -           7.5      38.6     4.3        15.0         100.0       235.1 
+               Table 1. Comparison of PROGRESto other program-based datasets. Some datasets like CONCODE (Iyer et al., 2018), contain lots of 
+               programs, but no tests for these programs. NAPS and SPoC, both based on CodeForces, have as many induction tasks as CodeForces 
+               problems (not subproblems); it is worth noting, however, that they focus on going from pseudo-code to code, a more relevant description 
+               than our context. Both ARC and DreamCoder have program induction tasks manually designed by humans, thus restricting their size. For 
+               DreamCoder we estimated the numbers using the dataset of list functions, the dataset of towers and the dataset of physical equations. For 
+               SyGus, we estimated the number of tasks looking at the largest competition in 2019 and the statistics on the programs described in Alur 
+               et al. (2013). Finally, note that even though we standardize the programs to have 20 tests (10 train,10 test), we often have access to many 
+               more, with an average of 235. 
+               was satisfed or not. Note that these if/while conditionals        ing equivalence of programs that exhibit undefned behavior, 
+               are often interesting quantities, and we also include them        as the C standard states e.g.: a program with integer overfow 
+               as tasks, even though there is no explicit boolean variable       may exhibit any behavior. We hence use I/O equivalence, 
+               created in the original program.                                  also called machine equivalence, where two programs are 
+               We store these line by line executions for each input set to      equivalent if they have the same outputs for all inputs (on a 
+               the overall program. These fles can then be parsed to gen-        specifc machine). 
+               erate the tests for each subprogram. To keep the dataset to a     Slicing  when we extract a contiguous set of instructions 
+               reasonable size and avoid very long inputs, we capped the         from the overall program, not all lines will affect the output 
+               execution to 100KB of generated data and skipped programs         value of the intermediate variable of interest. We thus clean 
+               generating lines of more than 1KB of data. This avoided           the unnecessary instructions to avoid making programs un-
+               long programs of many executions and arrays of tens of            necessarily long and redundant; a process called slicing (Xu 
+               thousands of integers, which are hard to process by most          et al., 2005; Tsantalis & Chatzigeorgiou, 2009). To slice, 
+               ML methods and expensive to store for a dataset.                  we try removing lines from the bottom to the top, as well as 
+               3.3. Finding equivalent programs                                  entire code blocks. If the code without those lines or code 
+                                                                                 blocks still passes the test-cases, we remove them and keep 
+                There are two type of equivalences in our dataset construc-      iterating until we cannot remove any more code. Going from 
+               tion: subprogram equivalence implies the two implement            the bottom to the top allows us to remove pairs of redundant 
+               the same function; program induction task equivalence im-         instructions where the bottom one depends on the top one. 
+               plies that their programs are equivalent and they happen in 
+               the same context (in our case, defned by the text represent-      Slicing and fnding classes of equivalent tasks  We frst 
+               ing the overall problem). This difference is important, as in     partition tasks by CodeForces problem, since these will have 
+               programming we often have to recognize the possibility of         different text context, as well as different input-output pairs. 
+               reusing a known pattern in a new circumstance.                    To detect equivalent tasks within each CodeForces problem, 
+                                                                                 we run the following steps: 
+               Defning Program Equivalence  The same function can                  1.  We slice every program independently and standardize 
+               be  implemented  by  many  different  programs.  As  the                the variables. 
+               fnal step in the dataset construction,  we identify such            2.  We join programs that have the same implementation. 
+               equivalence-classes of functions using a mixture of test-
+               ing and theorem-proving. Programming language theorists             3.  We mark programs that pass each other test-cases as 
+               have defned many notions of program equivalence. A clas-                potentially equivalent. This is an overapproximation 
+               sic one, sometimes called “semantic equivalence," deems                 of the true equivalence relation. 
+               two programs equivalent if they have the same preconditions         4.  We then cluster these candidates into programs proven 
+               and, for all inputs satisfying these preconditions, they can            actually equivalent by using Yogo (Premtoon et al., 
+               be proved to have the same output.                                      2020), a tool based on equality saturation (Tate et al., 
+               Implementing this in an automated checker is a non-starter:             2009; Nelson & Oppen, 1980). This refnes the candi-
+               the intended precondition of any subprogram is unknowable               date sets into an underapproximation of the true equiv-
+               from the code alone. Further, this defnition disallows prov-            alence relation. 
+                                                     Large-scale few-shot program induction and synthesis 
+               The upshot of the consecutive overapproximating and un-
+                derapproximating phases is an excellent approximation to 
+                the true equivalence relation, which is undecidable. Using 
+                tests we can prove that two programs are not equivalent, 
+                but not the opposite.  Using Yogo we can prove they are 
+                equivalent, but not the opposite. This leaves only a small 
+                set of ambiguous relations. 
+               The rest of this section summarizes Yogo and how it proves 
+                programs equivalent. 
+                Equality Saturation and E-PEGs  An expression such 
+                as x < y and  y < z can be rewritten into many equiva-
+                lent forms using rules such as not(y <= x or  y <= z) 
+                or even the redundant z > y and  y > x and  z > x. 
+                E-graphs (equivalence graphs (Nelson & Oppen, 1980) 
+                are a way to compactly represent the exponential number 
+                of equivalent expressions that can be found by a set of 
+                rewrite rules. From the initial expression Abstract Syntax 
+               Tree(AST), equality saturation is performed, adding each 
+                newly-discovered equivalent expression to the e-graph via 
+                an extension of the union-fnd algorithm.                            Figure 3. Subset of some interesting signatures in our dataset, all 
+                E-graphs are a powerful technique, but have traditionally           with at least 200 tasks. Color indicates the length distribution of 
+                only been applicable to pure, loop-free programs. Program           programs for each signature. Most programs have few inputs and 
+                Expression Graphs (PEGs) (Tate et al., 2009) are a new              output integers or booleans. There are programs doing array and 
+                representation of programs that allows equational reason-           string manipulation, as well as some matrix operations. 
+                ing and build e-graphs on arbitrary imperative programs. 
+                Conceptually, PEGs can be thought of as being constructed           from few variables. There are other signatures that involve 
+                by unrolling loops into an infnite tree, and then compactly         array, matrix and string manipulations, often conditioned on 
+                representing this infnite-but-regular tree as a cycle in the        other variables like integers or individual characters. These 
+                graph.  Equality saturation then yields an e-graph on the           are interesting as they often require to generalize to longer 
+                PEG (or E-PEG), representing an exponentially-large space           computations as well as bigger data structures. 
+                of equivalent programs. This was originally used for com-           Figure 4 shows the diffculty of our tasks along three differ-
+                piler optimization, but Yogo (Premtoon et al., 2020) uses it        ent axis. First, many problems contain either if-statements 
+                for code search — and now also for equivalence-checking.            or loops that require generalizing more than 10 times the 
+                Yogo:  Equivalence Checking from E-PEGs  We cus-                    number of operations needed for training examples. Condi-
+                tomized Yogo to work on our codebase.  Even though it               tional execution (characterized by nesting in C++) is often 
+                originally only handled Java and Python, it is built on the         very hard for program induction techniques.  Our bench-
+                Cubix (Koppel et al., 2018) multi-language infrastructure,          mark contains a wide variability of nesting quantities across 
+                allowing us to add support for a subset of C that captures          different subprograms.Finally, our input and outputs follow 
+                the subset of C++ in PROGRES, after some simple string              a very structured distribution, since they come from real 
+                transformations, e.g.:  changing vector<int>  foo to                examples. For instance, most integers are small (note the 
+                struct  vector  foo.  To check for equivalences be-                 logarithmic y axis), with positive numbers being more com-
+                tween functions, we put them into a single E-PEG, assigning         mon. Moreover, special numbers like 100 and -100 are more 
+                each the same start state. Then, we report two subprograms          common than numbers of similar magnitude. 
+                as equivalent if equality saturation groups their return values     3.5. Accompanying environment 
+                in the same equivalence class. 
+                                                                                    In order to be able to test candidate programs, we include 
+                3.4. Statistical analysis                                           a python interface to our C++ interpreter. The interface is 
+                Figure 3 shows the variability of signatures on our bench-          easy to use and has two different modes: 
+                mark. As expected, the most common signatures involve                 1.  We can run an entire C++ function on a set of inputs by 
+                integer manipulations as well as classifcation problems                  passing the former as a string and the latter as a list of 
+                                                         Large-scale few-shot program induction and synthesis 
+                Figure 4. (Left) We purposely bias the test to generalize to longer computations than those seen for training examples.This plot shows 
+                the ratio of number of maximum number of lines executed for a test input vs maximum number of lines executed for a training input. 
+                Programs without loops, where the ratio is 1, are ommitted.(Center) Depth of indentation execution (nested loops and if statements), 
+                which often signifcantly affects the diffculty of program synthesis. (Right) number of times each integer in [-200,200] appears as an 
+                input or output on a test-case. We can see that they follow a very intuitive distribution, with smaller integers being more popular, positive 
+                numbers being more common than their negative counterparts and a peak at 100 and -100. 
+                      strings. The interface then returns whether the function           us to judge the correctness of equivalent implementations of 
+                      compiled and, if it did, a list of results for each input. In      the same function or implicit programs, like those described 
+                      case of a runtime error or a timeout, it returns "Runtime          by neural networks.  More concretely, for each task, we 
+                      error" or "Timeout" respectively.  This is useful for              give the method all 10 training examples and evaluate its 
+                      approaches that use the environment as a black-box                 performance on the 10 test examples, only counting exact 
+                      without interacting with individual instructions.                  answers. We can then measure the example accuracy (the 
+                   2.  In contrast to traditional C++, we can run a program              fraction of correctly-solved test-cases across all meta-test 
+                      line by line and return the appropriate variables with             tasks), and task accuracy (the fraction of tasks with all of 
+                      new values. This mode is restricted to our subset of               their 10 test examples correctly predicted).  Note that, al-
+                      C++ (that all programs in PROGRESbelong to), but                   though both measures are related, a method may have higher 
+                      it is useful for methods that use partial executions to            task accuracy than another, while having lower example ac-
+                      guide synthesis (Ellis et al., 2019).                              curacy. As described in previous work (Devlin et al., 2017), 
+                                                                                         having a high example accuracy is more desirable when 
+                                                                                         we are using the method on a per-example basis (like an 
+                4. Benchmark                                                             auto-suggest tool) whereas task accuracy is more important 
+                4.1. Evaluation protocol                                                 in cases where we would like the induced program to make 
+                                                                                         an indeterminate number of predictions without having to 
+                Our goal is to generalize to relevant subprograms from un-               check all of them. 
+                seen programming contests. Therefore, we choose to divide 
+                between meta-train, meta-validation and meta-test at the                 4.2. Baselines 
+                level of contests: training takes contests <1000, validation             We evaluate multiple baselines, all based on the same core 
+                between 1000 and 1249 and testing more than 1250. Some                   architecture (a large-scale language model), in order to bet-
+                subprograms (especially short ones like "return v0+1") are               ter understand their differences. 
+                repeated multiple times. If in a single problem (thus shar-
+                ing the context text and often the same input-output pairs)              Fine-tuning a pre-trained language model to generate 
+                there are multiple copies of the same subprogram, we merge               code  from  examples  Inspired  by  the  RobustFill  pro-
+                them into a single task, pooling their input-output examples.            gram synthesis model (Devlin et al., 2017) and recent 
+                Note that the same subprogram can be in different problems.              advances in language model pre-training, we build a neural 
+                However, they will not be the same task, because both the                program synthesis baseline.  Our aim was to determine 
+                input-output pairs and the context text will differ. Intuitively,        how well a state-of-the-art sequence-to-sequence neural 
+                new programming tasks may require us to implement code                   program synthesis model could perform on our dataset. 
+                we have seen before (like adding up all the elements in an               We  used  the  BART  (Lewis  et  al.,  2019)  pre-trained 
+                array), but in a different context.                                      transformer  model  as  a  base,  and  fne-tuned  it  on  our 
+                To judge the performance of a program for a single task, we              dataset to output programs.  The model takes as input 
+                evaluate its performance on unseen test cases. This allows               the function header (which describes the type signature), 
+                                                              Large-scale few-shot program induction and synthesis 
+                  as  well  as  the  support  set  examples  arranged  sequen-
+                  tially,   i.e.,   [header]  |  [Input1];  [Output1] 
+                  |  [Input2];  [Output2]  |  ...  [Input10]; 
+                  [Output10]. The model is trained to output the program 
+                  body.  At evaluation time, we perform a beam search of 
+                  beam size 10,  and select the program out of those 10 
+                  candidates which performs the best on the support set and 
+                  execute that program on the query set to produce fnal 
+                  predictions for each query example.  Note that executing 
+                  programs on the support set allows us to perform a search 
+                  over  the  possible  candidate  programs,  which  has  been 
+                  shown  to  greatly  increase  the  performance  of  neural                      Figure 5. Dependence of example and task accuracy when only 
+                  program synthesis techniques (Devlin et al., 2017). Figure 5                    evaluating the frst p ∈ [1, 10] programs coming from the beam 
+                  shows how,  in our case,  it  signifcantly  improves  task                      search. Most of the the performance comes from the frst predic-
+                  accuracy. To evaluate all program candidates we only need                       tion, but the rest provides a noticeable boost of more than one third 
+                  to evaluate entire functions, instead interpreting the program                  in relative performance. 
+                  line-by-line. We thus relied on cppyy (Lavrijsen & Dutta,                       less than one may expect. Human experiments in a prelimi-
+                  2016) which provides effcient python-C++ bindings.                              nary version of this dataset indicated that their learning was 
+                  We also test if additionally conditioning on the overall pro-                   also very fast, saturating at 5 examples. This also matches 
+                  gram description text increases performance. In these exper-                    previous human experiments on inferring list-editing pro-
+                  iments, we append the text to the examples.                                     grams (Rule, 2020). Therefore, it appears that there is also 
+                  Transformer-based  end-to-end  prediction  Our  next                            a fundamental search problem, typical in program synthesis, 
+                  baseline, also inspired by Devlin et al. (2017), is a program                   where the task space is exponential. 
+                  induction model.  Using an architecture analogous to the                        Dependence on text context  Adding the text context im-
+                  neural program synthesis model, we use neural models to                         proved performance by a surprisingly high amount: between 
+                  perform neural program induction, i.e., given a training set                    16% relative improvent in example accuracy and 23% in 
+                  of k input-output examples and a single test input, produce                     task accuracy.We did not observe any signifcant correlation 
+                  the corresponding output. Instead of generating the target                      with the type signature, instead producing improvements 
+                  code, the induction model is instead trained to approximate                     across the board.  Further research into more effectively 
+                  the execution of the code directly. Our model is identical                      combining the two modalities of input is a promising area 
+                  to the program synthesis model above, except that the test                      of future work. 
+                  input example is prepended to the context string, and the 
+                  model is trained to produce the target test output.                             4.4. Open challenges 
+                  4.3. Discussion                                                                 The previous section highlights the need for better few-
+                                                                                                  shot program induction and program synthesis methods. 
+                  Comparison between program synthesis and program                                Moreover, this benchmark opens up multiple interesting 
+                  induction  Somewhat surprisingly, in preliminary experi-                        challenges. We highlight a few: 
+                  ments end-to-end program induction performed better than 
+                  predicting the program as an intermediate.  However, the                        Graph  representations  of  programs  although  not 
+                  order changed when we started slicing the programs, which                       explored  in  this  work,  the  inclusion  of  PEGs  in  PRO-
+                  removed superfuous lines of code, making learning to syn-                       GRES  facilitates  the  evaluation  of  Graph  Neural 
+                  thesize easier.  There, the synthesis approach has a great                      Networks (Scarselli et al., 2009; Bronstein et al., 2017; 
+                  advantage, as it can generate the program and let it solve                      Battaglia et al., 2018) for code analysis at scale, an approach 
+                  arbitrarily complex inputs.                                                     that has already shown promise (Li et al., 2019). 
+                  This is specially the case for tasks returning collections                      Open-ended active learning  The ability of asking for 
+                  (arrays, lists, strings, and matrices). This is understandable,                 useful labels would allow a program synthesis method to 
+                  since , for collections, program induction had to generate                      interact with a human, improving the data effciency by 
+                  long stretches of tokens without error, which is very hard to                   actively trying to resolve uncertainties. This topic has been 
+                  do, especially for all inputs.                                                  explored in the past for program induction (Pu et al., 2018), 
+                  Dependence on number of program examples  Perfor-                               but only in selecting from a small number of examples. 
+                  mance consistently improves from 5 to 10 examples, but by                       Since we provide an environment and the true program, we 
+                                                       Large-scale few-shot program induction and synthesis 
+                      Method          Pretrained    Text context     Example accuracy       Task accuracy     Entity task acc.    Collection task acc. 
+                                                                          5-shot/10-shot     5-shot/10-shot     5-shot/10-shot          5-shot/10-shot 
+                                          no           without             0.351 / 0.349      0.107 / 0.107       0.126 / 0.126          0.000 / 0.000 
+                  BART-Robustfll                         with              0.340 / 0.338      0.114 / 0.116       0.135 / 0.137          0.000 / 0.000 
+                     Induction                         without             0.477 / 0.492      0.210 / 0.223       0.248 / 0.263          0.001 / 0.001 
+                                          yes            with              0.504 / 0.521      0.246 / 0.259       0.289 / 0.305          0.010 / 0.010 
+                                          no           without             0.464 / 0.473      0.315 / 0.325       0.526 / 0.538          0.124 / 0.123 
+                  BART-Robustfll                         with              0.510 / 0.516      0.363 / 0.370       0.560 / 0.565          0.240 / 0.249 
+                     Synthesis                         without             0.570 / 0.579      0.420 / 0.429       0.622 / 0.633          0.285 / 0.283 
+                                          yes            with              0.592 / 0.602      0.444 / 0.456       0.645 / 0.655          0.306 / 0.313 
+                Table 2. 
+                        Comparison of the different design choices based on BART-RobustFill. Synthesizing the program instead of directly predicting 
+                the outputs gave the biggest boost. Interestingly, in previous versions of the dataset where the programs were not sliced, induction gave 
+                better results, highlighting the need for clean code examples. Then, using the pretrained weights for the transformer has a very noticeable 
+                positive effect. Having the text context consistently improves performance by a noticeable margin. Finally, going from 5 to 10 examples 
+                gives a small, but positive boost to all methods. Note: since the camera-ready, we have made a fnal version of the dataset with more 
+                programs and diversity. The dataset description is the same, but concrete metrics and statistics change. You can fnd it the updated PDF 
+                and materials at: https://lis.csail.mit.edu/progres. 
+                can use it as an oracle for active learning. However, this has        provide PROGRES, a meta-dataset of more than 200,000 
+                the added challenge (and beneft) of being unconstrained,              tasks based on real programs, of a wide variety of problems 
+                with the model generating its own queries.                            and input-output examples. Evaluations show a wide margin 
+                                                                                      for improvements for current program induction and syn-
+                Leveraging instructive examples and structured inputs                 thesis methods. The scale of data, two orders of magnitude 
+                In classic Machine Learning we assume examples come                   larger than previous work, together with the inclusion of 
+                from randomly sampling the input distribution. Therefore,             text contexts and a custom code interpreter open up many 
+                most training examples lie at the conceptual center of the in-        possible avenues for future research. 
+                put space. In contrast, our examples tend to be extremal, pok-
+                ing at the edge-cases to differentiate the true program from          Acknowledgements 
+                reasonable alternatives. Humans actively use the knowledge            We would like to thank Maria Bauza for her detailed and 
+                that a teacher is giving them instructive examples to update          perceptive comments on the paper drafts and anonymous 
+                their priors more effectively (Shafto et al., 2014). Construct-       reviewer #3 for their thorough, insightful review; both sig-
+                ing algorithms capable of similar inferences is a promising           nifcantly improved our work. We would also like to thank 
+                avenue for future work. Similarly, our inputs tend to pertain         Lauren Milechin and the MIT supercloud team, that allowed 
+                to a class much smaller than that defned by their C++ type.           us to scale the computations required to generate the dataset. 
+                For instance, for many problems, all integer inputs are posi-         We would also like to thank Wim Lavrijsen and Sumith Ku-
+                tive, which makes some implementations easier. Being able             lal for their quick and detailed responses about cppyy and 
+                to infer these conditions in the inputs and exploit them is           SPoC, respectively. Finally, we would like to thank Oriol 
+                something human programmers often do and an avenue for                Vinyals and Charles Sutton for their comments about this 
+                improving the performance of current systems.                         work and Eric Navarro and Marta Alet for their help parsing 
+                                                                                      CodeForces problems. 
+                Leveraging intermediate states for program synthesis                  We gratefully acknowledge support NSF grant 1723381; 
+                Our environment can be run in interactive mode, receiv-               from AFOSR grant FA9550-17-1-0165; from ONR grant 
+                ing individual (or groups of) instructions, and returning             N00014-18-1-2847; from GoodAI, from the Honda Re-
+                the relevant variables that changed value. This facilitates           search Institute, from MIT-IBM Watson Lab; and from 
+                program synthesis that inspects intermediate values to in-            SUTD Temasek Laboratories.  We also acknowledge the 
+                form search, which has been shown to signifcantly boost               MIT SuperCloud and Lincoln Laboratory Supercomputing 
+                performance (Ellis et al., 2019; Nye et al., 2020).                   Center for providing HPC resources that have contributed to 
+                5. Conclusion                                                         the research results reported within this paper. Any opinions, 
+                                                                                      fndings, and conclusions or recommendations expressed in 
+                We have presented a new way of scaling up few-shot pro-               this material are those of the authors and do not necessarily 
+                gram induction and program synthesis benchmarks.  We                  refect the views of our sponsors. 
+                                                   Large-scale few-shot program induction and synthesis 
+               References                                                       Chollet, F. On the measure of intelligence, 2019. 
+               Alet, F., Lozano-Perez, T., and Kaelbling, L. P.  Modular        Devlin, J., Uesato, J., Bhupatiraju, S., Singh, R., Mohamed, 
+                 meta-learning. In Proceedings of The 2nd Conference on            A.-r., and Kohli, P. Robustfll: Neural program learning 
+                 Robot Learning, pp. 856–868, 2018.                                under noisy i/o. In International conference on machine 
+               Alur,  R.,  Bodik,  R.,  Juniwal,  G.,  Martin,  M.  M.,            learning, pp. 990–998. PMLR, 2017. 
+                 Raghothaman,  M.,  Seshia,  S.  A.,  Singh,  R.,  Solar-       Dong, H., Mao, J., Lin, T., Wang, C., Li, L., and Zhou, D. 
+                 Lezama, A., Torlak, E., and Udupa, A.  Syntax-guided              Neural logic machines. arXiv preprint arXiv:1904.11694, 
+                 synthesis. IEEE, 2013.                                            2019. 
+               Alur,  R.,  Fisman,  D.,  Singh,  R.,  and Solar-Lezama,  A. 
+                 Sygus-comp 2017: Results and analysis. arXiv preprint          Ellis, K., Nye, M., Pu, Y., Sosa, F., Tenenbaum, J., and Solar-
+                 arXiv:1711.11438, 2017.                                           Lezama, A.  Write, execute, assess: Program synthesis 
+               Antoniou, A., Patacchiola, M., Ochal, M., and Storkey,              with a repl. arXiv preprint arXiv:1906.04604, 2019. 
+                 A. Defning benchmarks for continual few-shot learning.         Ellis, K., Wong, C., Nye, M., Sable-Meyer, M., Cary, L., 
+                 arXiv preprint arXiv:2004.11967, 2020.                            Morales, L., Hewitt, L., Solar-Lezama, A., and Tenen-
+               Balog, M., Gaunt, A. L., Brockschmidt, M., Nowozin, S.,             baum, J. B. Dreamcoder: Growing generalizable, inter-
+                 and Tarlow, D. Deepcoder: Learning to write programs.             pretable knowledge with wake-sleep bayesian program 
+                 arXiv preprint arXiv:1611.01989, 2016.                            learning. arXiv preprint arXiv:2006.08381, 2020. 
+               Battaglia,  P.  W.,  Hamrick,  J.  B.,  Bapst,  V.,  Sanchez-    Finn,    C.       Learning  to  Learn  with  Gradients. 
+                 Gonzalez, A., Zambaldi, V., Malinowski, M., Tacchetti,            PhD     thesis,    EECS       Department,      University 
+                 A., Raposo, D., Santoro, A., Faulkner, R., et al.  Rela-          of   California,   Berkeley,    Aug  2018.           URL 
+                 tional inductive biases, deep learning, and graph networks.       http://www2.eecs.berkeley.edu/Pubs/ 
+                 arXiv preprint arXiv:1806.01261, 2018.                            TechRpts/2018/EECS-2018-105.html. 
+               Bauza, M., Alet, F., Lin, Y.-C., Lozano-Pérez, T., Kaelbling,    Finn, C., Abbeel, P., and Levine, S. Model-agnostic meta-
+                 L. P., Isola, P., and Rodriguez, A. Omnipush: accurate,           learning for fast adaptation of deep networks.  arXiv 
+                 diverse, real-world dataset of pushing dynamics with rgb-         preprint arXiv:1703.03400, 2017. 
+                 d video. arXiv preprint arXiv:1910.00618, 2019. 
+               Bengio, S., Bengio, Y., and Cloutier, J. On the search for       Graves, A., Wayne, G., and Danihelka, I.  Neural Turing 
+                 new learning rules for anns. Neural Processing Letters, 2         machines. arXiv preprint arXiv:1410.5401, 2014. 
+                 (4):26–30, 1995.                                               Graves, A., Wayne, G., Reynolds, M., Harley, T., Dani-
+                                                                                                              ´
+               Bengio, Y., Deleu, T., Rahaman, N., Ke, R., Lachapelle,             helka, I., Grabska-Barwinska, A., Colmenarejo, S. G., 
+                 S., Bilaniuk, O., Goyal, A., and Pal, C. A meta-transfer          Grefenstette, E., Ramalho, T., Agapiou, J., et al. Hybrid 
+                 objective for learning to disentangle causal mechanisms.          computing using a neural network with dynamic external 
+                 arXiv preprint arXiv:1901.10912, 2019.                            memory. Nature, 538(7626):471, 2016. 
+               Brockschmidt, M., Allamanis, M., Gaunt, A. L., and Polo-         Gulwani, S. Automating string processing in spreadsheets 
+                 zov, O.  Generative code modeling with graphs.  arXiv             using input-output examples. ACM Sigplan Notices, 46 
+                 preprint arXiv:1805.08490, 2018.                                  (1):317–330, 2011. 
+               Bronstein, M. M., Bruna, J., LeCun, Y., Szlam, A., and Van-      Gulwani, S., Hernández-Orallo, J., Kitzelmann, E., Muggle-
+                 dergheynst, P. Geometric deep learning: Going beyond              ton, S. H., Schmid, U., and Zorn, B. Inductive program-
+                 Euclidean data. IEEE Signal Processing Magazine, 34:              ming meets the real world. Communications of the ACM, 
+                 18–42, 2017.                                                      58(11):90–99, 2015. 
+               Brown, T. B., Mann, B., Ryder, N., Subbiah, M., Kaplan,          Gulwani, S., Polozov, O., Singh, R., et al. Program synthesis. 
+                 J., Dhariwal, P., Neelakantan, A., Shyam, P., Sastry, G.,         Foundations and Trends® in Programming Languages, 4 
+                 Askell, A., et al. Language models are few-shot learners.         (1-2):1–119, 2017. 
+                 arXiv preprint arXiv:2005.14165, 2020. 
+               Chen, W.-Y., Liu, Y.-C., Kira, Z., Wang, Y.-C. F., and Huang,    Hospedales, T., Antoniou, A., Micaelli, P., and Storkey, 
+                 J.-B.  A closer look at few-shot classifcation.  arXiv            A.  Meta-learning in neural networks: A survey.  arXiv 
+                 preprint arXiv:1904.04232, 2019.                                  preprint arXiv:2004.05439, 2020. 
+                                                  Large-scale few-shot program induction and synthesis 
+              Iwata, T. and Kumagai, A. Meta-learning from tasks with         Li, Y., Gimeno, F., Kohli, P., and Vinyals, O. Strong general-
+                 heterogeneous attribute spaces. Advances in Neural In-         ization and effciency in neural programs. arXiv preprint 
+                 formation Processing Systems, 33, 2020.                        arXiv:2007.03629, 2020. 
+              Iyer, S., Konstas, I., Cheung, A., and Zettlemoyer, L. Map-     Mendez, J. A. and Eaton, E.  Lifelong learning of com-
+                 ping language to code in programmatic context.  arXiv          positional structures. arXiv preprint arXiv:2007.07732, 
+                 preprint arXiv:1808.09588, 2018.                               2020. 
+              Joulin, A. and Mikolov, T.  Inferring algorithmic patterns      Nelson, G. and Oppen, D. C.  Fast decision procedures 
+                 with stack-augmented recurrent nets.  arXiv preprint           based on congruence closure.  J. ACM, 27(2):356–364, 
+                 arXiv:1503.01007, 2015.                                        1980.  doi: 10.1145/322186.322198.  URL https:// 
+                                                                                doi.org/10.1145/322186.322198. 
+              Kalyan, A., Mohta, A., Polozov, O., Batra, D., Jain, P., and    Nye, M., Pu, Y., Bowers, M., Andreas, J., Tenenbaum, 
+                 Gulwani, S.  Neural-guided deductive search for real-          J. B., and Solar-Lezama, A.  Representing partial pro-
+                 time program synthesis from examples. arXiv preprint           grams with blended abstract semantics.  arXiv preprint 
+                 arXiv:1804.01186, 2018.                                        arXiv:2012.12964, 2020. 
+              Ke, N. R., Bilaniuk, O., Goyal, A., Bauer, S., Larochelle,      Parisotto, E., Mohamed, A.-r., Singh, R., Li, L., Zhou, D., 
+                 H., Schölkopf, B., Mozer, M. C., Pal, C., and Bengio, Y.       and Kohli, P. Neuro-symbolic program synthesis. arXiv 
+                 Learning neural causal models from unknown interven-           preprint arXiv:1611.01855, 2016. 
+                 tions. arXiv preprint arXiv:1910.01075, 2019. 
+              Koppel,  J.,  Premtoon,  V.,  and Solar-Lezama,  A.  One        Premtoon, V., Koppel, J., and Solar-Lezama, A. Semantic 
+                 tool, many languages: Language-parametric transforma-          code search via equational reasoning. In Proceedings of 
+                 tion with incremental parametric syntax.  PACMPL, 2            the 41st ACM SIGPLAN International Conference on Pro-
+                 (OOPSLA):122:1–122:28, 2018. doi: 10.1145/3276492.             gramming Language Design and Implementation, PLDI 
+                 URL https://doi.org/10.1145/3276492.                           2020, London, UK, June 15-20, 2020, pp. 1066–1082, 
+                                                                                2020.  doi:  10.1145/3385412.3386001.  URL https: 
+              Kulal, S., Pasupat, P., Chandra, K., Lee, M., Padon, O.,          //doi.org/10.1145/3385412.3386001. 
+                 Aiken, A., and Liang, P. S.  Spoc:  Search-based pseu-       Pu, Y., Miranda, Z., Solar-Lezama, A., and Kaelbling, L. 
+                 docode to code. In Advances in Neural Information Pro-         Selecting representative examples for program synthesis. 
+                 cessing Systems, pp. 11906–11917, 2019.                        In International Conference on Machine Learning, pp. 
+              Kurach,  K.,  Andrychowicz,  M.,  and  Sutskever,  I.             4161–4170. PMLR, 2018. 
+                 Neural  random-access  machines.         arXiv  preprint     Reed, S. and De Freitas, N. Neural programmer-interpreters. 
+                 arXiv:1511.06392, 2015.                                        arXiv preprint arXiv:1511.06279, 2015. 
+              Lake,  B. M.,  Salakhutdinov,  R.,  and Tenenbaum,  J. B.       Ren, M., Triantafllou, E., Ravi, S., Snell, J., Swersky, 
+                 Human-level concept learning through probabilistic pro-        K., Tenenbaum, J. B., Larochelle, H., and Zemel, R. S. 
+                 gram induction. Science, 350(6266):1332–1338, 2015.            Meta-learning for semi-supervised few-shot classifcation. 
+              Lavrijsen, W. T. and Dutta, A. High-performance python-           arXiv preprint arXiv:1803.00676, 2018. 
+                 c++ bindings with pypy and cling. In 2016 6th Workshop       Reuther, A., Kepner, J., Byun, C., Samsi, S., Arcand, W., Be-
+                 on Python for High-Performance and Scientifc Comput-           stor, D., Bergeron, B., Gadepally, V., Houle, M., Hubbell, 
+                 ing (PyHPC), pp. 27–35. IEEE, 2016.                            M., et al. Interactive supercomputing on 40,000 cores for 
+              Lewis, M., Liu, Y., Goyal, N., Ghazvininejad, M., Mo-             machine learning and data analysis. In 2018 IEEE High 
+                 hamed, A., Levy, O., Stoyanov, V., and Zettlemoyer, L.         Performance extreme Computing Conference (HPEC), pp. 
+                 Bart: Denoising sequence-to-sequence pre-training for          1–6. IEEE, 2018. 
+                 natural language generation, translation, and comprehen-     Ruis, L., Andreas, J., Baroni, M., Bouchacourt, D., and 
+                 sion. arXiv preprint arXiv:1910.13461, 2019.                   Lake, B. M.  A benchmark for systematic generaliza-
+                                                                                tion in grounded language understanding. arXiv preprint 
+              Li, Y., Gu, C., Dullien, T., Vinyals, O., and Kohli, P. Graph     arXiv:2003.05161, 2020. 
+                 matching networks for learning the similarity of graph 
+                 structured objects. In International Conference on Ma-       Rule, J.  The child as hacker:  building more human-like 
+                 chine Learning, pp. 3835–3845. PMLR, 2019.                     models of learning. PhD thesis, MIT, 2020. 
+                                                  Large-scale few-shot program induction and synthesis 
+               Scarselli, F., Gori, M., Tsoi, A. C., Hagenbuchner, M., and     Vassilev, V., Canal, P., Naumann, A., Moneta, L., and Russo, 
+                 Monfardini, G. The graph neural network model. IEEE             P. Cling – the new interactive interpreter for ROOT 6. 
+                 Transactions on Neural Networks, 20(1):61–80, 2009.           Vinyals, O., Blundell, C., Lillicrap, T., Kavukcuoglu, K., 
+               Schmidhuber, J. Evolutionary principles in self-referential       and Wierstra, D. Matching networks for one shot learning. 
+                 learning, or on learning how to learn: the meta-meta-           arXiv preprint arXiv:1606.04080, 2016. 
+                 ... hook.  PhD thesis, Technische Universität München,        Xu, B., Qian, J., Zhang, X., Wu, Z., and Chen, L. A brief 
+                 1987.                                                           survey of program slicing.  ACM SIGSOFT Software 
+               Shafto, P., Goodman, N. D., and Griffths, T. L.  A ratio-         Engineering Notes, 30(2):1–36, 2005. 
+                 nal account of pedagogical reasoning: Teaching by, and        Yasunaga, M. and Liang, P. Graph-based, self-supervised 
+                 learning from, examples. Cognitive psychology, 71:55–           program repair from diagnostic feedback. arXiv preprint 
+                 89, 2014.                                                       arXiv:2005.10636, 2020. 
+               Shaw, D. E., Swartout, W. R., and Green, C. C. Inferring        Zavershynskyi, M., Skidanov, A., and Polosukhin, I. Naps: 
+                 lisp programs from examples. In IJCAI, volume 75, pp.           Natural  program  synthesis  dataset.     arXiv  preprint 
+                 260–267, 1975.                                                  arXiv:1807.03168, 2018. 
+               Shin, R., Kant, N., Gupta, K., Bender, C., Trabucco, B., 
+                 Singh, R., and Song, D.  Synthetic datasets for neural 
+                 program synthesis.  arXiv preprint arXiv:1912.12345, 
+                 2019. 
+               Solar-Lezama, A., Tancau, L., Bodik, R., Seshia, S., and 
+                 Saraswat, V. Combinatorial sketching for fnite programs. 
+                 In Proceedings of the 12th international conference on 
+                 Architectural support for programming languages and 
+                 operating systems, pp. 404–415, 2006. 
+               Tan, S. H., Yi, J., Mechtaev, S., Roychoudhury, A., et al. 
+                 Codefaws: a programming competition benchmark for 
+                 evaluating automated program repair tools.  In 2017 
+                 IEEE/ACM 39th International Conference on Software 
+                 Engineering Companion (ICSE-C), pp. 180–182. IEEE, 
+                 2017. 
+               Tate, R., Stepp, M., Tatlock, Z., and Lerner, S.  Equality 
+                 saturation: a new approach to optimization. In Proceed-
+                 ings of the 36th ACM SIGPLAN-SIGACT Symposium on 
+                 Principles of Programming Languages, POPL 2009, Sa-
+                 vannah, GA, USA, January 21-23, 2009, pp. 264–276, 
+                 2009.  doi:  10.1145/1480881.1480915.  URL https: 
+                 //doi.org/10.1145/1480881.1480915. 
+               Thrun, S. and Pratt, L. Learning to learn. Springer Science 
+                 & Business Media, 1998. 
+               Triantafllou, E., Zhu, T., Dumoulin, V., Lamblin, P., Evci, 
+                 U., Xu, K., Goroshin, R., Gelada, C., Swersky, K., Man-
+                 zagol, P.-A., et al.  Meta-dataset: A dataset of datasets 
+                 for learning to learn from few examples. arXiv preprint 
+                 arXiv:1903.03096, 2019. 
+               Tsantalis, N. and Chatzigeorgiou, A. Identifcation of extract 
+                 method refactoring opportunities. In 2009 13th European 
+                 Conference on Software Maintenance and Reengineering, 
+                 pp. 119–128. IEEE, 2009. 

@@ -1,0 +1,61 @@
+                                       4.1     Implementation details
+                                       Backbone. MaskFormer is compatible with any backbone architecture. In our work we use the stan-
+                                       dard convolution-based ResNet [20] backbones (R50 and R101 with 50 and 101 layers respectively)
+                                       and recently proposed Transformer-based Swin-Transformer [27] backbones. In addition, we use the
+                                       R101cmodel[6]whichreplaces the ﬁrst 7×7 convolution layer of R101 with 3 consecutive 3 × 3
+                                       convolutions and which is popular in the semantic segmentation community [46, 7, 8, 21, 44, 10].
+                                       Pixel decoder. The pixel decoder in Figure 2 can be implemented using any semantic segmentation
+                                       decoder (e.g., [8–10]). Many per-pixel classiﬁcation methods use modules like ASPP [6] or PSP [46]
+                                       to collect and distribute context across locations. The Transformer module attends to all image
+                                       features, collecting global information to generate class predictions. This setup reduces the need
+                                       of the per-pixel module for heavy context aggregation. Therefore, for MaskFormer, we design a
+                                       light-weight pixel decoder based on the popular FPN [24] architecture.
+                                       Following FPN, we 2× upsample the low-resolution feature map in the decoder and sum it with the
+                                       projected feature map of corresponding resolution from the backbone; Projection is done to match
+                                       channel dimensions of the feature maps with a 1 × 1 convolution layer followed by GroupNorm
+                                       (GN)[41]. Next, we fuse the summed features with an additional 3 × 3 convolution layer followed
+                                       byGNandReLUactivation. Werepeatthis process starting with the stride 32 feature map until we
+                                       obtain a ﬁnal feature map of stride 4. Finally, we apply a single 1 × 1 convolution layer to get the
+                                       per-pixel embeddings. All feature maps in the pixel decoder have a dimension of 256 channels.
+                                       Transformer decoder. We use the same Transformer decoder design as DETR [3]. The N query
+                                       embeddings are initialized as zero vectors, and we associate each query with a learnable positional
+                                       encoding. We use 6 Transformer decoder layers with 100 queries by default, and, following DETR,
+                                       we apply the same loss after each decoder. In our experiments we observe that MaskFormer is
+                                       competitive for semantic segmentation with a single decoder layer too, whereas for instance-level
+                                       segmentation multiple layers are necessary to remove duplicates from the ﬁnal predictions.
+                                       Segmentation module. The multi-layer perceptron (MLP) in Figure 2 has 2 hidden layers of 256
+                                       channels to predict the mask embeddings E                         , analogously to the box head in DETR. Both per-pixel
+                                                                                                    mask
+                                       E       and mask E             embeddings have 256 channels.
+                                         pixel                  mask
+                                                                                                                                                                              gt
+                                       Loss weights. We use focal loss [25] and dice loss [30] for our mask loss: L                                                 (m,m ) =
+                                                                gt                            gt                                                               mask
+                                       λ       L      (m,m )+λ L (m,m ),andsetthehyper-parameterstoλ                                                      =20.0andλ                =
+                                         focal   focal                    dice  dice                                                                focal                     dice
+                                       1.0. Following DETR [3], the weight for the “no object” (∅) in the classiﬁcation loss is set to 0.1.
+                                       4.2     Training settings
+                                       Semantic segmentation. We use Detectron2 [42] and follow the commonly used training settings
+                                       for each dataset. More speciﬁcally, we use AdamW [29] and the poly [6] learning rate schedule
+                                                                                      −4                                       −4
+                                       with an initial learning rate of 10                 and a weight decay of 10                 for ResNet [20] backbones, and an
+                                                                                −5                                       −2
+                                       initial learning rate of 6 · 10               and a weight decay of 10                 for Swin-Transformer [27] backbones.
+                                       Backbones are pre-trained on ImageNet-1K [32] if not stated otherwise. A learning rate multiplier of
+                                       0.1 is applied to CNN backbones and 1.0 is applied to Transformer backbones. The standard random
+                                       scale jittering between 0.5 and 2.0, random horizontal ﬂipping, random cropping as well as random
+                                       color jittering are used as data augmentation [12]. For the ADE20K dataset, if not stated otherwise,
+                                       weuseacropsizeof512×512,abatchsizeof16andtrainallmodelsfor160kiterations. For the
+                                       ADE20K-Fulldataset, we use the same setting as ADE20K except that we train all models for 200k
+                                       iterations. For the COCO-Stuff-10k dataset, we use a crop size of 640 × 640, a batch size of 32
+                                       and train all models for 60k iterations. All models are trained with 8 V100 GPUs. We report both
+                                       performance of single scale (s.s.) inference and multi-scale (m.s.) inference with horizontal ﬂip and
+                                       scales of 0.5, 0.75, 1.0, 1.25, 1.5, 1.75. See appendix for Cityscapes and Mapillary Vistas settings.
+                                       Panoptic segmentation. We follow exactly the same architecture, loss, and training procedure as
+                                       weuseforsemantic segmentation. The only difference is supervision: i.e., category region masks
+                                       in semantic segmentation vs. object instance masks in panoptic segmentation. We strictly follow
+                                       the DETR[3]setting to train our model on the COCO panoptic segmentation dataset [22] for a fair
+                                       comparison. On the ADE20K panoptic segmentation dataset, we follow the semantic segmentation
+                                       setting but train for longer (720k iterations) and use a larger crop size (640 × 640). COCO models
+                                       are trained using 64 V100 GPUs and ADE20K experiments are trained with 8 V100 GPUs. We use
+                                                                                                              6
