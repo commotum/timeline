@@ -1,0 +1,82 @@
+              instance prediction directly from a fixed number of ob-              center fcenter and multiple rays fray emitting from the center
+              ject queries from voxel and superpoint features, respec-             forming each spherical sectors. Here, the sectors are defined
+              tively. Based on these works, recent studies improve the             by preset angles. Each ray then determines the distance to
+              performance with auxiliary center regression[15], query              be considered for their corresponding sectors, as shown in
+              initialization and set grouping[21], spatial and semantic            Figure 3.
+              supervision[1]. Although the powerful architectural advan-              We estimate the closest instances’ center fcenter using
+              tage has driven the performance of Transformer-based ap-             offsets predicted from an MLP network, CenterHead, which
+              proaches, low-recall and how to distribute initial queries           takes the respective f as input and outputs offsets. The
+                                                                                                           2
+              remain challenges.                                                   offsets are added to p to infer f        . After this, the input
+                                                                                                          2           center
+                                                                                   point cloud is converted into spherical coordinates using a
+              3. Method                                                            transformation as p = S(p ) centered around f           , where
+                                                                                                        s       1                     center
+              3.1. Overview                                                        S : (x,y,z) → (r,θ,φ) as follows:
+                                                    N ×3                                                    p 2       2     2
+              Given an input point cloud p ∈ R p           in 3-dimensional                             r =    x +y +z ,
+                                              1                                                                         x
+              cartesian coordinates and the corresponding color informa-                                   θ = arctany,                         (1)
+                             N ×3                                                                                  √ z
+              tion prgb ∈ R p      , we aim to design a system that seg-                              φ=arctan                 .
+                                                                                                                     x2+y2+z2
+              ments the point cloud into local binary masks of instances
+                 (i)     N ×1 No
+              {o    ∈R p }          using a coarse to fine approach. Here,         Here, r, θ, φ refer to radius, horizontal, and vertical angles
+                                i=1                                                in spherical coordinates, respectively. The p is then divided
+              N ,N are the total number of points and the number of                                                              s
+                p    o
+              instances, respectively. This is achieved using the proposed         uniformly with N and N separations for horizontal and
+                                                                                                       θ        φ
+              method depicted in Figure 2. Our system consists of mainly           vertical direction respectively, resulting in N · N     sectors,
+                                                                                                                                   θ     φ
+              two modules: 3D backbone and proposed instance mask                  as shown in Figure 3 (b) and (c).
+              estimation. The details of these modules are in Section 3.2             Weconsider points inside the same sector to have iden-
+              and Section 3.3, respectively.                                       tical (θ,φ), which enables us to close the sector using a
+                                                                                                                                   (i)  N N
+                                                                                   boundary estimated by f       . To estimate {f      } θ φ, an-
+              3.2. 3D backbone                                                                                 ray                 ray i=1
+                                                                                   other MLP named Ray Head is employed, which takes f2 as
+              Our 3D backbone is similar to [29] and is composed of                input.
+              two modules: a 3D encoder and a voting module. The                      Atthispoint,everypointinsidethecorrespondingsector’s
+              3D encoder uses U-Net [26] with sparse convolutions [9]              boundary from fray is considered foreground. Using the
+              to encode the given point cloud into deep features F         ∈       boundary, RID offers tighter boundaries of instances than
+                                                                         1
+                N ×D
+              R p     . Then, F and the respective input points p are              AABBinpointcloud,aseachsectorisclosedatthedistance
+                                 1                                      1
+              fed into the voting module. The voting module performs               of the farthest foreground point in the sector, alleviating the
+              set abstraction [24], producing K votes with query points            problem of redundant space in AABB. Please refer to our
+                       K×3                           K×D                           supplementary material for additional visualizations.
+              p ∈ R          and features F     ∈ R       .  Please find the
+               2                             2
+              original paper [25] for more details about this procedure.           CoarseInstanceLoss: During training, the estimated fcentre
+              These votes are spread in the scene, providing features to           and fray are compared against their respective ground truth
+              be further processed through the proposed instance mask              g      and g    to calculate L      :
+                                                                                     center     ray               coarse
+              estimationmodule. Thedetailsareexplainedinthefollowing
+              sections.                                                                               L       =L +L ,                           (2)
+                                                                                                        coarse    ray     center
+              3.3. Instance Mask Estimation                                        where Lray and Lcenter are defined with L1 loss:
+                                                                                                                 N N
+              Inthis section, we estimate the instance masks from the votes                                       θ  φ            
+                                                                                                            1     X (i)         (i)
+              predicted in the 3D backbone section using three modules:                          L =                    f    −g                 (3)
+                                                                                                  ray    N N            ray     ray1
+              RadialInstanceDetection, RadialPointMigration, andMask                                       θ  φ i=1
+              Assembly. All of the modules are explained in the following                            L      =|f       −g       | ,              (4)
+              sections. For the notation simplicity, we will explain how                              center     center   center 1
+              each vote feature is processed. Therefore, we write f to             Here, the ground-truth instance g is matched with f          by
+                                                                         2                                                                 center
+              refer to a single vote feature of F from here onwards.               an injective mapping obtained using Hungarian algorithm
+                                                 2
+                                                                                   as [29, 33]. For the details of the matching, please refer to
+              3.3.1   Radial Instance Detection(Coarse Mask)                       Sec 3.4. g(i) is set to the distance between g         and the
+                                                                                               ray                                   center
+              Radial Instance Detection(RID) aims to detect instances              furthest foreground point in the ith sector. If there are no
+                                                                                                                        (i)
+              for further refinement. Similar to PolarMask[32] for 2D              foreground points in the sector, g      is set to minimum as
+                                                                                                                        ray
+              segmentation, we define an instance as a 3D polygon with a           1e−5. Thetarget center g          is calculated as mean values
+                                                                                                                center
+                                                                                4062

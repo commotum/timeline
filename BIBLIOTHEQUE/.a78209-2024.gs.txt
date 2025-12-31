@@ -1,0 +1,1113 @@
+                             Unified Hallucination Detection for Multimodal Large Language Models
+                                                            ♣♡                                ♠♡                       ♠♡                                 ♠♡∗                                ♢
+                                     XiangChen                   , Chenxi Wang                     , Yida Xue               , Ningyu Zhang                     , Xiaoyan Yang
+                                                                     ♢                      ♢                       ♢                      ♢                              ♣♡∗
+                                                    QiangLi ,YueShen ,LeiLiang ,JinjieGu ,HuajunChen
+                                                    ♣College of Computer Science and Technology, Zhejiang University
+                                                     ♠School of Software Technology, Zhejiang University ♢Ant Group
+                                                 ♡Zhejiang University-Ant Group Joint Laboratory of Knowledge Graph
+                                                                  {xiang_chen,zhangningyu}@zju.edu.cn
+                                                             https://www.zjukg.org/project/EasyDetect/
+                                                            Abstract                                                           (a) Image-to-Text                     (b) Text-to-Image
+                                                                                                                                                                  S1
+                                                                                                                             Which team does the athlete
+                                                                                                                                                                    [The side of a car with the
+                                                                                                                             on the right side in the below       Volkswagen logo reads 'Travel
+                                                                                                                                                                                       S2
+                                                                                                                      User   picture belong to ?
+                                  Despite significant strides in multimodal tasks,                                                                                Around the World'.],    [A man    User
+                                                                                                                     Query
+                                                                                                                                                                                                    Query
+                                                                                                                                                                  wearing glasses and a dark coat
+                                                                                                                                                         Text
+                                  MultimodalLargeLanguageModels(MLLMs)                                                                                            stands beside it.]
+                                  are plagued by the critical issue of hallucina-
+                                  tion. The reliable detection of such hallucina-
+                                  tions in MLLMs has, therefore, become a vital                                                                              World
+                                                                                                                                                            Knowldge
+                                  aspect of model evaluation and the safeguard-                                       S1
+                                                                                                                        [The athlete on the right side,
+                                  ing of practical application deployment. Prior                                      wearing the red uniform in the
+                                                                                                                      image, belongs to the American
+                                                                                                                                                  S2
+                                                                                                                      soccer team Club América.], 
+                                  research in this domain has been constrained by                                                                   [The
+                                                                                                                      scene is filled with the excitement
+                                  a narrow focus on singular tasks, an inadequate                                     of a soccer match.]
+                                  range of hallucination categories addressed,
+                                                                                                                             Detect Claims from Response              Detect Claims from User Query
+                                                                                                                       S1.1: The athlete on the right side wears the 
+                                  and a lack of detailed granularity. In response                                                                                S1.1: The Volkswagen logo is on the side of      
+                                                                                                                                red uniform.
+                                                                                                                                                                          the car.
+                                                                                                                       S1.2: The athlete on the right side belongs to   
+                                  to these challenges, our work expands the in-                                                                                  S1.2: The side of the car reads 'Travel Around    
+                                                                                                                                Club América.
+                                                                                                                                                                          the World'.
+                                                                                                                       S1.3: Club América is the American soccer
+                                  vestigative horizons of hallucination detection.                                                                               S2.1: A man is standing beside the car.
+                                                                                                                                team.
+                                                                                                                                                                 S2.2: The man wears glasses and a dark coat.
+                                  Wepresentanovelmeta-evaluationbenchmark,                                             S2.1. The scene is filled with the excitement     
+                                                                                                                                of a soccer match.
+                                  MHaluBench, meticulously crafted to facili-
+                                  tate the evaluation of advancements in hallu-                                     Figure 1: Unified multimodal hallucination detection aims
+                                  cination detection methods. Additionally, we                                      to identify and detect modality-conflicting hallucinations at
+                                  unveil a novel unified multimodal hallucination                                   various levels such as object, attribute, and scene-text, as well
+                                  detectionframework, UNIHD,whichleverages                                          as fact-conflicting hallucinations in both image-to-text and
+                                  a suite of auxiliary tools to validate the occur-                                 text-to-image generation. Our benchmark emphasizes fine-
+                                                                                                                    grained detection, with “S1” representing the segment and
+                                  rence of hallucinations robustly. We demon-                                       “S1.1” and “S1.2” denoting its corresponding claims.
+                                  strate the effectiveness of UNIHD through
+                                  meticulous evaluation and comprehensive anal-
+                                  ysis. We also provide strategic insights on the                                   Tonmoyetal., 2024; Zhang et al., 2023a). These
+                                  application of specific tools for addressing var-                                 hallucinations hinder the practical deployment of
+                                  ious categories of hallucinations1.                                               MLLMsandcontributetothedisseminationofmis-
+                           1 Introduction                                                                           information. Consequently, detectors that could de-
+                                                                                                                    tect multimodal hallucinations (Yang et al., 2023)
+                           Therecent emergence of MLLMs (Ho et al., 2020;                                           within responses from MLLMsareurgentlyneeded
+                           OpenAI, 2023; Durante et al., 2024) that more                                            to alert users to potential risks and drive the devel-
+                           closely mirror human cognition and learning has                                          opment of more reliable MLLMs.
+                           unleashed unprecedented possibilities for the fu-                                            Although several works have been conducted
+                           ture of artificial general intelligence (AGI). Despite                                   to detect hallucinations from MLLMs(Zhou et al.,
+                           MLLMs’impressiveabilities, they are susceptible                                          2023; Zhai et al., 2023; Li et al., 2023b; Wang
+                           to generating seemingly credible content that con-                                       et al., 2023c) or alleviate hallucinations(Xing et al.,
+                           tradicts input data or established world knowledge,                                      2024; Wu et al., 2024), these efforts operate in iso-
+                           a phenomenon termed “hallucination”(Liu et al.,                                          lation and have certain limitations when compared
+                           2024; Wang et al., 2023a; Huang et al., 2023c;                                           with the aspects illustrated in Figure 1: (1) Task
+                                                                                                                    Singularity: Current research has primarily concen-
+                                 ∗
+                                  Corresponding author.                                                             trated on specific tasks, such as image captioning
+                                1The code can be accessed via https://github.
+                           com/zjunlp/EasyDetect, and the demonstration is                                          while neglecting that text-to-image generation, an
+                           available at http://easydetect.openkg.cn.                                                important component of AGI, also suffers from hal-
+                                                                                                             3235
+                      Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), pages 3235–3252
+                                                                 August 11-16, 2024 ©2024 Association for Computational Linguistics
+                  lucinations induced by MLLMs. (2) Limited Hal-             struct the underlying MLLM to judge whether the
+                  lucination Categories: Prior studies have focused          claim hallucinatory with rationals for explanation.
+                  onidentifying hallucinations at the object level, yet        We have conducted a thorough evaluation of
+                  they fail to consider the prevalence of scene-text or      the UNIHD framework, utilizing the underlying
+                  factual inconsistencies that also frequently occur         MLLMagainsttheMHaluBenchbenchmark. Our
+                  in MLLMs. (3) Incomplete Granularity: It would             findings underscore the effectiveness of our ap-
+                  be more valuable to assess hallucinations at a fine-       proach and confirm that multimodal hallucination
+                  grained level, examining individual claims within a        detection remains a formidable challenge. In a
+                  response, rather than evaluating the entire response       nutshell, We conclude our contributions as:
+                  holistically. Considering these constraints hinder         • We propose a more unified problem setting for
+                  rapid progress in practical hallucination detection,         hallucination detection in MLLMs, encompass-
+                  it raises the question: Can we develop a unified per-        ing a broad spectrum of multimodal tasks and
+                  spective for detecting hallucinations from MLLMs?            hallucination categories, thus enriching the uni-
+                     To further investigate this problem, we have              fied understanding of hallucination in MLLMs.
+                  broadened the concept of multimodal hallucination          • We unveil MHaluBench, a meta-evaluation
+                  within MLLMs to a holistic framework, integrat-              benchmark that encompasses various halluci-
+                  ing both image-to-text generation such as Image              nation categories and multimodal tasks. This
+                  Captioning (IC) and Visual Question Answering                benchmark is equipped with fine-grained analyt-
+                  (VQA), as well as text-to-image-synthesis (T2I)              ical features, gauging the progress of hallucina-
+                  – to align with MLLMs’ capabilities of perform-              tion detectors.
+                  ing varied multimodal tasks. We are committed to           • We introduce UNIHD, a task-agnostic, tool-
+                  exploring a broad spectrum of hallucinatory cat-             enhanced framework for the detection of hal-
+                  egories and the intricate nuances of claim-level             lucinations in content produced by MLLMs. Our
+                  hallucination through a lens that integrates both            extensive experiments demonstrate the efficacy
+                  modality-conflicting and fact-conflicting halluci-           of this method, underscoring that MHaluBench
+                  nations. Based on the outlined perspectives, We              continues to be a challenging yet vital task.
+                  have developed the MultiModal Hallucination De-
+                  tection Benchmark (MHaluBench) to assess the
+                                                                             Image-to-Text 
+                  progress of unified multimodal hallucination detec-                                         1. whether the output text
+                                                                                                              contradicts the information
+                                                                                                              presented in the input image.
+                  tors for MLLMs and embodied the data framework                                 ...
+                                                                                                              2. whether the output text
+                  depicted in Figure 1.                                                                       conflicts with world knowledge.
+                     At its core, leveraging MLLMs’ inherent self-                                             1. whether the output image
+                                                                             Text-to-Image 
+                                                                                                               contradicts the information
+                  detection mechanisms to pinpoint diverse hal-                                                presented in the input text.
+                                                                                                               2. whether the output image
+                  lucinations encounters significant hurdles.        We                                        conflicts with the world 
+                  further develop a tool-augmented framework for                                               knowledge underlying the text.
+                  unified hallucination detection, named UNIHD,              Figure 2: Unified multimodal hallucination detection.
+                  which integrates evidence from multiple auxiliary
+                  tools through the following procedure: (1) Essen-          2 Preliminaries
+                  tial Claim Extraction involves extracting the core
+                  claims within the generated response for image-to-         Weexploreaunifiedperspectiveonhallucinationin
+                  text generation or user queries in text-to-image gen-      MLLMs(illustratedinFigure2)withtheaspiration
+                  eration; (2) Autonomous Tool Selection via Query           of developing a unified detection framework.
+                  Formulation prompts MLLMs (GPT-4/Gemini) to
+                  autonomouslygeneratepertinentquestionsforeach              Unified View of Multimodal Hallucination Tax-
+                  claim. These questions are crafted to determine the        onomy. Aprerequisiteforunifieddetectionisthe
+                  specific type of tool required for each claim and to       coherent categorization of the principal categories
+                  establish the input for the tool’s operation; (3) Par-     of hallucinations within MLLMs. Our paper su-
+                  allel Tool Execution deploys a suite of specialized        perficially examines the following Hallucination
+                  tools to operate concurrently, providing evidence          Taxonomyfromaunifiedperspective:
+                  from their outputs to reliably validate potential hal-     • Modality-Conflicting Hallucination. MLLMs
+                  lucinations; (4) Hallucination Verification with Ra-         sometimes generate outputs that conflict with
+                  tionales aggregates the collected evidence to in-            inputs from other modalities, leading to issues
+                                                                        3236
+                                                                 Response       Purpose      Granularity                 Hallucination Types               Modality            Scenario
+                                        Datasets               Generated by                                   Object     Attribute   Scene Text    Fact                          Task
+                             FactCC(Kryscinski et al., 2020)      Synthetic      Check.        Sentence                                              ✔        Text            Text2Text
+                             QAGS(Wangetal.,2020)                  Model         Check.        Summary                                               ✔        Text            Text2Text
+                             HaluEval (Li et al., 2023a)          ChatGPT         Det.         Response                                              ✔        Text            Text2Text
+                             POPE(Lietal., 2023b)                     -           Eval.        Response          ✔                                           Multi.           Image2Text
+                             HaELM(Wangetal.,2023c)                   -           Det.         Response                                                      Multi.           Image2Text
+                             AMBER(Wangetal.,2023b)                   -           Eval.        Response          ✔          ✔                                Multi.           Image2Text
+                             MHaluBench(Ours)                     MMLMs           Det.      Res.,Seg.,Claim      ✔          ✔             ✔          ✔       Multi.     Image2Text/Text2Image
+                          Table 1: A comparison of benchmarks w.r.t existing fact-checking or hallucination evaluation. “Check.” indicates verifying
+                          factual consistency, “Eval.” denotes evaluating hallucinations generated by different LLMs, and its response is based on different
+                          LLMsundertest, while “Det.” embodies the evaluation of a detector’s capability in identifying hallucinations.
+                              such as incorrect objects, attributes, or scene                                    ulously curated to include a balanced distribu-
+                              text. An example in Figure 1 (a) includes an                                       tion of instances across three pivotal tasks, which
+                              MLLMinaccuratelydescribing an athlete’s uni-                                       encompasses 200 exemplars for the task of IC
+                              form color, showcasing an attribute-level conflict                                 200 for VQA, and an additional 220 dedicated
+                              due to MLLMs’ limited ability to achieve fine-                                     to Text-to-Image Generation. The comparison of
+                              grained text-image alignment.                                                      MHaluBenchwithotherbenchmarksisdetailed in
+                          • Fact-Conflicting Hallucination. Outputs from                                         Table 1 and the statistical details are provided in
+                              MLLMs may contradict established factual                                           Figure 3 and Figure 4.
+                              knowledge. Image-to-text models can generate                                       3.1      Hallucinatory Example Collection
+                              narratives that stray from the actual content by in-
+                              corporating irrelevant facts, while text-to-image                                  Image-to-Text Generation.                       WefocusonICand
+                              models may produce visuals that fail to reflect                                    VQAtasks,drawingsamplesfromtheMS-COCO
+                              the factual knowledge contained in text prompts.                                   2014 validation set (Lin et al., 2014) and the
+                              These discrepancies underline the struggle of                                      TextVQA test set (Singh et al., 2019). We com-
+                              MLLMstomaintain factual consistency, repre-                                        pile generative outputs from mPLUG (Ye et al.,
+                              senting a significant challenge in the domain.                                     2023), LLaVA (Liu et al., 2023c), and MiniGPT-
+                                                                                                                 4 (Zhu et al., 2023) to form the core dataset for
+                          Unified Detection Problem Formulation.                                    Uni-         MHaluBench. These models are representative of
+                          fied detection of multimodal hallucination necessi-                                    current leading MLLMs, characterized by their di-
+                          tates the check of each image-text pair a = {v,x},                                     verse content generation capabilities and a notable
+                          wherein v denotes either the visual input provided                                     presence of hallucinations, as depicted in Figure 8.
+                          to an MLLM, or the visual output synthetic by it.                                      Text-to-Image Generation.                          We source initial
+                          Correspondingly, x signifies the MLLM’s gener-                                         captions from DrawBench (Saharia et al., 2022)
+                          ated textual response based on the v or the tex-                                       and T2I-CompBench (Huang et al., 2023a). These
+                          tual user query for synthesizing v. Within this                                        captions are augmented through ChatGPT to in-
+                          task, each x may contain multiple claims, de-                                          clude more specific information such as objects,
+                          noted as {c }                   . The objective for hallucina-
+                                             i  i=1···n                                                          attributes, and factual details, among others. The re-
+                          tion detectors is to assess each claim from a to                                       fined caption guides the DALL-E 2 (Ramesh et al.,
+                          determine whether it is “hallucinatory” or “non-                                       2022) and DALL-E 3 model (Betker et al., 2023)
+                          hallucinatory”, providing a rationale for their judg-                                  in producing visually detailed images.
+                          ments based on the provided definition of halluci-
+                          nation. Text hallucination detection from LLMs                                         3.2      SegmentandClaimExtraction
+                          denotes a sub-case in this setting, where v is null.                                   Beyondevaluating overall responses, we introduce
+                          3 ConstructionofMHaluBench                                                             segmentation at both the segment and claim levels
+                                                                                                                 for a multi-granular assessment of hallucinations,
+                          Tofacilitate research in this area, we introduce the                                   enabling more precise feedback to improve model
+                          meta-evaluation benchmark MHaluBench, which                                            performance (Lightman et al., 2023). We leverage
+                          encompasses the content from image-to-text and                                         ChatGPT’s advanced instruction-following ability
+                          text-to-image generation, aiming to rigorously as-                                     to extract detailed segments and related claims.
+                          sess the advancements in multimodal hallucina-                                         For image-to-text tasks, we split and extract the
+                          tion detectors. Our benchmark has been metic-                                          model’s textual output into segments and claims;
+                                                                                                          3237
+                                                                                                                                                                       Object      Attribute     Scene-text      Fact
+                                                                                                                                                   Text-to-Image
+                                                                                                                                                   Image-to-Text
+                                                                                                                                                                  0         20       40        60        80       100
+                                                                                                                                                                                     Proportion (%)
+                                                                                                                                      Figure 4: Distribution of hallucination categories within
+                                                                                                                                      hallucination-labeled claims of MHaluBench.
+                               Figure 3: Claim-Level data statistics of MHaluBench.                                                   into individual claims) and text-to-image models
+                               The claims are fine-grained atoms extracted from the                                                   (deconstructing user queries into distinct claims) 2.
+                               complete “Query-Response” pairs.
+                                                                                                                                      4.2        AutonomousToolSelectionViaQuery
+                               for text-to-imagecases, webreakdownuserqueries                                                                    Formulation
+                               into fundamental intent concepts, which are subse-                                                     After extracting essential claims from the input
+                               quently regarded as claims.                                                                            image-text pair a = {v,x}, the challenge of
+                                                                                                                                      hallucination detection is to aptly match each
+                               3.3        HumanAnnotationandAgreement.                                                                claim with appropriate aspect-oriented tools. We
+                               Our annotation criteria evaluate whether image-                                                        approach this issue by assessing whether the
+                               to-text output conflicts with the input image or                                                       underlying MLLMs can generate pertinent queries
+                               world knowledge and whether text-to-image visu-                                                        for a given set of claims {ci}i=1···n to provide
+                               als conflict with claims or world knowledge. Ex-                                                       relevant input to the specific aspect-oriented tool.
+                               tracted claims are labeled as hallucinatory or non-                                                    To facilitate this, we prompt underlying MLLMs
+                               hallucinatory, with a segment deemed hallucinatory                                                     like GPT-4V/Gemini to autonomously formulate
+                               if it contains any such claim; otherwise, it is labeled                                                meaningful queries. Demonstrated in Figure 5, this
+                               non-hallucinatory. An entire response is labeled                                                       module yields custom queries for each claim, or
+                               hallucinatory if it includes even one hallucinatory                                                    “none”whenatoolisunnecessary. For example,
+                               segment. We allocate the dataset uniformly across                                                      the framework determines that claim1 calls for the
+                               three annotators with graduate-level qualifications                                                    attribute-oriented question “What color is
+                               for independent categorization. Decisions in un-                                                       the uniform of the athlete on the
+                               certain cases were initially held by individual an-                                                    right side?” andtheobject-oriented inquiry
+                               notators and later resolved by majority rule. Inter-                                                   “[‘athlete’, ‘uniform’]”, bypassing the need
+                               annotator reliability, measured by Fleiss’s Kappa                                                      for scene-text and fact-oriented tools.
+                               (κ), shows significant agreement (κ = 0.822) over                                                      4.3        Parallel Tool Execution
+                               the full annotated dataset, indicating a high level of                                                 Leveraging queries autonomously generated from
+                               concordance within the range 0.80 ≤ κ ≤ 1.00.                                                          various perspectives, we simultaneously deploy
+                               4       UNIHD:UnifiedHallucination                                                                     these tools in response to the queries, gathering
+                                       Detection Framework for MLLMs                                                                  a comprehensive array of insights to underpin the
+                                                                                                                                      verification of hallucinations. The specific tools
+                               Wepresent UNIHD in Figure 5 and follow. The                                                            employed in our framework are detailed below, se-
+                               specific prompts are listed in Appendix A                                                              lected for their ability to effectively address a wide
+                               4.1        Essential Claim Extraction                                                                  range of multimodal hallucination scenarios:
+                                                                                                                                      •    Object-oriented tool: We employ the open-set
+                               Toidentify fine-grained hallucinations within the                                                          object detection model Grounding DINO (Liu
+                               response, claim extraction is a prerequisite. Fol-                                                         et al., 2023d) for capturing visual object infor-
+                               lowing the procedure in §3.2, we employ the ad-                                                            mation, crucial for detecting object-level hallu-
+                               vanced instruction-following abilities of MLLMs                                                            cinations. For instance, inputting “[‘athlete’,
+                               for efficient claim extraction. Specifically, GPT-                                                        ‘uniform’]” prompts the model to return two
+                               4V/Gemini is adopted as the base LLM to effi-                                                                2In subsequent experiments, our framework builds upon
+                               ciently derive verifiable claims from the outputs                                                      the pre-annotated claims available in MHaluBench, and the
+                               of image-to-text models (extracting each response                                                      claim extraction is only necessary in the open-domain setting.
+                                                                                                                              3238
+                                                                                                                 Claim Extraction                                                      Claim Extraction
+                                                                                                             claim1: The athlete on the right side
+                                                                                                                                                                                   claim1: The Volkswagen logo is on the
+                                                                                                             wears the red uniform.
+                                                                                                                                                                                   side of the car.
+                                                                                                         c                                                                                                              c
+                                                                                                             claim2: The athlete on the right side
+                                                                                                                                                                                   claim2: The side of the car reads 'Travel
+                                                                                                             belongs to Club América.
+                                                                                                                                                                                   Around the World'. 
+                                                                                                             claim3: Club América is the American
+                                                                                                                                                                                   claim3: A man is standing beside the car. 
+                                                                 S1
+                                                                                                                                                                                                                           S1
+                                                                                                             soccer team.
+                                                                   [The athlete on the right side,
+                                                                                                                                                                                   claim4: The man wears glasses and a
+                                                                                                                                                                                                                             [The side of a car with the
+                                                                 wearing the red uniform in the image,       claim4: The scene is filled with the
+                                                                                                                                                                                   dark coat.
+                                                                                                                                                                                                                           Volkswagen logo reads 'Travel
+                                                                                                             excitement of a soccer match.
+                                                                 belongs to the American soccer team
+                                                                                                                                                                                                                                                S2
+                                                                                                                                                                                                                           Around the World'.],   [A man
+                                                                                 S2
+                                                                 Club América.], 
+                                                                                   [The scene is filled
+                                                                                                                                                                                                                           wearing glasses and a dark coat
+                                                                 with the excitement of a soccer
+                                                                                                                                                                                                                           stands beside it.]
+                                                                                                                                Autonomous Tool Selection Via Query Formulation
+                                                                 match.]
+                                                                                                                                                                                                                                                                         T
+                                                                                                         Objcet: {'claim1': ['athlete', 'uniform'], 'claim2':      Objcet: {'claim1': ['car'], 'claim2': ['car'], 'claim3':                                              ext-to-Image
+                                                      ext                                                ['athlete'], 'claim3': ['none'], 'claim4':['none']}       ['man', 'car'], 'claim4': ['man', 'glasses', 'coat']}
+                                                                                                         Attribute: {'claim1': ["What color is the uniform         Attribute: {'claim1': ['none'], 'claim2': ['none'],
+                                                                                                         of the athlete on the right side?'], 'claim2':            'claim3': ['Is there a man standing beside the car?'],
+                                                              Prompt: Describe
+                                                                                                         ['none'], 'claim3' ['none'], 'claim4': ['none']}          'claim4': ["What color is the man's coat?"]}
+                                                               the above image.
+                                                                                                         Scene-text: {'claim1': ['none'], 'claim2': ["What is      Scene-text:  {'claim1': ['none'], 'claim2': ['What
+                                                      Image-to-T                                         written on the athlete's uniform on the right side?"],    does the side of the car read?'], 'claim3': ['none'],
+                                                                                                         'claim3': ['none']}                                       'claim4': ['none']}
+                                                                                                         Fact: {'claim1': ['none'], 'claim2': ['none'], 'claim3':  Fact: {'claim1': ['The design of the Volkswagen
+                                                                                                         ['What is Club América?', 'Is Club América an             logo','Volkswagen logo'], 'claim2': ['none'], 'claim3':
+                                                                                                         American soccer team?']}                                  ['none'], 'claim4': ['none']}
+                                                                                                                                             [     ...] Parallel Tool Execution  
+                                                                                                                                                                    Object detection evidecne:
+                                                                                                                     Object detection evidecne:
+                                                                                                                                                                    man [0.111, 0.05, 0.438, 0.998]
+                                                                                                                     uniform [0.077, 0.179, 0.355, 0.705]
+                                                                                                                                                                                                                      Hallucination Verification with Rationales
+                                                  Hallucination Verification with Rationales
+                                                                                                                                                                    coat [0.121, 0.26, 0.439, 0.87]
+                                                                                                                     uniform [0.304, 0.333, 0.888, 0.809]
+                                                                                                                                                                                                                         Instruction:
+                                                                                                                                                                    car [0.36, 0.0, 0.999, 0.999]
+                                                  Instruction:                                                       athlete [0.072, 0.036, 0.481, 0.931]
+                                                                                                                                                                                                                         <Task Role Description>
+                                                  <Task Role Description>
+                                                                                                                                                                    Attribute detection evidence:
+                                                                                                                     athlete [0.153, 0.199, 0.977, 0.924]
+                                                                                                                                                                                                                         <Explanation of the Hallucination Types>
+                                                  <Explanation of the Hallucination Types>
+                                                                                                                                                                    1: There is a man standing beside the car.
+                                                                                                                     Attribute detection evidence:                                                                       <Structured Tool Outputs>
+                                                  <Structured Tool Outputs>
+                                                                                                                                                                                                                         Input: <Image and Corresponding Claim List>
+                                                                                                                                                                    2: The man's coat appears to be dark gray.
+                                                                                                                     1. The athlete on the right side wearing 
+                                                  Input: <Image and Corresponding Claim List>
+                                                                                                                                                                    Scene text recognition evidence:
+                                                                                                                         white uniform.
+                                                                                                                                                                    TRAVEL [0.578, 0.322, 0.902, 0.409]                     Output:
+                                                                                                                     Scene text recognition evidence:
+                                                    Output:
+                                                                                                                                                                    WORRLD [0.613, 0.725, 0.884, 0.818]                [{"claim1": "hallucination", "reason": "No sufficient detail to
+                                                                                                                     DALLAS [0.447, 0.525, 0.533, 0.661]
+                                               [{"claim1":"hallucination","reason":"The object detection expert
+                                                                                                                                                                    AROUND [0.655, 0.413, 0.809, 0.448]
+                                                                                                                     Panasonic [0.392, 0.161, 1.0, 0.322]                                                            confirm if the depicted logo is the Volkswagen logo with its
+                                             model identified two athletes, with the athlete on the right
+                                                                                                                                                                    YOURD [0.684, 0.634, 0.801, 0.673]
+                                                                                                                     Search engine returned evidence:                                                                specific characteristics such as the 'V' over the 'W' and the color
+                                             wearing white uniform, and the athlete on the left wearing red
+                                                                                                                                                                    THE [0.705, 0.699, 0.754, 0.721]                 scheme......}, {"claim2":"hallucination", "reason": "The side of the
+                                                                                                                     1. Club América: Soccer club
+                                             uniform. Therefore, there's a hallucination."},
+                                                                                                                                                                    Search engine returned evidence:                 car reads 'TRAVEL AROUND YOURD THE WORRLD' instead
+                                                                                                                     2. Club América is a professional football 
+                                             {"claim2":"hallucination","reason":"The scene text on the  
+                                                                                                                                                                    1. The Volkswagen logo is based on the           of 'Travel Around the World'. There are spelling errors in 'YOURD'
+                                                                                                                         club based in Mexico City.  Nicknamed   
+                                             uniform of the athlete on the right indicates the team he belong
+                                                                                                                                                                    combination of two letters, "V" and "W,"
+                                                                                                                         Las Águilas, it competes in Liga MX,                                                        and......,{"claim3": "non-hallucination", "reason": "......"},
+                                             to. Based on ......, he should belong to the DALLAS team not
+                                                                                                                                                                    which represent the German words "Volks"
+                                                                                                                         the top tier of Mexican football. ....                                                      {"claim4": "hallucination", "reason": " While there is no
+                                             Club América. Therefore, there's a hallucination."},  {"claim3":
+                                                                                                                                                                    and "Wagen," meaning "people\'s car"...          information on the man wearing glasses......"}]
+                                             "hallucination", "reason":...}, {"claim4":"non-hallucination", ...}]
+                                                                                                                                                                                                                         
+                                                 
+                                                              Figure 5: The specific illustration of UNIHD for unified multimodal hallucination detection.
+                                           uniform objects and two athlete objects, along                                                                             4.4          Hallucination Verification with Rationales
+                                           with their normalized location coordinates.                                                                                In the concluding phase of our process, we subject
+                                       •     Attribute-Oriented Tool: Dealing with attributes                                                                         each claim, denoted as ci, to a binary prediction
+                                           such as positions, colors, and actions, we harness                                                                         to ascertain its hallucinatory status. Claims are
+                                           underlying MLLMs (such as GPT-4V and Gem-                                                                                  categorized as either HALLUCINATORY or NON-
+                                           ini) to answer the specific attribute-level ques-                                                                          HALLUCINATORY basedonthelevel of evidence
+                                           tions. These responses are leveraged for halluci-                                                                          support. To accomplish this, we aggregate the col-
+                                           nation verification within the same MLLMs, mir-                                                                            lected evidence from tools with the original image
+                                           roring a self-reflect akin to (Shinn et al., 2023).                                                                                                                                                3
+                                                                                                                                                                      and its corresponding claim list into a comprehen-
+                                       •      Scene-Text-Oriented Tool: Should the gener-                                                                             sive prompt. Subsequently, we instruct our chosen
+                                           ated questions for scene text not be exclusively                                                                           MLLM(GPT-4VorGemini)toassesseachclaim’s
+                                           “none”, we then invoke MAERec (Jiang et al.,                                                                               hallucinatory potential. In doing so, the MLLM
+                                           2023) as our scene-text detection tool, which is                                                                           also generates insightful explanations to elucidate
+                                           capable of identifying scene text within images                                                                            the rationale behind its judgment.
+                                           along with their corresponding normalized four-
+                                           dimensional coordinates.                                                                                                   5 Experiment
+                                       •     Fact-Oriented Tool: To validate conflicting fac-                                                                         5.1          Experimental Settings
+                                           tual hallucinations, we harness the Serper Google                                                                          Baselines.                     We                compare                         UNIHD                         on
+                                           Search API to perform web searches using spe-                                                                              MHaluBench4 with two baselines, Self-Check
+                                           cific fact-based questions. By extracting and scru-                                                                                          5
+                                           tinizing the top results, we obtain a range of snip-                                                                      (2-shot)                  and Self-Check (0-shot) based on
+                                           pets from the API’s responses for analysis.                                                                                      3Note that the set a = {v,x}, corresponding to the list of
+                                       Moreover, UNIHD is tool-agnostic, facilitating the                                                                             claims, is input into the detectors in a single batch. This oper-
+                                                                                                                                                                      ation allows the detectors to capture contextual information
+                                       seamless integration of emerging tools and detec-                                                                             while also enhancing efficiency.
+                                       tion strategies to amass tool knowledge, thereby                                                                                     4In this paper, we conducted experiments using the evalua-
+                                                                                                                                                                      tion benchmark from our published V0.1 version.
+                                       bolstering the process of hallucination verification.                                                                                5Self-Check (2-shot) utilize two complete demonstrations
+                                                                                                                                                                      based on a = {v,x} rather than only two claims.
+                                                                                                                                                            3239
+                                            Tasks            LLMs              Methods              Levels            Hallucinatory               Non-Hallucinatory                           Average
+                                                                                                                   P         R         F1         P         R         F1       Acc.        P         R       Mac.F1
+                                                                         Self-Check (0-shot)        Claim        83.17     42.15     55.95      55.64     89.48     68.61      63.34     69.41     65.82       62.28
+                                                                                                   Segment       89.30     47.71     62.19      43.76     87.68     58.38      60.38     66.53     67.69       60.29
+                                                            Gemini       Self-Check (2-shot)        Claim        84.24     66.75     74.48      67.35     84.60     75.00      74.74     75.80     75.68       74.74
+                                                                                                   Segment       90.44     71.08     79.60      57.35     83.80     68.10      75.11     73.89     77.44       73.85
+                                                                               UNIHD                Claim        84.44     72.44     77.98      71.08     83.54     76.80      77.41     77.76     77.99       77.39
+                                                                                                   Segment       88.77     78.76     83.46      63.17     78.52     70.02      78.68     75.97     78.64       76.74
+                                        Image-to-Text                    Self-Check (0-shot)        Claim        79.37     74.17     76.68      70.52     76.22     73.26      75.09     74.94     75.19       74.97
+                                                                                                   Segment       84.78     80.07     82.35      61.64     69.01     65.12      76.56     73.21     74.54       73.73
+                                                            GPT-4v       Self-Check (2-shot)        Claim        82.00     79.98     80.98      76.04     78.35     77.18      79.25     79.02     79.16       79.08
+                                                                                                   Segment       86.54     85.13     85.83      69.05     71.48     70.24      80.80     77.80     78.30       78.04
+                                                                               UNIHD                Claim        82.54     85.29     83.89      81.08     77.74     79.38      81.91     81.81     81.52       81.63
+                                                                                                   Segment       87.03     91.01     88.98      78.52     70.77     74.44      84.60     82.77     80.89       81.71
+                                                                         Self-Check (0-shot)        Claim        73.85     24.62     36.92      55.45     91.50     69.06      58.48     64.65     58.06       52.99
+                                                                                                   Segment       87.27     30.00     44.65      32.53     88.52     47.58      46.15     59.90     59.26       46.11
+                                                            Gemini       Self-Check (2-shot)        Claim        85.37     53.85     66.04      66.91     91.00     77.12      72.66     76.14     72.42       71.58
+                                                                                                   Segment       91.67     61.88     73.88      46.02     85.25     59.77      68.33     68.84     73.56       66.83
+                                                                               UNIHD                Claim        85.71     61.54     71.64      70.59     90.00     79.12      75.95     78.15     75.77       75.38
+                                                                                                   Segment       93.28     69.37     79.57      51.96     86.89     65.03      74.21     72.62     78.13       72.30
+                                        Text-to-Image                    Self-Check (0-shot)        Claim        88.55     59.49     71.17      70.08     92.50     79.74      76.20     79.31     75.99       75.45
+                                                                                                   Segment       93.69     65.00     76.75      49.09     88.52     63.16      71.49     71.39     76.76       69.96
+                                                            GPT-4v       Self-Check (2-shot)        Claim        84.39     74.87     79.35      77.93     86.50     81.99      80.76     81.16     80.69       80.67
+                                                                                                   Segment       89.63     75.62     82.03      54.65     77.05     63.95      76.02     72.14     76.34       72.99
+                                                                               UNIHD                Claim        84.92     86.67     85.79      86.73     85.00     85.86      85.82     85.83     85.83       85.82
+                                                                                                   Segment       91.25     91.25     91.25      77.05     77.05     77.05      87.33     84.15     84.15       84.15
+                              Table 2: Experimental results of UNIHD powered by Gemini and GPT-4V on Image-to-Text and Text-to-Image
+                               Generation. The default F1 score is Micro-F1, whereas Mac.F1 represents the Macro-F1 score.
+                               CoT (Wei et al., 2022), which assess the ca-                                                        F1 score ranging between 70%-80%, exhibiting
+                               pability of the underlying MLLM to identify                                                         subpar performance on MHaluBench.
+                               hallucinations without external knowledge and
+                               have shown effectiveness across other various                                                                  95
+                                                                                                                                                 +2.83 +4.96                               +15.69
+                               tasks (Chern et al., 2023; Xie et al., 2023). We                                                               90                                        +2.17
+                                                                                                                                                                                               +14.57
+                               prompt GPT-4V (gpt-4-vision-preview)                                                                           85                                     +5.95
+                                                                                                                                                                   +3.08 +8.86
+                                                                                                                                            (%)                              +6.57                              +8.62
+                               and Gemini (Pro Vision) to recognize fine-grained                                                              80                                                             +12.34
+                                                                                                                                                    +0.28  +9.93                                       +4.99
+                               hallucinations and explain the reasoning behind                                                              Score75                  +5.02                               +2.45
+                               this determination.                                                                                          F1
+                                                                                                                                              70
+                               Evaluation Perspective.                              We compute the re-                                        65
+                               call, precision, and Micro-F1 metrics individually                                                             60
+                                                                                                                                                   O A S F           O A S F           O A S F           O A S F
+                               for both hallucinatory and non-hallucinatory cate-                                                                I2T(GPT-4V)I2T(Gemini)T2I(GPT-4V)T2I(Gemini)
+                               gories. Additionally, we assess the overall perfor-                                                                               Self-Check (2-shot)             UNIHD
+                               mancebymeasuringtheaverageMacro-F1scores
+                               at the claim and segment levels. We categorize                                                      Figure 6: Comparative analysis to examine the augmen-
+                               a segment as non-hallucinatory only if all associ-                                                  tation in detection capabilities provided by specific tools
+                               ated claims are classified as non-hallucinatory; it is                                              on samples labeled with hallucinations. The x-axis la-
+                               deemedhallucinatory if any associated claims do                                                     bels “O”, “A”, “S” and “F” refer to object, attribute,
+                               not meet this criterion.                                                                            scene-text, and fact, respectively.
+                               5.2       Evaluation Results                                                                        GPT-4VsurpassesGeminiasthedetectorbase.
+                               MHaluBench poses a challenging benchmark                                                            GPT-4V-powered detectors consistently outper-
+                               for multimodal hallucination detection.                                              The            formGeminicounterparts,achievinghigherMacro-
+                               segment-level and response-level outcomes are pre-                                                  F1 scores, especially in the text-to-image genera-
+                               sented in Table 2. Even though all hallucinatory                                                    tion. For instance, Self-Check (0-shot) using GPT-
+                               instances in MHaluBench are obtained from open-                                                     4Vachieves a claim-level Macro-F1 of 72.82, sig-
+                               source MLLMs’ outputs rather than being gener-                                                      nificantly surpassing Gemini’s Macro-F1 score of
+                               ated by GPT-4V/Gemini itself, it is noteworthy that                                                 52.98. However,Gemini-powereddetectorsexhibit
+                               the majority of detectors achieve an overall Macro-                                                 better performance in non-hallucinatory categories
+                                                                                                                           3240
+                                        Image-to-Text                                                                                   Text-to-Image
+                                        User Query: What soda is painted on this building?                                              User Query: Three bikes parked outside a local restaurant establishment.
+                                        Here is the claim list:
+                                        ["claim1": "The soda painted on the building is Fanta", "claim2": "Fanta is a fruit-            Here is the claim list:
+                                        flavored carbonated soft drink.", "claim3": "Fanta originated in America during World           ["claim1": "There are three bikes parked.", 
+                                        War.", "claim4": Fanta's origin was due to limited Coca-Cola availability]                       "claim2": "The bikes are outside a local restaurant."]
+                                                                                                        correct prediction                                            correct prediction 
+                                                                            UniHD Output:                                               UniHD Output:
+                                                                              [ ..., {"claim3":"hallucination","reason":"According        [{"claim1":"hallucination","reason":"The object
+                                                                            to the external knowledge, Fanta originated in Germany,     detection model has detected five bikes in the image,
+                                                                            not America, during World War II. Therefore, there's a      not three as stated in the claim. Therefore, there's a
+                                                                            hallucination.."}, ... ]                                    hallucination."}, ...]
+                                                                                                              Comparison of Explanation Reasonability 
+                                         Self-Check(2-shot) Output:                                                                      Self-Check(2-shot) Output:
+                                         [ ..., {"claim3":"hallucination","reason":"The origin of Fanta being in America during World    [ {"claim1":"hallucination","reason":"There are more than three bikes parked in the image.
+                                         War II cannot be verified through visual information in the image.", ...} ]                     Therefore, there's a hallucination.", ...} ]
+                                         UniHD (a)                                                                                                                                                                 UniHD (b)
+                                                                                                                                         object detection evidence: 
+                                                                                      object detection evidence: 
+                                                                                                                                         car [0.001, 0.001, 0.999, 0.999]
+                                                                                      skateboard [0.461, 0.415, 0.523, 0.554]
+                                                                                      bicycle [0.76, 0.305, 0.987, 0.548]                attribute detection evidence: none
+                                                                                      skateboarder [0.355, 0.09, 0.569, 0.552]
+                                                                                                                                         scene text recognition evidence:
+                                                                                      water fountain [0.002, 0.845, 0.141, 0.982]
+                                                                                                                                         POLICA  [0.156, 0.41, 0.855, 0.669]
+                                                                                      cement ramp [0.231, 0.511, 0.997, 0.996]
+                                                                                                                                         POLICA MILITAR  [0.178, 0.585, 0.862, 0.774]
+                                                                                      man [0.819, 0.134, 0.983, 0.534]
+                                                                                                                                         search engine returned evidence: none
+                                                                                      attribute detection evidence: ......
+                                                                                      scene text recognition evidence: none
+                                                                                                                                         Here is the claim list:
+                                                                                      search engine returned evidence: non
+                                                                                                                                         ["claim1": "A police car has "POLICIA
+                                         Here is the claim list:
+                                                                                                                                         MILITAR" written on the back."]
+                                         ["claim1": "A skateboarder is performing a jump off a cement ramp.",
+                                                                                                                                         Output:
+                                            ......
+                                         "claim6": "There is a water fountain nearby."]                                                                                        wrong prediction 
+                                                                                                                                        [ { "claim1": "non-hallucination", 
+                                                                                                                                            "reason": "The object detection model has identified a car in the image. According to
+                                         Output:
+                                                                                                                                        the detection results of the scene text expert model, the text reads 'POLICA' and 'POLICA
+                                                                              wrong prediction 
+                                         [ { "claim6": "non-hallucination",                                                             MILITAR', which is consistent with the claim that a police car has 'POLICIA MILITAR'
+                                                                                                                                        written on the back. There is a typographical difference where 'POLICA' should be
+                                             "reason": The object detection expert model has detected a water fountain, which
+                                         matches the visual information in the image.." }]                                              'POLICIA', but the word 'MILITAR' confirms the intended label on the car. Therefore,
+                                                                                                                                        there's no hallucination." }]
+                                Figure 7: Case Study. The upper section depicts two exemplary cases where both UNIHD and Self-Check (2-shot)
+                                arrive at correct judgments, with a comparative demonstration of UNIHD providing explanations of superior
+                                reasonability. UNIHD (a) reveals a failure case where the tool presents erroneous evidence, leading to an incorrect
+                                verification outcome. Conversely, UNIHD (b) highlights a scenario where, despite the tool offering valid and correct
+                                evidence, GPT-4V persists in its original stance, resulting in a flawed verification.
+                                for image-to-text tasks, indicating a potential bias                                                     lack of specialized tools for direct attribute detec-
+                                towards reduced sensitivity to hallucinations.                                                           tion, with self-reflection methods based on GPT-
+                                UNIHDEmpoweredbyGPT-4V:SuperiorDe-                                                                       4V/Geminiproving to be relatively weak.
+                                tection Across the Board.                                Table 2 demonstrates                            Explanation Reasonability of UNIHD. As
+                                that UNIHD, leveraging GPT-4V, consistently out-                                                         shown in the upper portion of Figure 7, both the
+                                performs other baseline detectors in image-to-text                                                       fact-level hallucination “Fanta originated in Amer-
+                                and text-to-image tasks. Despite the Self-Check                                                          ica during World War.” and the object-level hal-
+                                (2-shot) showcasing GPT-4V and Gemini’s robust                                                           lucination “There are three bikes parked.”                                                 are
+                                in-context learning, UNIHD markedly exceeds its                                                          accurately identified by Self-Check (2-shot) and
+                                performance, emphasizing the benefits of integrat-                                                       UNIHD.ComparativeanalysisrevealsthatUNIHD
+                                ing external tools for more robust evidence verifi-                                                      excels in synthesizing evidence to provide a more
+                                cation and reliable hallucination detection.                                                             credible and compelling rationale.
+                                5.3        Analysis                                                                                      Failure Analysis of UNIHD.                                      As shown in the
+                                Which Type of Hallucination Can Benefit the                                                              lower part of Figure 7, we present two instances
+                                MostfromToolEnhancement? Figure6shows                                                                    where UNIHD exhibits limitations. The left case
+                                that UNIHD enhances the detection of scene text                                                          demonstrates situations where the tool either gen-
+                                and factual hallucinations over Self-Check (2-                                                           erates incorrect evidence or fails to provide useful
+                                shot), suggesting that GPT-4V or Gemini’s inherent                                                       information, leading to erroneous judgments by the
+                                limitations make the evidence provided by the tool                                                       MLLM.Ontheright,weobservecaseswherethe
+                                especially valuable. However, UNIHD exhibits                                                             MLLMmaintainsitsinitial bias despite receiving
+                                minimal improvement in identifying attribute-                                                            accurate evidence, resulting in incorrect decisions.
+                                level hallucinations, potentially attributed to a                                                        These scenarios highlight areas for further research
+                                                                                                                                 3241
+                                                                         Zhang et al., 2023b; Huang et al., 2023b; Rawte
+                                                                         et al., 2023; Ji et al., 2023), a crucial concern im-
+                                                                         pacting their dependability. Previous research has
+                                                                         primarily focused on three areas: evaluating (Li
+                                                                         et al., 2023b; Liu et al., 2023a; Jing et al., 2023), de-
+                                                                         tecting (Wang et al., 2023c; Yang et al., 2023; Yin
+                                                                         et al., 2023), and mitigating hallucinations (Wan
+                                                                         et al., 2024; Liu et al., 2023b; Huang et al., 2023c;
+                                                                         Semnani et al., 2023; Zhao et al., 2024; Leng
+                                                                         et al., 2023; Wang et al., 2024; Deng et al., 2024).
+                 Figure8: Comparisonofclaim-levelhallucinationratios     In a complementary effort, HaELM (Wang et al.,
+                 across MLLMs. Werandomlyselectasetof20prompts           2023c) scrutinizes the challenges associated with
+                 from MHaluBench for each of the IC, VQA, and T2I.       POPE (Li et al., 2023b) and suggests training a
+                 Responses for these prompts are generated by each of    model based on simulated hallucination samples
+                 the evaluated MLLMs.                                    for detecting multimodal hallucinations. Diverging
+                 to enhance tool accuracy and to develop MLLMs           from prior efforts, this paper addresses a broader
+                 dedicated to better hallucination detection.            problemscopeforhallucinationdetection,introduc-
+                                                                         ing a unified multimodal hallucination detection
+                 Text-to-Image Hallucination vs. Image-to-Text           framework, UNIHD, along with meta-evaluation
+                 Hallucination:     Which is Easier to Detect?           benchmarks, MHaluBench.
+                 Both baselines and the GPT-4V-enhanced UNIHD
+                 showsignificantly improved performance in identi-       6.2  Harnessing Tool Resources for LLMs
+                 fying hallucinations in text-to-image content over     Addressing the limitations of LLMs (Chen, 2023;
+                 image-to-text content. This can be traced back          Kang et al., 2024) due to their pre-training con-
+                 to the structured nature of manually written user       finement, researchers have explored augmenting
+                 queries for text-to-image tasks, which yield more       themwithresources like knowledge bases, search
+                 uniform images. while image-to-text confronts           engines, and external models, to expand their func-
+                 the complexity of natural images with background        tionality. Notably, Schick et al. (2023); Hao et al.
+                 noise and content generated by MLLMs, charac-          (2023); Qiao et al. (2023) have developed mod-
+                 terized by greater diversity and fewer constraints.     els that leverage external tools to improve perfor-
+                 Consequently, it is intuitively easier to detect dis-   manceindownstreamtasks. More recently, Shen
+                 crepancies between text and corresponding images        et al. (2023); Liang et al. (2023) has unveiled frame-
+                 in text-to-image tasks.                                works integrating LLMs with diverse AI models
+                 Explore UNIHD to Evaluate Hallucination of              to tackle complex challenges. Building on this, re-
+                 ModernMLLMs. Wedesignate UNIHD pow-                     searchers (Peng et al., 2023; Chen et al., 2023) have
+                 ered by GPT-4V as the golden detector to assess         examined the utilization of external knowledge to
+                 the frequency of hallucinations in MLLMs, in-           mitigateorevaluatehallucinationsinLLMs. Adapt-
+                 cluding GPT-4V, and Gemini, among others. The           ing these enhancements for MLLMs introduces
+                 findings illustrated in Figure 8 indicate that (1)      uniquechallenges, necessitating the selection of ap-
+                 GPT-4Vexhibits the lowest claim-level hallucina-        propriate tools for effective oversight. Our research
+                 tion ratio across most tested conditions, and (2)       focuses on automating the selection of functionally
+                 the hallucination-based ranking of these MLLMs          diverse tools to enhance multimodal hallucination
+                 is generally in agreement with established leader-      detection.
+                 boards and human evaluation, demonstrating the
+                 potential of UNIHD for evaluating hallucinations.       7 Conclusion
+                 6 RelatedWork                                          We introduce a unified problem formulation for
+                 6.1   Hallucinations in MLLM                            multimodal hallucination detection that encom-
+                                                                         passes a diverse range of multimodal tasks and
+                 TheadventofMLLMs(OpenAI,2023;Liuetal.,                  hallucination types.   A fine-grained benchmark
+                 2023c; Ye et al., 2023; Zhu et al., 2023) has high-     dataset, MHaluBench, is also proposed to pro-
+                 lighted the issue of hallucination (Hu et al., 2024;    motethis challenging direction. Alongside this, we
+                                                                    3242
+                  present the unified hallucination detection frame-       Huangetal., 2023b; Rawte et al., 2023) . Moving
+                  work, UNIHD, capable of autonomously select-             forward, our research will expand its scope to adopt
+                  ing external tools with capturing pertinent knowl-       a unified approach towards a wider range of hallu-
+                  edge to support hallucination verification with ra-      cination categories, to strengthen the robustness of
+                  tionales. Our experimental results indicate that         our detection mechanisms.
+                  UNIHDachieves better performance across both             Preliminary Attempts at Tool Utilization.          In
+                  image-to-text and text-to-image generation tasks,        our early endeavors, we have configured a ded-
+                  confirming its universality and efficacy.                icated tool for detecting a specific type of hal-
+                  Limitations                                              lucination, exemplified by the assignment of the
+                  This paper focuses on constructing a unified hallu-      GroundedDINOmodelastheobjectdetectiontool
+                  cination detection framework for MLLMs, dubbed           of choice. However, it should be acknowledged
+                  UNIHD. Despite the best efforts, our paper still         that the current selection of tools may not repre-
+                  have some limitations.                                   sent the optimum choice. It remains imperative to
+                                                                           rigorously explore which SOTA object detection
+                  The Scope of Multimodal Tasks.           This paper      models are best suited for the task of multimodal
+                  primarily addresses the detection of multimodal          hallucination detection. This necessitates an exten-
+                  hallucinations from a unified perspective, with a        sive evaluation of available models to pinpoint the
+                  focus on image-to-text tasks (such as Image Cap-         mosteffective tool that aligns with the nuances and
+                  tioning and VQA) and text-to-image generation            complexities of detection objectives.
+                  tasks. Nonetheless, it is important to recognize that    Acknowledgement
+                  our framework does not yet encompass other mul-
+                  timodal tasks, such as video captioning, which are       Weare grateful for the API services provided by
+                  also susceptible to hallucinations. Moving forward,      OpenAIandGoogle,whichenabledustoprocess
+                  weaimtoexplorethe possibilities of incorporating         data and conduct some of our experiments. Part
+                  these additional domains into our UNIHD.                 implementation of this work are assisted and in-
+                  Limitations of Closed-Source MLLM Pricing                spired by the related hallucination toolkits includ-
+                  andInference Speed.       Our UNIHDisprimarily           ing FactTool (Chern et al., 2023), Woodpecker
+                  built upon powerful closed-source models as the          (Yin et al., 2023), and others.      We follow the
+                  foundation. However, closed-source models (Liu           samelicense for open-sourcing and thank them for
+                  et al., 2023c; Zhu et al., 2023; Ye et al., 2023;        their contributions to the community. This work
+                  Bai et al., 2023) often come with a cost, which          also benefits from the public project of mPLUG-
+                                                                                6              7          8                    9
+                  introduces operational expenses. Additionally, our       Owl , MiniGPT-4 , LLaVA , GroundingDINO ,
+                                                                                          10
+                  UNIHDreliesonseveral external tools to provide           and MAERec . This work was supported by
+                  evidence for enhanced illusion verification, result-     the National Natural Science Foundation of China
+                  ing in additional inference time. In the future, we      (No. 62206246, No. NSFCU23B2055, No. NS-
+                  will further explore training open-source dedicated      FCU19B2027),theFundamentalResearchFunds
+                  illusion detection models with the tool to further       for the Central Universities (226-2023-00138), Zhe-
+                  improve effectiveness and reduce costs.                  jiang Provincial Natural Science Foundation of
+                                                                           China (No. LGG22F030011), Yongjiang Talent
+                  TheScopeofHallucinationCategories.             In our    Introduction Programme (2021A-156-G), and In-
+                  commitment to developing a comprehensive hal-            formation Technology Center and State Key Lab
+                  lucination detection framework, referred to as           of CAD&CG,ZhejiangUniversity. This work was
+                  UNIHD,forMLLMs,wehavemadeeffortstoin-                    supported by Ant Group and Zhejiang University -
+                  corporatevariousprevalenthallucinationcategories         Ant Group Joint Laboratory of Knowledge Graph.
+                  within MHaluBench and UNIHD,including object,               6
+                  attribute, scene-text, and factual aspects, among            https://github.com/X-PLUG/mPLUG-Owl
+                                                                              7https://github.com/Vision-CAIR/
+                  others. However, it is important to acknowledge          MiniGPT-4
+                  that there are additional categories of hallucinations      8https://github.com/haotian-liu/LLaVA
+                  that have not been covered in our framework, as             9https://github.com/IDEA-Research/
+                                                                           GroundingDINO
+                  discussed in the existing literature (Zhang et al.,        10https://github.com/Mountchicken/
+                  2023b; Wang et al., 2023a; Mishra et al., 2024;          Union14M
+                                                                       3243
+                  References                                                  Lei Huang, Weijiang Yu, Weitao Ma, Weihong Zhong,
+                  Jinze Bai, Shuai Bai, Shusheng Yang, Shijie Wang,              Zhangyin Feng, Haotian Wang, Qianglong Chen,
+                     Sinan Tan, Peng Wang, Junyang Lin, Chang Zhou,              WeihuaPeng,XiaochengFeng,BingQin,andTing
+                     and Jingren Zhou. 2023. Qwen-vl: A frontier large           Liu. 2023b. A survey on hallucination in large lan-
+                     vision-language model with versatile abilities. CoRR,       guage models: Principles, taxonomy, challenges, and
+                     abs/2308.12966.                                             open questions. CoRR, abs/2311.05232.
+                                                                              Qidong Huang, Xiaoyi Dong, Pan Zhang, Bin Wang,
+                  James Betker, Gabriel Goh, Li Jing, TimBrooks, Jian-           Conghui He, Jiaqi Wang, Dahua Lin, Weiming
+                     feng Wang, Linjie Li, LongOuyang, JuntangZhuang,            Zhang, and Nenghai Yu. 2023c. OPERA: alleviating
+                     JoyceLee, YufeiGuo, WesamManassra, PrafullaD-               hallucination in multi-modal large language models
+                     hariwal, CaseyChu, YunxinJiao, and Aditya Ramesh.           via over-trust penalty and retrospection-allocation.
+                     2023. Improving image generation with better cap-           CoRR,abs/2311.17911.
+                     tions.
+                                                                              Ziwei Ji, Nayeon Lee, Rita Frieske, Tiezheng Yu, Dan
+                  Huajun Chen. 2023. Large knowledge model: Perspec-             Su, Yan Xu, Etsuko Ishii, Ye Jin Bang, Andrea
+                     tives and challenges. CoRR, abs/2312.02706.                 Madotto, and Pascale Fung. 2023. Survey of halluci-
+                                                                                 nation in natural language generation. ACM Comput.
+                  Xiang Chen, Duanzheng Song, Honghao Gui, Chengxi               Surv., 55(12).
+                     Wang, Ningyu Zhang, Jiang Yong, Fei Huang,               QingJiang, Jiapeng Wang, Dezhi Peng, Chongyu Liu,
+                     Chengfei Lv, Dan Zhang, and Huajun Chen. 2023.              and Lianwen Jin. 2023. Revisiting scene text recog-
+                     Factchd: Benchmarking fact-conflicting hallucina-           nition: A data perspective. In Proceedings of the
+                     tion detection. CoRR, abs/2310.12086.                       IEEE/CVFinternational conference on computer vi-
+                  I-Chun Chern, Steffi Chern, Shiqi Chen, Weizhe Yuan,           sion.
+                     Kehua Feng, Chunting Zhou, Junxian He, Graham            Liqiang Jing, Ruosen Li, Yunmo Chen, Mengzhao Jia,
+                     Neubig, and Pengfei Liu. 2023. Factool: Factual-            and Xinya Du. 2023. FAITHSCORE: evaluating hal-
+                     ity detection in generative AI - A tool augmented           lucinations in large vision-language models. CoRR,
+                     framework for multi-task and multi-domain scenar-           abs/2311.01477.
+                     ios. CoRR, abs/2307.13528.
+                                                                              Mintong Kang, Nezihe Merve Gürel, Ning Yu, Dawn
+                  Ailin Deng, Zhirui Chen, and Bryan Hooi. 2024. Seeing          Song, and Bo Li. 2024. C-RAG: certified genera-
+                     is believing: Mitigating hallucination in large vision-     tion risks for retrieval-augmented language models.
+                     language models via clip-guided decoding. CoRR,             CoRR,abs/2402.03181.
+                     abs/2402.15300.
+                                                                              Wojciech Kryscinski, Bryan McCann, Caiming Xiong,
+                  ZaneDurante,QiuyuanHuang,NaokiWake,RanGong,                    and Richard Socher. 2020. Evaluating the factual
+                     Jae Sung Park, Bidipta Sarkar, Rohan Taori, Yusuke          consistency of abstractive text summarization. In
+                     Noda, Demetri Terzopoulos, Yejin Choi, Katsushi             Proceedings of the 2020 Conference on Empirical
+                     Ikeuchi, Hoi Vo, Li Fei-Fei, and Jianfeng Gao. 2024.        Methods in Natural Language Processing (EMNLP),
+                     Agent ai: Surveying the horizons of multimodal in-          pages 9332–9346, Online. Association for Computa-
+                     teraction.                                                  tional Linguistics.
+                  Shibo Hao, Tianyang Liu, Zhen Wang, and Zhiting             Sicong Leng, Hang Zhang, Guanzheng Chen, Xin
+                     Hu. 2023.    Toolkengpt: Augmenting frozen lan-             Li, Shijian Lu, Chunyan Miao, and Lidong Bing.
+                     guagemodelswithmassivetoolsviatoolembeddings.               2023. Mitigatingobjecthallucinationsinlargevision-
+                     NeurIPS 2023.                                               language models through visual contrastive decoding.
+                                                                                 CoRR,abs/2311.16922.
+                  Jonathan Ho, Ajay Jain, and Pieter Abbeel. 2020. De-        Junyi Li, Xiaoxue Cheng, Xin Zhao, Jian-Yun Nie, and
+                     noising diffusion probabilistic models. In Advances         Ji-Rong Wen. 2023a. Halueval: A large-scale hal-
+                     in Neural Information Processing Systems 33: An-            lucination evaluation benchmark for large language
+                     nual Conference on Neural Information Processing            models. In Proceedings of the 2023 Conference on
+                     Systems 2020, NeurIPS 2020, December 6-12, 2020,            Empirical Methods in Natural Language Process-
+                     virtual.                                                    ing, EMNLP 2023, Singapore, December 6-10, 2023,
+                  Xuming Hu, Junzhe Chen, Xiaochuan Li, Yufei Guo,               pages 6449–6464. Association for Computational
+                     Lijie Wen, Philip S. Yu, and Zhijiang Guo. 2024.            Linguistics.
+                     Dolarge language models know about facts? ICLR           Yifan Li, Yifan Du, Kun Zhou, Jinpeng Wang,
+                     2024.                                                       Wayne Xin Zhao, and Ji-Rong Wen. 2023b. Eval-
+                  Kaiyi Huang, Kaiyue Sun, Enze Xie, Zhenguo Li, and             uating object hallucination in large vision-language
+                     Xihui Liu. 2023a. T2i-compbench: A comprehen-               models. EMNLP.
+                     sive benchmark for open-world compositional text-        Yaobo Liang, Chenfei Wu, Ting Song, Wenshan Wu,
+                     to-image generation. CoRR, abs/2307.06350.                  Yan Xia, Yu Liu, Yang Ou, Shuai Lu, Lei Ji,
+                                                                          3244
+                    Shaoguang Mao, Yun Wang, Linjun Shou, Ming             Vipula Rawte, Amit P. Sheth, and Amitava Das. 2023.
+                    Gong, and Nan Duan. 2023. Taskmatrix.ai: Com-            Asurveyofhallucination in large foundation models.
+                    pleting tasks by connecting foundation models with       CoRR,abs/2309.05922.
+                    millions of apis. CoRR, abs/2303.16434.                Chitwan Saharia, William Chan, Saurabh Saxena, Lala
+                  Hunter Lightman, Vineet Kosaraju, Yura Burda, Harri        Li, Jay Whang, Emily L. Denton, Seyed Kam-
+                    Edwards, Bowen Baker, Teddy Lee, Jan Leike, John         yar Seyed Ghasemipour, Raphael Gontijo Lopes,
+                    Schulman, Ilya Sutskever, and Karl Cobbe. 2023.          Burcu Karagol Ayan, Tim Salimans, Jonathan Ho,
+                    Let’s verify step by step.                               David J. Fleet, and Mohammad Norouzi. 2022. Pho-
+                  Tsung-Yi Lin, Michael Maire, Serge Belongie, James         torealistic text-to-image diffusion models with deep
+                    Hays, Pietro Perona, Deva Ramanan, Piotr Dollár,         language understanding. In Advances in Neural In-
+                    and C Lawrence Zitnick. 2014.      Microsoft coco:       formation Processing Systems 35: Annual Confer-
+                    Commonobjectsincontext. In ECCV.                         enceonNeuralInformationProcessingSystems2022,
+                                                                             NeurIPS 2022, New Orleans, LA, USA, November 28
+                  Fuxiao Liu, Tianrui Guan, Zongxia Li, Lichang Chen,        - December 9, 2022.
+                    Yaser Yacoob, Dinesh Manocha, and Tianyi Zhou.         TimoSchick, Jane Dwivedi-Yu, Roberto Dessì, Roberta
+                    2023a. Hallusionbench: You see what you think?           Raileanu, Maria Lomeli, Luke Zettlemoyer, Nicola
+                    or you think what you see?       an image-context        Cancedda, and Thomas Scialom. 2023. Toolformer:
+                    reasoning benchmark challenging for gpt-4v(ision),       Language models can teach themselves to use tools.
+                    llava-1.5, and other multi-modality models. CoRR,        NeurIPS 2023.
+                    abs/2310.14566.
+                  Fuxiao Liu, Kevin Lin, Linjie Li, Jianfeng Wang, Yaser   Sina J. Semnani, Violet Z. Yao, Heidi C. Zhang, and
+                    Yacoob, and Lijuan Wang. 2023b. Aligning large           Monica S. Lam. 2023. Wikichat: Stopping the hal-
+                    multi-modal model with robust instruction tuning.        lucination of large language model chatbots by few-
+                    CoRR,abs/2306.14565.                                     shot grounding on wikipedia.
+                  Hanchao Liu, Wenyuan Xue, Yifei Chen, Dapeng Chen,       Yongliang Shen, Kaitao Song, Xu Tan, Dongsheng Li,
+                    Xiutian Zhao, Ke Wang, Liping Hou, Rongjun Li,           WeimingLu,andYuetingZhuang.2023. Hugging-
+                    and Wei Peng. 2024. A survey on hallucination in         gpt: Solving AI tasks with chatgpt and its friends in
+                    large vision-language models.                            huggingface. NeurIPS 2023.
+                  Haotian Liu, Chunyuan Li, Qingyang Wu, and Yong Jae      NoahShinn,Federico Cassano, Edward Berman, Ash-
+                    Lee. 2023c.    Visual instruction tuning.   CoRR,        win Gopinath, Karthik Narasimhan, and Shunyu Yao.
+                    abs/2304.08485.                                          2023. Reflexion: Language agents with verbal rein-
+                                                                             forcement learning.
+                  Shilong Liu, Zhaoyang Zeng, Tianhe Ren, Feng             Amanpreet Singh, Vivek Natarajan, Meet Shah,
+                    Li, Hao Zhang, Jie Yang, Chunyuan Li, Jianwei            YuJiang,XinleiChen,DhruvBatra,DeviParikh,and
+                    Yang, Hang Su, Jun Zhu, and Lei Zhang. 2023d.            Marcus Rohrbach. 2019. Towards VQA models that
+                    Grounding DINO: marrying DINO with grounded              can read. In IEEE Conference on Computer Vision
+                    pre-training for open-set object detection. CoRR,        and Pattern Recognition, CVPR 2019, Long Beach,
+                    abs/2303.05499.                                          CA,USA,June16-20,2019,pages8317–8326.Com-
+                  Abhika Mishra, Akari Asai, Vidhisha Balachandran,          puter Vision Foundation / IEEE.
+                    Yizhong Wang, Graham Neubig, Yulia Tsvetkov, and       S. M Towhidul Islam Tonmoy, S M Mehedi Zaman,
+                    HannanehHajishirzi. 2024. Fine-grained hallucina-        Vinija Jain, Anku Rani, Vipula Rawte, Aman Chadha,
+                    tion detection and editing for language models.          and Amitava Das. 2024. A comprehensive survey of
+                  OpenAI. 2023. Gpt-4 technical report. OpenAI.              hallucination mitigation techniques in large language
+                                                                             models.
+                  BaolinPeng,MichelGalley,PengchengHe,HaoCheng,
+                    Yujia Xie, Yu Hu, Qiuyuan Huang, Lars Liden, Zhou      Fanqi Wan, Xinting Huang, Leyang Cui, Xiaojun Quan,
+                    Yu, Weizhu Chen, and Jianfeng Gao. 2023. Check           Wei Bi, and Shuming Shi. 2024. Mitigating hallu-
+                    your facts and try again: Improving large language       cinations of large language models via knowledge
+                    models with external knowledge and automated feed-       consistent alignment. CoRR, abs/2401.10768.
+                    back. CoRR, abs/2302.12813.                            Alex Wang, Kyunghyun Cho, and Mike Lewis. 2020.
+                  Shuofei Qiao, Honghao Gui, Huajun Chen, and Ningyu         Asking and answering questions to evaluate the fac-
+                    Zhang. 2023.     Making language models better           tual consistency of summaries. In Proceedings of the
+                    tool learners with execution feedback.      CoRR,        58th Annual Meeting of the Association for Compu-
+                    abs/2305.13068.                                          tational Linguistics, pages 5008–5020, Online. Asso-
+                  Aditya Ramesh, Prafulla Dhariwal, Alex Nichol, Casey       ciation for Computational Linguistics.
+                    Chu, and Mark Chen. 2022.        Hierarchical text-    Cunxiang Wang, Xiaoze Liu, Yuanhao Yue, Xiangru
+                    conditional image generation with CLIP latents.          Tang, Tianhang Zhang, Jiayang Cheng, Yunzhi Yao,
+                    CoRR,abs/2204.06125.                                     WenyangGao,XumingHu,ZehanQi,YidongWang,
+                                                                      3245
+                     Linyi Yang, Jindong Wang, Xing Xie, Zheng Zhang,       Bohan Zhai, Shijia Yang, Xiangchen Zhao, Chenfeng
+                     and Yue Zhang. 2023a. Survey on factuality in large      Xu, Sheng Shen, Dongdi Zhao, Kurt Keutzer, Man-
+                     language models: Knowledge, retrieval and domain-        ling Li, Tan Yan, and Xiangjun Fan. 2023. Halle-
+                     specificity. CoRR, abs/2310.07521.                       switch: Rethinking and controlling object existence
+                                                                              hallucinations in large vision language models for
+                  Junyang Wang, Yuhang Wang, Guohai Xu, Jing Zhang,           detailed caption. CoRR, abs/2310.01779.
+                    Yukai Gu, Haitao Jia, Ming Yan, Ji Zhang, and Jitao     Yue Zhang, Leyang Cui, Wei Bi, and Shuming Shi.
+                     Sang. 2023b. An llm-free multi-dimensional bench-        2023a. Alleviating hallucinations of large language
+                     mark for mllms hallucination evaluation.    CoRR,        models through induced hallucinations.       CoRR,
+                     abs/2311.07397.                                          abs/2312.15710.
+                  Junyang Wang, Yiyang Zhou, Guohai Xu, Pengcheng           YueZhang,YafuLi,LeyangCui,DengCai,LemaoLiu,
+                     Shi, Chenlin Zhao, Haiyang Xu, Qinghao Ye, Ming          Tingchen Fu, Xinting Huang, Enbo Zhao, Yu Zhang,
+                    Yan, Ji Zhang, Jihua Zhu, Jitao Sang, and Haoyu           Yulong Chen, Longyue Wang, Anh Tuan Luu, Wei
+                    Tang. 2023c.     Evaluation and analysis of hallu-        Bi, Freda Shi, and Shuming Shi. 2023b. Siren’s song
+                     cination in large vision-language models. CoRR,          in the AI ocean: A survey on hallucination in large
+                     abs/2308.15126.                                          language models. CoRR, abs/2309.01219.
+                  Xintong Wang, Jingheng Pan, Liang Ding, and Chris         Linxi Zhao, Yihe Deng, Weitong Zhang, and Quanquan
+                     Biemann. 2024. Mitigating hallucinations in large        Gu. 2024. Mitigating object hallucination in large
+                     vision-language models with instruction contrastive      vision-language models via classifier-free guidance.
+                     decoding. CoRR, abs/2403.18715.                          CoRR,abs/2402.08680.
+                  Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten          Yiyang Zhou, Chenhang Cui, Jaehong Yoon, Linjun
+                     Bosma,Brian Ichter, Fei Xia, Ed H. Chi, Quoc V. Le,      Zhang, Zhun Deng, Chelsea Finn, Mohit Bansal, and
+                     and Denny Zhou. 2022. Chain-of-thought prompt-           Huaxiu Yao. 2023. Analyzing and mitigating object
+                     ing elicits reasoning in large language models. In       hallucination in large vision-language models. CoRR,
+                    NeurIPS.                                                  abs/2310.00754.
+                  Junfei Wu, Qiang Liu, Ding Wang, Jinghao Zhang,           Deyao Zhu, Jun Chen, Xiaoqian Shen, Xiang Li, and
+                     Shu Wu, Liang Wang, and Tieniu Tan. 2024.                MohamedElhoseiny. 2023. Minigpt-4: Enhancing
+                     Logical closed loop: Uncovering object halluci-          vision-language understanding with advanced large
+                     nations in large vision-language models.    CoRR,        language models. CoRR, abs/2304.10592.
+                     abs/2402.11622.                                        A PromptTemplates
+                  QimingXie,ZengzhiWang,YiFeng,andRuiXia.2023.             Within this section, we outline the prompt tem-
+                    Askagain, then fail: Large language models’ vacilla-    plates designed to guide the foundational MLLM
+                     tions in judgement. CoRR, abs/2310.02174.
+                                                                            for the autonomous query formulation (illustrated
+                  Shangyu Xing, Fei Zhao, Zhen Wu, Tuo An, Weihao           in Table 3-6) and verification of any hallucinated
+                     Chen, Chunhui Li, Jianbing Zhang, and Xinyu Dai.       content (shown in Table 7-8).
+                     2024. EFUF: efficient fine-grained unlearning frame-
+                    work for mitigating hallucinations in multimodal
+                     large language models. CoRR, abs/2402.09801.
+                  Xianjun Yang, Liangming Pan, Xuandong Zhao,
+                     HaifengChen,LindaR.Petzold,WilliamYangWang,
+                     and Wei Cheng. 2023. A survey on detection of llms-
+                     generated content. CoRR, abs/2310.15654.
+                  Qinghao Ye, Haiyang Xu, Guohai Xu, Jiabo Ye, Ming
+                    Yan, Yiyang Zhou, Junyang Wang, Anwen Hu,
+                     Pengcheng Shi, Yaya Shi, Chenliang Li, Yuanhong
+                    Xu, Hehong Chen, Junfeng Tian, Qian Qi, Ji Zhang,
+                     and Fei Huang. 2023. mplug-owl: Modularization
+                     empowerslargelanguagemodelswithmultimodality.
+                    CoRR,abs/2304.14178.
+                  ShukangYin,ChaoyouFu,SiruiZhao,TongXu,Hao
+                    Wang,DianboSui,YunhangShen,KeLi,XingSun,
+                     and Enhong Chen. 2023. Woodpecker: Hallucina-
+                     tion correction for multimodal large language models.
+                    CoRR,abs/2310.16045.
+                                                                       3246
+                                 SYSTEM:
+                                 Youareabrilliant object extractor.
+                                 USER:
+                                 Given a list of claim, extract the objects from each claim for me.
+                                 Extract the common objects and summarize them as general categories without repetition,
+                                 merge essentially similar objects.
+                                 Avoid extracting hypernyms, keep hyponyms!
+                                 Avoid extracting abstract or non-specific objects.
+                                 Extract object in the singular form.
+                                 Output all the extracted types of items separate each object type with a period.
+                                 If there is nothing to output, then output a single "none".
+                                 YOUMUSTTODISREGARDOBJECTWORDSTHATARENOTNATURALOBJECTS,
+                                 SUCHASSCENES,AREA,SKY,GROUND,WORDS,ATMOSPHERES,COUNTRIES,
+                                 NAMES, AND PLACES.IF THERE ARE NO NATURAL objects IN THE SENTENCE,
+                                 RETURN’none’.
+                                 YOUMUSTRETURNTHERESULTSINADICTIONARYACCORDINGTOTHEGIVEN
+                                 ORDEROFTHELISTOFCLAIMS.
+                                 You MUST only respond in the format as described below. DO NOT RESPOND WITH
+                                 ANYTHINGELSE.
+                                 responseformat: {{"claim1":"object1.object2.object3","claim2":"none","claim3":"object1.object2",
+                                 ...}}
+                                 Here are three examples:
+                                 claim list:
+                                 claim1: The image depicts a man laying on the ground.
+                                 claim2: The man is next to a motorcycle.
+                                 claim3: The sun is shining upon the ground.
+                                 claim4: The light is very bright.
+                                 output:
+                                 {{"claim1":"man","claim2":"man.motorcycle","claim3":"none", "claim4":"none"}}
+                                 claim list:
+                                 claim1: The image shows a device.
+                                                                 ¨
+                                 claim2: The device has the words Samsung.
+                                 claim3: Samsung is a Korean company.    ¨
+                                 output:
+                                 {{"claim1":"device","claim2":"device", "claim3":"none"}}
+                                 claim list:
+                                 claim1: A man wears a green shirt.
+                                 claim2: The man’s face is beaming with a smile.
+                                 claim3: The image shows the man in high spirits.
+                                 output:
+                                 {{"claim1":"man.shirt","claim2":"man","claim3":"man"}}
+                                 Nowcompleteyouroutputwithfollowing the above rules.
+                                 claim list:
+                                 {claims}
+                                 output:
+                              Table 3: Prompt template of query formulation (object-level) for image-to-text generation.
+                                                                          3247
+               SYSTEM:
+               Youareabrilliant question generator.
+               USER:
+               Given a list of claim and some objects(each object is connected by a period), you’re required to
+               generate questions about attributes of the given objects.
+               The generated questions may involve basic attributes such as colors, actions and position
+               mentioned in the claim.
+               Donotaskquestions involving object counts or the existence of object. Do not ask questions
+               involving scene text.
+               Whenaskingquestionsaboutattributes, try to ask simple questions that only involve one object.
+               Askquestions that can be easily decided visually. Do not ask questions that require complex
+               reasoning.
+               Donotasksemantically similar questions. Do not ask questions only about scenes or places.
+               Donotaskquestions about uncertain or conjecture parts of the claim, for example, the parts
+               described with "maybe" or "likely", etc.
+               It is no need to cover all the specified objects. If there is no question to ask, simply output
+               ’none’.
+               YOUMUSTRETURNTHERESULTSINADICTIONARYACCORDINGTOTHEGIVEN
+               ORDEROFTHELISTOFCLAIMS.
+               You MUST only respond in the format as described below. DO NOT RESPOND WITH
+               ANYTHINGELSE.
+               responseformat: {{"claim1":["question1","question2"],"claim2":["none"],"claim3":["question1",
+               "question2"], ...}}
+               Here are three examples:
+               objects:
+               dog.cat
+               claim list:
+               claim1: There is one black dog on the left in the image.
+               claim2: There are two white cats on the right in the image.
+               output:
+               {{"claim1":["Whatcoloristhedog?","Isthereadogontheleftintheimage?"],"claim2":["What
+               color are the cat?", "Are there two cats on the right in the image?"]}}
+               objects:
+               man.baseball cap.wall
+               claim list:
+               claim1: The man is wearing a baseball cap.
+               claim2: The man appears to be smoking.
+               claim3: ’hello world’ is written on the white wall.
+               output:
+               {{"claim1":["What is the man wearing?"], "claim2":["Does the man appear to be smoking?"],
+               "claim3":[What color is the wall?]}}
+               objects:
+               kitchen.man.apron
+               claim list:
+               claim1: The image depicts a kitchen.
+               claim2: There is a man in a white apron.
+               claim3: The man is standing in the middle of the kitchen.
+               claim4: The overall atmosphere is very pleasant.
+               output:
+               "claim1":["none"], "claim2":["What does the man wear?", "What color is the apron?"],
+               "claim3":["Is the man standing in the middle of the kitchen?"], "claim4": ["none"]
+               Now complete the following with following the above rules. DO NOT RESPOND WITH
+               ANYTHINGELSE.
+               objects:
+               {objects}
+               claim list:
+               {claims}
+               output:
+             Table 4: Prompt template of query formulation (attribute-level) for image-to-text generation.
+                                 3248
+               SYSTEM:
+               Youareabrilliant question generator.
+               USER:
+               Given a list of claim, you’re required to generate questions about scene text to assist users in
+               verifying the accuracy of the claim.
+               If the information mentioned in this claim pertains to scene text, you’ll need to generate question
+               about the scene text.
+               If the claim is unrelated to the scene text information in the image, such as: objects, colors,
+               actions, position etc, simply return ’none’.
+               YOUMUSTRETURNTHERESULTSINADICTIONARYACCORDINGTOTHEGIVEN
+               ORDEROFTHELISTOFCLAIMS.
+               You MUST only respond in the format as described below. DO NOT RESPOND WITH
+               ANYTHINGELSE.
+               responseformat: {{"claim1":["question1","question2"],"claim2":["none"],"claim3":["question1",
+               "question2"], ...}}
+               Here are three examples:
+               claim list:
+               claim1: There is a black device in the image.
+               claim2: The device is a brand of smartphones produced by Samsung Electronics.
+               output: {{"claim1":["none"],"claim2":["What is the brand of the device in the image?"]}}
+               claim list:
+               claim1: A stop sign is on the left.
+               claim2: The stop sign says stop eating animals.
+               output: {{"claim1":["none"],"claim2":["What does the stop sign say in the image?"]}}
+               claim list:
+               claim1: The words ’Hello World’ are written on the car.
+               claim2: A man is standing beside the car.
+               output: {{"claim1":["What are written on the car?"],"claim2":["none"]}}
+               Now complete the following with following the above rules. DO NOT RESPOND WITH
+               ANYTHINGELSE.
+               claim list:
+               {claims}
+               output:
+             Table 5: Prompt template of query formulation (scene-text-level) for image-to-text generation.
+                                 3249
+               SYSTEM:
+               Youareabrilliant question generator.
+               USER:
+               Given a list of claim, you’re required to generate questions about related to factual visual
+               information.
+               For a claim based on factual knowledge, Your primary task is to generate a Python list of two
+               effective and skeptical search engine questions.
+               These questions should assist users in critically evaluating the factuality of a provided claim
+               using search engines.
+               If a claim is not based on factual knowledge, simply return ’none’.
+               YOUMUSTRETURNTHERESULTSINADICTIONARYACCORDINGTOTHEGIVEN
+               ORDEROFTHELISTOFCLAIMS.
+               You MUST only respond in the format as described below. DO NOT RESPOND WITH
+               ANYTHINGELSE.
+               responseformat: {{"claim1":["question1","question2"],"claim2":["none"],"claim3":["question1",
+               "question2"], ...}}
+               Here are three examples:
+               claim list:
+               claim1: The image shows a black phone.
+               claim2: This black phone is manufactured by Huawei.
+               claim3: Huawei is a company located in Shenzhen, China.
+               output:
+               {{"claim1":["none"],"claim2":["none"],"claim3":["Where is Huawei headquartered?", "Huawei
+               company"]}}
+               claim list:
+               claim1: The image shows an app of twitter.
+               claim2: The CEO of twitter is Bill Gates.
+               output: {{"claim1":["none"],"claim2":["Who is the CEO of twitter?", "CEO Twitter"]}}
+               claim list:
+               claim1: The man is playing baseball.
+               claim2: The man is wearing a colorful shirt.
+               output: {{"claim1":["none"],"claim2":["none"]}}
+               Now complete the following with following the above rules. DO NOT RESPOND WITH
+               ANYTHINGELSE.
+               claim list:
+               {claims}
+               output:
+              Table 6: Prompt template of query formulation (fact-level) for image-to-text generation.
+                                 3250
+               SYSTEM:
+               Youareabrilliant hallucination judger.
+               USER:
+               Given a list of claims from Multimodal Large Language Models and an image, you are required
+               to judge whether each claim in the list by the Multimodal Large Language Model model
+               conflicts with the image, following these rules:
+               1. You must carefully judge from four aspects, including the object, attributes, scene text and
+               fact. Here are specific descriptions of the four aspects for you to review:
+               "Object" specifically refers to whether the objects in the image exist and if the quantity of
+               objects conflicts with the object information in the claims;
+               "Attributes" specifically refer to whether the color, position, action of objects in the image
+               conflict with the attribute information in the claims;
+               "Scene Text" specifically refers to whether the textual information in the scene of the image
+               conflicts with the required textual information in the claims.
+               "Fact" specifically refers to relevant factual knowledge obtained by querying a search engine.
+               Youcanverify the factual accuracy of the claims based on the provided external knowledge.
+               2. You’ll also receive detection results from the expert model. The object detection expert model
+               will provide detected entity names along with their bounding box information in the image.
+               Whenderiving position relationships between entity instances, try to also use the bounding
+               boxesinformation, which are represented as [x1, y1, x2, y2] with floating numbers ranging from
+               0 to 1. These values correspond to the top left x1, top left y1, bottom right x2, and bottom right
+               y2. The scene text expert model will provide detected specific text along with their bounding
+               box information in the image. As long as there is a conflict between a single letter in the scene
+               text and the text information required in the claim, it’s considered a hallucination.
+               3. You must carefully judge whether the visual information in the image conflicts with each
+               claim. If there is a conflict, the result for that statement is labeled as ’hallucination’; otherwise,
+               it is labeled as ’non-hallucination’."
+               4. Finally, YOU MUST RETURN THE JUDGMENT RESULTS IN A DICTIONARY AC-
+               CORDINGTOTHEGIVENORDEROFTHELISTOFCLAIMS.YouMUSTonlyrespond
+               in the format as described below. DO NOT RESPOND WITH ANYTHING ELSE. response
+               format: ["claim1":"hallucination", "reason":"The reason for your judgment.","claim2":"non-
+               hallucination", "reason":"The reason for your judgment.","claim3":"hallucination", "rea-
+               son":"The reason for your judgment.", ...]
+               [Begin of Example ] (Image Entered)
+               Here is the object detection expert model’s result:
+               people [0.345, 0.424, 0.408, 0.509]; people [0.197, 0.44, 0.28, 0.514]
+               people [0.517, 0.315, 0.561, 0.401]; people [0.441, 0.356, 0.47, 0.405]
+               chair [0.398, 0.595, 0.637, 0.901]; chair [0.621, 0.592, 0.789, 0.889]
+               umbrella [0.501, 0.334, 0.968, 0.88]
+               Here is the attribute detection expert model’s result: none information
+               Here is the scene text recognition expert model’s result: none information
+               Here is the external knowledge: none information
+               Here is the claim list:
+               claim1: The picture shows five people swimming.
+               claim2: On the beach, there is a chair, a umbrella, and a surfboard.
+               claim3: The green umbrella is on the right side of the chair.
+               Output: [ "claim1":"hallucination","reason":"The object detection expert model identified four
+               people, not five people. Based on the image information, they might be swimming. Therefore,
+               there’s a hallucination.", "claim2":"hallucination","reason":"According to the results of the
+               object detection expert model and my judgment, there are two chairs and an umbrella in
+               the picture, but there is no surfboard. Therefore, there’s a hallucination.", "claim3":"non-
+               hallucination","reason":"Based on the positional information of the bounding boxes and my
+               judgment, the umbrella is to the right of the chairs. The umbrella is green. Therefore, there’s no
+               hallucination." ]
+               ......
+               [End of Example ]
+               <Input>:
+               <Output>:
+               Table 7: Prompt template of hallucination verification for image-to-text generation.
+                                 3251
+              SYSTEM:
+              Youareabrilliant hallucination judger.
+              USER:
+              Given a list of claims from human prompts, an image generated by the text-to-image model, you are
+              required to judge whether the image conflicts with human-provided prompts, following these rules:
+              1. You must carefully judge from four aspects, including the object, attributes, scene text and fact.
+              Here are specific descriptions of the four aspects for you to review:
+              "Object" specifically refers to whether the objects in the image exist and if the quantity of objects
+              conflicts with the object information in the claims;
+              "Attributes" specifically refer to whether the color, position, action of objects in the image conflict
+              with the attribute information in the claims;
+              "Scene Text" specifically refers to whether the textual information in the scene of the image conflicts
+              with the required textual information in the claims.
+              "Fact" specifically refers to relevant factual knowledge obtained by querying a search engine. You
+              can verify the factual accuracy of the claims based on the provided external knowledge.
+              2. You’ll also receive detection results from the expert model. The object detection expert model will
+              provide detected entity names along with their bounding box information in the image. When deriving
+              position relationships between entity instances, try to also use the bounding boxes information, which
+              are represented as [x1, y1, x2, y2] with floating numbers ranging from 0 to 1. These values correspond
+              to the top left x1, top left y1, bottom right x2, and bottom right y2. The scene text expert model will
+              provide detected specific text along with their bounding box information in the image. As long as
+              there is a conflict between a single letter in the scene text and the text information required in the
+              claim, it’s considered a hallucination.
+              3. You must carefully judge whether the visual information in the image conflicts with each claim. If
+              there is a conflict, the result for that statement is labeled as ’hallucination’; otherwise, it is labeled as
+              ’non-hallucination’."
+              4. Finally, YOU MUST RETURNTHEJUDGMENTRESULTSINADICTIONARYACCORD-
+              ING TO THE GIVEN ORDER OF THE LIST OF CLAIMS. You MUST only respond in the
+              format as described below. DO NOT RESPOND WITH ANYTHING ELSE. response format:
+              ["claim1":"hallucination", "reason":"The reason for your judgment.","claim2":"non-hallucination",
+              "reason":"The reason for your judgment.","claim3":"hallucination", "reason":"The reason for your
+              judgment.", ...]
+              [Begin of Example ] (Image Entered)
+              Here is the object detection expert model’s result:
+              basketball [0.741, 0.179, 0.848, 0.285]
+              boy [0.773, 0.299, 0.98, 0.828]
+              car [0.001, 0.304, 0.992, 0.854]
+              Here is the attribute detection expert model’s result: none information
+              Here is the scene text recognition expert model’s result:
+              worlld [0.405, 0.504, 0.726, 0.7]
+              Here is the external knowledge: none information
+              Here is the claim list:
+              claim1: The side of the car reads ’Hello World’
+              claim2: A boy is playing a yellow basketball beside a plant.
+              Output: ["claim1":"hallucination", "reason":"The object detection model has identified a car in
+              the image. However, based on the detection results of the scene text expert model and my judg-
+              ment, the text in the image is ’hello worlld’ not ’hello world’. Therefore, there’s a hallucina-
+              tion.","claim2":"hallucination", "reason":"The object detection model has identified a boy and a
+              basketball in the image. And the boy is visible in the image playing with a yellow basketball. But
+              according to the detection results of the object detection expert model and my judgment, there’s no
+              plant. Therefore, there’s a hallucination."]
+              ......
+              [End of Example ]
+              <Input>:
+              <Output>:
+               Table 8: Prompt template of hallucination verification for text-to-image generation.
+                                 3252

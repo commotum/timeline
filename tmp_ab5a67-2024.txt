@@ -1,0 +1,839 @@
+                                  POS-BERT:PointCloudOne-StageBERT
+                                                          Pre-Training
+                                                 1,2,3          2             1,3               2
+                                        KexueFu        PengGao     ShaoLei Liu    Renrui Zhang
+                                                              2                 1,3∗
+                                                       YuQiao    ManningWang
+                             1 Digital Medical Research Center, School of Basic Medical Sciences, Fudan University
+                                                            2 Shanghai AI Lab
+                           3 Shanghai Key Laboratory of Medical Image Computing and Computer Assisted Intervention
+                                      {fukexue, mnwang}@fudan.edu.cn, gaopeng@pjlab.org.cn
+                                                                Abstract
+                                Recently, the pre-training paradigm combining Transformer and masked language
+                                modeling has achieved tremendous success in NLP, images, and point clouds,
+                                such as BERT. However, directly extending BERT from NLP to point clouds re-
+                                quires training a ﬁxed discrete Variational AutoEncoder (dVAE) before pre-training,
+                                whichresults in a complex two-stage method called Point-BERT. Inspired by BERT
+                                and MoCo, we propose POS-BERT, a one-stage BERT pre-training method for
+                                point clouds. Speciﬁcally, we use the mask patch modeling (MPM) task to perform
+                                point cloud pre-training, which aims to recover masked patches information under
+                                the supervision of the corresponding tokenizer output. Unlike Point-BERT, its
+                                tokenizer is extra-trained and frozen. We propose to use the dynamically updated
+                                momentumencoderasthetokenizer, which is updated and outputs the dynamic su-
+                                pervision signal along with the training process. Further, in order to learn high-level
+                                semantic representation, we combine contrastive learning to maximize the class
+                                token consistency between different transformation point clouds. Extensive exper-
+                                iments have demonstrated that POS-BERT can extract high-quality pre-training
+                                features and promote downstream tasks to improve performance. Using the pre-
+                                training model without any ﬁne-tuning to extract features and train linear SVM
+                                onModelNet40,POS-BERTachievesthestate-of-the-art classiﬁcation accuracy,
+                                which exceeds Point-BERT by 3.5%. In addition, our approach has signiﬁcantly
+                                improved many downstream tasks, such as ﬁne-tuned classiﬁcation, few-shot clas-
+                                siﬁcation, part segmentation. The code and trained-models will be available at:
+        arXiv:2204.00989v1  [cs.CV]  3 Apr 2022https://github.com/fukexue/POS-BERT.
+                        1   Introduction
+                        Point cloud is an intuitive, ﬂexible and memory-efﬁcient 3D data representation and has become
+                        indispensablein3Dvision. Learningpowerfulpointcloudrepresentationisverycrucialforfacilitating
+                        machines to understand the 3D world, which is beneﬁcial for promoting the development of many
+                        important real-world applications, such as autonomous driving [1], augmented reality [2] and robotics
+                        [3]. With the rapid development of deep learning in these years [4, 5], supervised 3D point cloud
+                        analysis methods have made great progress [6–9]. However, both exponentially increasing demand
+                        for data and expensive 3D data annotation hinder further performance improvement of supervised
+                        methods. On the contrary, due to the widespread popularity of 3D sensors (Lidar, ToF camera,
+                        RGB-Dsensororcamerastereo-pair), a large number of unlabeled point cloud data are available for
+                        self-supervised point cloud representation learning.
+                           ∗Corresponding author
+                        Preprint. Under review.
+                      Unsupervised or self-supervised learning methods have shown their effectiveness in different ﬁelds
+                      [10–14]. Recent work [15, 11, 16, 13, 17] has achieved good performance by combining point
+                      clouds with self-supervised learning techniques, such as generative adversarial networks (GAN) [11],
+                      variational autoencoders (VAE) [10], and Gaussian mixture models (GMM) [12]. These methods
+                      usually rely on tasks such as distribution estimation or reconstruction to provide supervisory signals,
+                      and can learn good local detail features, but it is difﬁcult to capture higher-level semantic features.
+                      To learn higher-level semantic features, some methods learn point cloud representations, such as
+                      orientation estimation, by constructing a series of transformation prediction tasks [18–20]. Inspired
+                      byunsupervised learning of 2D images [21–23], point cloud representation is learned by constructing
+                      a series of contrast views [24–27] and combining the most advanced comparative learning methods.
+                      However, these methods rely on network structures with speciﬁc inductive bias to achieve good
+                      performance, such as PointNet++, DGCNN, and so on. In addition, previous methods have never
+                      studied the performance of standard transformers in point cloud analysis tasks.
+                                       dVAE                                    Momentum 
+                                         Freeze                                 Encoder
+                                      Tokenizer                                    Dynamic
+                                                   {5,7,8,3}                    Encoder
+                                      Encoder
+                                 (a) main idea of Point-BERT             (b) main idea of POS-BERT (Our) 
+                      Figure 1: The difference between our approach and Point-BERT. (a) Point-BERT uses an additional
+                      pre-trained dVAE as the Tokenizer, which is frozen during training and the output is discrete. (b) Our
+                      approach eliminates the need for extra processing stages, and Tokenizer is derived from Encoder
+                      through momentum updates, which are dynamic during the training process and the output is
+                      continuous.
+                      Recently, Transformer has achieved impressive results in language and image tasks through extensive
+                      unlabeled data learning and is becoming increasingly popular. Inspired by NLP, Point-BERT devise a
+                      maskpatch modeling (MPM) task to pre-train point cloud Transformers. To generate meaningful
+                      representations for masked patches to guide point cloud Transformers learning, Point-BERT addition-
+                      ally trains a discrete Variational AutoEncoder (dVAE) based on DGCNN as a tokenizer, as shown
+                      in Fig.1 (a). As a result, Point-BERT is a two-stage approach, in which the weight of tokenizer is
+                      frozen, and its feature extraction capabilities directly affect the learning of point cloud Transformers.
+                      Unlike Point-BERT, we extract meaningful representations of masked patches by replacing the frozen
+                      tokenizer with momentum encoder, which is dynamically updated, as shown in Fig.1 (b). Therefore,
+                      our approach is one-stage, and the meaningful representation of mask patches will become better as
+                      the training progresses. In this article, we propose a one-stage BERT point cloud pre-training method
+                      namedPOS-BERT.Inspired by BERT and MoCo, we used MPM task to pre-train on point cloud
+                      and chose standard Transformer without speciﬁc inductive biases as backbone. Speciﬁcally, we ﬁrst
+                      divide the point cloud into a series of patches, then randomly mask out some patches and feed them
+                      into an encoder based on standard transformer. Then, we use a dynamically updated momentum
+                      encoder as the tokenizer. The Momentum Encoder has the same network structure as the Encoder, but
+                      it does not have gradient backward. Its weight is jointly optimized with MPM through momentum
+                      update during the pre-training stage. This greatly simpliﬁes the pre-training step. Next, the point
+                      cloud patches before masked are fed to the Momentum Encoder. The objective of MPM is to make
+                      the Encoder recover output consistent with the Momentum Encoder output at the masked patches
+                      position as much as possible. However, recovering the masked patch information independently leads
+                      to limited ability of point cloud transformer’s class token to extract high-level semantic information.
+                      Toaddress this problem, we perform contrastive learning to maximize the class token consistency
+                      between different augmentation (for example, cropping) point cloud pairs. The main contributions
+                      are summarized as follows:
+                      1) WeproposeaPointCloudOne-StageBERTpre-training method, and named POS-BERT. We use
+                         momentumencodertoprovidecontinuous and dynamic supervision signals for masked patches in
+                                                             2
+                     maskpatchmodelingpretext task. The Momentum Encoder is updated dynamically during the
+                     pre-training stage and does not require extra pre-training processing.
+                   2) We introduce a contrastive learning strategy on transformer’s class token between different
+                     augmentation point cloud pairs, which can help point cloud transformer’s class token obtain a
+                     better high-level semantic representation.
+                   3) Experiments demonstrate that POS-BERT achieves state-of-the-art performance in linear SVM
+                     classiﬁcation task and downstream tasks, such as classiﬁcation and segmentation.
+                   2  Related work
+                   Point Cloud Self-Supervised Learning The goal of self-supervised learning is to learn good feature
+                   representations from unlabeled raw data so that they can be well adapted to various downstream tasks
+                   [28]. Currently, self-supervised learning has been extensively studied in point cloud representation
+                   learning, and they focus on constructing a pretext task to help the network better learn 3D point
+                   cloud representations. A commonly adopted pretext task is to reconstruct the input point cloud
+                   from the latent encoding space, which can be implemented through Variational AutoEncoders
+                   [29–34], Generative Adversarial Learning (GANs) [35, 36], Gaussian Mixed Model [12, 37], etc.
+                   However, these methods are computationally expensive, and rely excessively on reconstructing
+                   local details, making it difﬁcult to learn high-level semantic features. Hence, some researchers
+                   employed Transformation Prediction as a prediction pseudo-task. Sauder et al. [18] proposed to
+                   use jigsaw puzzle as a pretext task for 3D point cloud representation learning. Wang et al. [19]
+                   destroyed the point cloud and then pretrained the network by a self-supervised manner with the help
+                   of point cloud complementation task. Poursaeed et al. [20] used orientation estimation as a pretext
+                   task by randomly rotating the point cloud and then allowing the network to predict the rotation.
+                   As contrastive learning becomes increasingly popular, Jing and Afham et al. [24, 25], proposed
+                   a task training network for ﬁnding cross-modality correspondences. Speciﬁcally, they obtain the
+                   corresponding 2D view by rendering the 3D model, and then extracts 2D view features and 3D
+                   point cloud features using 2D convolutional networks and graph convolutional networks. Finally,
+                   the instance correspondence between the two modalities is estimated based on these features. Qi
+                   et al. [38] calculated the contrastive loss on matched point pairs by rigidly transforming the point
+                   clouds with feature vectors for each point of the two point clouds before and after the transformation.
+                   Wang et al. [26] designed a multi-resolution contrastive learning training strategy that can train
+                   point-by-point and shape feature vectors simultaneously. Inspired by BYOL [39], Huang et al. [27]
+                   constructed point cloud pairs that undergo spatio-temporal transformations, and forced the network
+                   to learn the consistency between different augmented views. However, all previous studies resort to
+                   point cloud domain-speciﬁc network architectures to achieve promising performance, which would
+                   greatly hinder the development of deep learning towards a generalized model. More importantly, these
+                   studies have never investigated self-supervised representation learning using a transformer-based
+                   point cloud processing network. Recently, Point-BERT [40] has proposed a modeling approach using
+                   standard transformer network combined with mask language modeling for the ﬁrst time to achieve
+                   self-supervised representation learning of point clouds, which is a direct extension of BERT [41]
+                   (popular in the ﬁeld of NLP) on point clouds. However, there is no mature BPE [42] algorithm in
+                   the point cloud domain as in NLP, leading to a lack of an effective vocabulary to guide the learning
+                   of mask language modeling. For this reason, Point-BERT [40] pre-trained a discrete Variational
+                   AutoEncoder (dVAE) [43] as tokenizer through an additional point cloud network DGCNN to
+                   construct vocabularies for point cloud patches. This directly brings about two problems: First, the
+                   wholemethodbecomesacomplextwo-stagesolution;Second,theweightsofthepre-trainedtokenizer
+                   are frozen and cannot change adaptively with the network training process, and the performance of
+                   the ﬁxed tokenizer will directly doom the performance of the pre-trained model. Unlike Point-BERT,
+                   weuse dynamically updated momentum encoder instead of a frozen tokenizer to extract features
+                   from point cloud patches. Additionally, our solution is one-stage, and the Momentum Encoder can
+                   be continuously updated as the network training progresses, providing the network with a suitable
+                   feature representation of point cloud patches for the current training stage.
+                   Transformers Transformer has made great advances in the ﬁeld of machine translation and natural
+                   language processing with its long-range modeling capability brought by the attention mechanism.
+                   Inspired by the successful applications of Transformer in NLP ﬁeld, it has also been introduced into
+                   the image ﬁeld [44–46], leading to backbone networks such as ViT [44], SWin [45], Container[5],
+                                                    3
+                             etc., which surpassed CNN-based ResNet and showed excellent performance in downstream tasks
+                             such as classiﬁcation [44], segmentation [47], object detection [48]. Although there is a trend of
+                             grand uniﬁcation of transformer in the ﬁeld of NLP and image, the development of transformer
+                             in the ﬁeld of point cloud is highly slow. PCT [49] and PointTransformer [50] have modiﬁed the
+                             transformer layer in standard transformer and combined with layer aggregation operation to achieve
+                             point cloud classiﬁcation and segmentation. Unlike these approaches, Point-BERT [40] achieves
+                             comparable performance with a standard transformer without introducing a bias structure, but it
+                             requires a speciﬁc point cloud network DGCNN to provide supervised signals for pre-training. By
+                             comparison, our proposed method completely rejects the introduction of other networks and uses
+                             only the standard transformer-based network to learn point cloud representations.
+                             MaskLanguageModelingParadigmMasklanguagemodelingwasproposedinBERT[51],which
+                             revolutionized the pre-training paradigm for natural language. Inspired by BERT, Bao et al. proposed
+                             BEiT [52] for pre-training a standard transformer applicable to images. It maps the input image
+                             patches into meaningful discrete tokens by dVAE [43], then randomly masks some of the image
+                             patches, and feeds the masked image patches and the remaining images into the standard transformer
+                             to reconstruct the tokens of these masked image patches. Following BEiT, Zhou et al. [9] perform
+                             masked prediction with an online tokenizer. Unlike BEiT, He et al. [53] trained the network by
+                             directly reconstructing the original image patches. Inspired by BEiT, Yu et al. [40] proposed Point-
+                             BERTforpointcloudpre-training and demonstrated that the MLM paradigm is feasible for point
+                             cloud pre-training. We inherit the idea of Yu et al. and also adopt the MLM approach for point cloud
+                             pre-training.
+                             Contrastive learning Contrastive learning is a branch of self-supervised learning, which learns
+                             knowledge from the data itself without the demand of data annotation. The main idea of contrastive
+                             learning is to maximize the consistency between positive sample pairs and the differences between
+                             negative sample pairs. Representative methods of contrastive learning include MoCo series [54, 21,
+                             22] and SimCLR [55]. Recently, BYOL [23] and Barlow Twins [56] pointed out that only using
+                             positive samples can still obtain powerful features. In this paper, we introduce the idea of contrastive
+                             learning to help point cloud Transformer learn the high-level semantic representation.
+                             3   Method
+                            Wepropose a Point Cloud One-Stage BERT pre-training approach POS-BERT, which is simple
+                             and efﬁcient. Fig.2 illustrates the overall framework of POS-BERT. Firstly, the global point cloud
+                             set P and the local point cloud set P are obtained by cropping the raw point clouds P ∈ RN×3
+                                  g                                 l
+                            with different cropping ratios. Then, we use the PGE module to divide both global and local point
+                             clouds into smaller patches with ﬁxed number of points and embed the patches into high-dimensional
+                             representation (patch token) though standard Transformer-based encoders. Because local point clouds
+                             do not represent complete objects very well, only global point clouds are input into the Momentum
+                             Encoder, which is dynamically updated to encode meaningful representations to provide learning
+                             objectives for the Encoder. The Encoder is trained using the mask patch modeling task to match the
+                             MomentumEncoderoutputs. Somepatches of the global point clouds are randomly masked out and
+                             position information is added to the corresponding masked patches, and then they are input into the
+                             Encoder together with the local point cloud set. Finally, we calculate the mask patch modeling loss
+                             L       between the Encoder outputs’ patch tokens and the Momentum Encoder outputs’ patch token,
+                              MPM
+                             and the global feature loss loss L     between the Encoder outputs’ class token and the Momentum
+                                                               GFC
+                             Encoder outputs’ class token. Overall, our framework consists of four key components: Encoder,
+                             MomentumEncoder,MaskPatchModelingandLossFunctionandtheywillbeintroducedindetail
+                             the following part of this section. We will start with Section 3.1 on how to transform point into
+                             patch embedding with the Encoder. Next, mask patch modeling is described in section 3.2. Then we
+                             introduce the dynamic tokenizer implemented by the Momentum Encoder for providing supervision
+                             for the MPM tasks in section3.3. Finally, we describe our loss function in section 3.4.
+                             3.1  Point2Patch Embedding and Encoder Architecture
+                            The simplest way to extract point cloud features is to input each point into the transformer as one
+                             token. Because the complexity of transformer is O N2, where N is the length of the input token,
+                             extracting feature of each point directly will result in memory explosion. Fig.3 describes the overall
+                                                                               4
+                                                                                          ]
+                                       Global Point Cloud Set
+                                                                               PGE                   Momentum          ������
+                                                                                          Token                         ������
+                                                                                          ������������������ℎ[������  Encoder
+                                                          ������
+                                                           ������
+                                                                                                                             ℒ
+                                                                                                                               ������������������
+                                                                               ]                           EMA
+                                    ������
+                                                                                                                                          ℒ
+                                                                               ������������������������������������������                                              ������������������
+                                                          ������                   ������
+                                                            ������                 [
+                                                                                                                       ������
+                                                                                                       Encoder          ������
+                                        Local Point Cloud Set                            [ ������������������ ]
+                                Figure 2: The overall framework of POS-BERT. PGE represents patch generation and embedding
+                                module, CLS represents class token, EMA represents exponential moving average, solid line repre-
+                                sents gradient back-propagation, and dotted line represents stop-gradient operator.
+                                pipeline of the Transformer-based feature extraction in this paper. Following Point-BERT, we divide
+                                a given global/local point cloud P into local patches with a ﬁxed number of K points. In order to
+                                minimize overlap between patches {p ∈ C | i = 1...Q}, we ﬁrst calculate the number of patches
+                                                                           i
+                                Q=ceil(N/K),thenusefarthestpointsampling(FPS)algorithm to sample the center point ci of
+                                eachpatch. The k-nearest neighbor algorithm is used to obtain K neighbors for each center point, and
+                                the center point and corresponding neighbor points form a local patch p . Next, Using the PointNet
+                                                                                                                  i
+                                and maxpooling operations to map point coordinates of each patch to a high-dimensional embedding
+                                as patch tokens. Finally, these patch tokens are fed into the standard transformer with a learnable
+                                class token.
+                               Weusedastandardtransformer as the Encoder backbone, which consists of a series of stacked multi-
+                                head self-attention layers and fully connected feed-forward network. As mentioned earlier, class
+                                tokens {t0} and a series of patch tokens {t1,...,tM} are concatenated along the patch dimension to
+                                get the transformer’s input T = {t ,t ,...,t } ∈ R(Q+1)×D. After T passes through the h-layer
+                                                                0       0  1        Q                             0
+                                                                                                 h h           h	
+                                transformer block, we get the feature of each patch Th =          t ,t ,...,t       with global receptive ﬁeld.
+                                                                                                   0   1        Q
+                                Finally, we map the features of each patch to the loss space, where the projector is composed of
+                                multiple layers of MLP. In the inference stage and downstream tasks, we do not need the projector.
+                                Decoupling the feature representation and loss function can make the learned patch’s features more
+                                general.
+                                                                                            output
+                                                                                       ������            projector
+                                                                                       Transformer   Encoder
+                                                                           ������   0   1    2    3    4    5    6    7
+                                                                            0
+                                                              ������
+                                                                                            MLP+ maxpool
+                                                                                                   ℂ
+                                                   Figure 3: The architecture of standard transformer-based Encoder.
+                                3.2   MaskPatchModeling
+                                InspiredbyPoint-Bert,wealsouseamaskpatchmodelingtasktopretrainthepointcloudTransformer.
+                               AsdescribedinSection3.1, wehaveobtainedthetransformer’sinputT = {t ,t ,...,t }. Masked
+                                                                                                               0       0  1        M
+                                patch tokens M is obtained by randomly masking the tokens of some patches in T0, except t0. Next,
+                               we randomly mask/replace [20%, 40%] patch tokens with a learnable mask token E[m] ∈ RD,
+                               where masked tokens are deﬁned as m . Then, the center point position embedding pos = mlp(c )
+                                                                            t                                                                   i
+                                corresponding to patch tokens is added to m , c represents the xyz coordinate of the patch center
+                                                                                   t   i
+                                                                                        5
+                             point. Finally, the transformer’s input tokens obtained by high-dimensional embedding after masking
+                                                     b                            Q                                Q
+                             can be expressed as T       = {t } ∪ {t | i ∈/ M}         ∪{E[m]+pos |i∈M} , and the lost
+                                                      0       0        i          i=1                   i          i=1
+                                                                                 b
+                             information of masked tokens is recovered from T through Encoder.
+                                                                                  0
+                             3.3   DynamicTokenizerbyMomentumEncoder
+                             MomentumEncoderisoftenusedincontrastive learning to provide a global semantic supervision
+                             for target network. Inspired by MoCo, we propose a dynamically updated tokenizer, which is
+                             implemented by momentum Encoder. Grill’s preliminary experiments show that even using the
+                             output of random initialization network as supervision, target network can also learn a better output
+                             representation than random initialization network [23]. This result provides a strong support for
+                             the replacement of dVAE by the dynamically updated momentum encoder during early training.
+                             Therefore, we use a random network to initialize the Momentum Encoder. Although randomly
+                             initialized networks can help Encoder get better representation in the early stages of training, if the
+                             performance of tokenizer is not continuously improved, the ability of Encoder will stop as tokenizer
+                             stops. Accordingly, we need a tokenizer that can dynamically update and improve its quality while
+                             at the same time its output does not change rapidly before and after each update. The momentum
+                             encoder in contrastive learning solves these two concerns well, and its update formula is as follows:
+                                                                     θ   =λθ +(1−λ)θ                                               (1)
+                                                                      m       m              e
+                             where, θ     represents the weight of Momentum Encoder, θ represents the weight of Encoder.
+                                       m                                                       e
+                             λ ∈ [0,1) is a momentum coefﬁcient, which follows a cosine schedule from 0.996 to 1 during
+                             training.
+                             MomentumEncoderenhancesitself by constantly introducing new knowledge learned from Encoder,
+                             so Momentum Encoder also has the ability to recover lost information. Moreover, it dynamically
+                             integrates the Encoder weights of multiple training stages, and has better feature extraction ability
+                             than the Encoder. Therefore, our ﬁnal pre-training model weights come from Momentum Encoder.
+                             3.4   Loss Function
+                             Wehopethat the pre-training model can not only recover the lost information, but also learn the
+                             high-level semantic representation. Therefore, our loss function consists of two parts: mask patch
+                             modeling loss L         and global feature contrastive loss L       .
+                                              MPM                                           GFC
+                             For mask patch model loss L           , we encourage the Encoder to recover the information lost by
+                                                             MPM
+                             maskedpatchunderthesupervision of meaningful representations, which is generated by Momentum
+                             Encoder. The formula of mask patch model loss is as follows:
+                                                              LMPM =minX−Oi ·log Oi                                               (2)
+                                                                           θ            m          e
+                                                                            e i∈M/
+                             where, Oi represents the output of the Momentum Encoder corresponding to the i-th patch, Oi
+                                       m                                                                                             e
+                             represents the output of the Encoder corresponding to the i-th patch.
+                             Although the idea of contrastive learning was also used in Point-BERT to achieve high-level semantic
+                             features, the results were not ideal, which can be observed from Tab .1. In addition, it needs to
+                             maintain a memory bank to store a large number of negative samples, which takes up a large amount
+                             of storage space. In contrast, we utilize different cropping rate to obtain different augmentation state
+                             point clouds: global point clouds and local point clouds with the following formula:
+                                                         Pi = crop(P,rand(r ,r )),            i = 1···I
+                                                           g                     g1   g2                                           (3)
+                                                         Pj =crop(P,rand(r ,r )),             j = 1···J
+                                                           l                     l1   l2
+                             where crop(· ,·) represents cropping an area at a ﬁxed ratio, represented by the second parameter.
+                             rand(· ,·) generates a random value between the maximum and the minimum values. Here, rg1
+                             and r    are the minimum and maximum cropping ratio for generating the global point cloud set,
+                                   g2
+                             respectively. Similarly, r   and r    are the minimum and maximum cropping ratios for generating
+                                                        l1      l2
+                                                                                 6
+                             of the local point cloud set, respectively. I and J are the number of point clouds in Pg and Pl,
+                             respectively. During training phase, the Encoder encodes masked global point clouds and local point
+                             clouds, while the Momentum Encoder only encodes global point clouds.
+                                                                        I   J                           
+                                                       LGFC =minXX− Ocls ·log  Ocls                                             (4)
+                                                                   θ                 m i            e   j
+                                                                    e  i=1 j6=i
+                             Finally, we combine all the above-mentioned loss function as our ﬁnal self-supervised objectives:
+                                                                L=ω1∗LMPM+ω2∗LGFC                                                 (5)
+                             where, the hyperparameters ω control the balance between loss functions, for all the experiments in
+                             this paper, we set ω1 = 0.5, ω2 = 1.0.
+                             4    Implementation and Dataset
+                             4.1   Implementation
+                             Pre-training We use Adamw optimizer [57] to train the network with the initial learning rate 0.0001.
+                             Thelearning rate increases linearly for the ﬁrst 10 epochs and then decays with a cosine schedule.
+                             Wetrain the pre-training model with the batch size 64 and 200 epochs, and the whole pre-training is
+                             implemented on NVIDIA A100. For the exponential moving average weight λ of the target network,
+                             the starting value is set to 0.996 and then gradually increases to 1. The dimension K of the ﬁnal
+                             features used to calculate the loss is set to 512. When cropping the global point cloud, the crop ratios
+                             γ , γ    are set to 0.7 and 1.0, respectively, and the number of crops I is 2. When cropping local
+                              g1   g2
+                             point clouds, the crop ratios γ , γ   are set to 0.2 and 0.5, respectively, and the number of crops J is
+                                                            l1  l2
+                             8. Additionally, we use the FPS sample half of the original point cloud as different resolution point
+                             clouds and add them to local point cloud set. The number of different resolution point clouds is 2.
+                             Classiﬁcation We use a fully connected MLP network that combines ReLU, BN, and Dropout
+                             operations as the classiﬁcation head. The SGD is used as the optimizer to ﬁne tune the classiﬁcation
+                             network with cosine schedule. We set the batch size to 32.
+                             Segmentation Different from the classiﬁcation task, the segmentation task needs to predict pre-point
+                             labels. We ﬁrst select multiple stage features of network, including the initial input feature of standard
+                             transformer and the output features of layer 3 and layer 7. We cascade the features of these different
+                             layers, and then use the point feature propagation in PointNet++ to propagate the features of the 256
+                             downsampledpointstothe2048rawinputpoints. Finally, MLP is used to map the features to the
+                             segmentation label space. Our batch size is 16 with a learning rate initialized to 0.0002 and decayed
+                             via the cosine schedule. We use the Adamw optimizer to train the segmentation network.
+                             4.2   Dataset
+                             In the experiments of this paper, four datasets (ShapeNet [58], ModelNet40 [59], SacnObjectNN
+                             [60], and ShapeNetPart [61]) are used.
+                             ShapeNet contains 57448 CAD models, with a total of 55 categories. For the acquisition of point
+                             cloud data, we follow the processing method of Yang et al., and sample 2048 points from each CAD
+                             model surface. We use ShapeNet dataset as pre-training dataset. In the pre-training stage, we use the
+                             farthest point sampling algorithm to select 64 group center points, and divide 2048 points into 64
+                             groups, where each group contains 32 points.
+                             ModelNet40contains 12,331 handmade CAD models of from 40 categories and is widely used for
+                             point cloud classiﬁcation tasks. We follow Yu et al. to sample 8192 points from each CAD model
+                             surface. According to the ofﬁcial split, 9,843 are used for training and 2,468 for testing. Following
+                             the work of Yu et al. [40], we generated a Fewshot-ModelNet40 dataset based on ModelNet40.
+                             "M-wayN-shot"represents the data under different settings, where M-way represents the number of
+                             categories selected for training, N-shot represents the number of samples for each category, and the
+                                                                                7
+                             Table 1: Classiﬁcation results with linear SVM on ModelNet40. These models are trained in
+                             ShapeNet.
+                                                      Method                  Year       Input       Accuracy
+                                                      SPH[62]                 2003       voxel        68.2%
+                                                      LFD[63]                 2003       view         75.5%
+                                                      T-L [64]                2016       view         74.4%
+                                                      VConv-DAE[65]           2016       voxel        75.5%
+                                                      3D-GAN[66]              2016       voxel        83.3%
+                                                      Latent-GAN[16]          2018       point        85.7%
+                                                      MRTNet[15]              2018       point        86.4%
+                                                      SO-Net[67]              2018       point        87.3%
+                                                      FoldingNet [68]         2018       point        88.4%
+                                                      MAP-VAE[69]             2019       point        88.4%
+                                                      VIP-GAN[70]             2019       view         90.2%
+                                                      3D-PointCapsNet [71]    2019       point        88.9%
+                                                      Jigsaw3D [72]           2019       point        90.6%
+                                                      Rotation3D [73]         2020       point        90.7%
+                                                      CMCV[74]                2021       point        89.8%
+                                                      MID-FC[75]              2021       point        90.3%
+                                                      GSIR[76]                2021       point        90.4%
+                                                      PSG-Net[77]             2021       point        90.9%
+                                                      STRL[17]                2021       point        90.9%
+                                                      ParAE[78]               2021       point        91.6%
+                                                      Point-BERT [79]         2022       point        88.6%
+                                                      CrossPoint [80]         2022       point        91.2%
+                                                      POS-BERT(our)           2022       point        92.1%
+                             numberofsamples used for testing is 20. M is selected from 5 and 10, and N is selected from 10 and
+                             20.
+                             SacnObjectNNisa3Dpointcloudclassiﬁcation dataset derived from real-world scanned data. It
+                             contains 2902pointcloudsfrom15categories. Duetothenoiseofocclusion,rotationandbackground,
+                             it is more difﬁcult to classify. Following Yu et al. [40], we selected three variant datasets to conduct
+                             experiments, including OBJ-BG, OBJ-ONLY, and PB-T50-RS.
+                             ShapeNetPartcontains 16811 objects from 16 categories. Each object consists of 2 to 6 parts with
+                             total of 50 distinct parts among all categories. Following Yu et al. [40], we randomly select 2048
+                             points as input.
+                                              Figure 4: Visualization of self-supervised features on ModelNet40.
+                             5    Experiment
+                             5.1   Linear SVMClassiﬁcation
+                             Linear SVM classiﬁcation task has become a classic task to evaluate self-supervised point cloud
+                             representation learning. This experiment was designed to directly verify that our POS-BERT has
+                             learned better representation. To make a fair comparison with previous studies, we followed the
+                             commonsettings used in previous work [24–26, 38], pre-trained the model on ShapeNet and tested
+                             it on the ModelNet40. We used our pre-training model to extract the features of each point cloud,
+                             then trained a simple linear Support Vector Machine (SVM) on the training set of ModelNet40, and
+                             ﬁnally tested the SVM on the ModelNet40 test set. We compared a series of competitive methods,
+                             including handcrafted descriptor methods, generation-based method, contrastive learning method,
+                                                                                8
+                                    Table 2: Shape classiﬁcation results ﬁne-tuned on ModelNet40. We report the classiﬁcation
+                                    accuracy (%).
+                                                               Category                    Method                   Input           Acc(%)
+                                                                                   PointNet [6]                     point             89.2
+                                                                                   PointNet++ [21]                  point             90.5
+                                                                                   SO-Net[67]                       point             92.5
+                                                                                   PointCNN[7]                      point             92.2
+                                                                                   DGCNN[81]                        point             92.9
+                                                             Fromscratch           DensePoint [82]                  point             92.8
+                                                                                   RSCNN[83]                        point             92.9
+                                                                                   PTC[49]                          point             93.2
+                                                                                   PointTransformer [84]          point+nor           93.7
+                                                                                   NPTC[49]                         point             91.0
+                                                                                   Transformer [85]                 point             91.4
+                                                                                   Transformer-OcCo [86]            point            92.10
+                                                                                   Point-BERT [85]                  point            93.16
+                                                               Pretrain            POS-BERT                         point            93.56
+                                                                                   Point-BERT* [85]                 point            93.76
+                                                                                   POS-BERT*                        point            93.80
+                                    and the method based on mask patch modeling. The results of all methods are summarized in Tab.1.
+                                    Theresults of the comparison methods we reported adopt the best results in the original papers. As
+                                    shown in Tab.1, our method outperforms all other methods by a large margin, including the latest
+                                    method CrossPoint based on contrastive learning and ParAE based on generation model. More
+                                    importantly, it can surpass Point-BERT, which is also based on MPM paradigm, by 3.5%. This result
+                                    fully shows that our Momentum Encoder can provide more meaningful supervision representation
+                                    for masked patches. Finally, it is worth mentioning that our linear classiﬁcation results exceed some
+                                    supervised point cloud networks, such as PointNet (89.7%) and PointNet++ (91.9%). For a more
+                                    intuitive understanding of the performance of our model, we use t-SNE to map the self-supervised
+                                    learn features to a 2D space, as shown in Fig.4. It can be observed that different categories are
+                                    separated from each other. These experimental results demonstrate that our method can learn a better
+                                    representation.
+                                    5.2    DownstreamTasks
+                                    3DObjectClassiﬁcationonSyntheticDataTotestwhetherPOS-BERTcanhelpboostdownstream
+                                    tasks. We ﬁrst performed ﬁne-tuning experiments on point cloud classiﬁcation tasks using a pre-
+                                    training model. Here, From scratch stands for training the model on ModelNet40 from randomly
+                                    initialized network and Pretrain stands for pre-training the model on ShapeNet and then ﬁne-tune
+                                    the network on ModelNet40. We ﬁne-tuned the classiﬁcation network weights using different
+                                    initialization methods on ModelNet40, and the ﬁnal classiﬁcation results were summarized in Tab.2.
+                                    Tab.2 shows that the original transformer’s accuracy in point cloud classiﬁcation task is just 91.4
+                                    percent. The transformer’s classiﬁcation accuracy was greatly increased to 93.56 percent using our
+                                    pre-training weights to initialize the network. To achieve a fair comparison with Point-BERT, we
+                                    also use voting strategy during the test, and the voting results are annotated with *. By comparison,
+                                    wecanseethatourmethodoutperformsOcCoandPoint-BERTwithoutvotingby1.4%and0.4%,
+                                    respectively. When using the voting strategy, even if the accuracy is already high, our method is
+                                    slightly better than Point-BERT.
+                                    Few-shot Classiﬁcation To demonstrate that our pre-training model can learn quickly from few-shot
+                                    samples, we conduct experiment on the Few-shot ModelNet40 dataset. We experimented with four
+                                    different settings, including, "5-way 10-shot", "5-way 20-shot", "10-way 10-shot" and "10-way 20-
+                                    shot", way represents the number of categories and shot represents the number of samples per category.
+                                    During the test, 20 samples not in the training set were selected for evaluation. We conducted 10
+                                    independent experiments under each different setting, and reported the mean and variance of 10
+                                    experiments. We compared with the current SOTA methods OcCo and Point-BERT, and the results
+                                    are summarized in Tab.3. Our approach produces the best results on the Few-shot Classiﬁcation task.
+                                    Comparedwithbaseline, the mean was increased by 8.6%, 3.7%, 8%, and 5.5%, respectively. The
+                                    variance is almost halved. Compared with point-Bert, the mean increased by 1.8%, 0.8%, 1.6% and
+                                    2.2%respectively, and the variance was smaller. This completely demonstrates that POS-BERT has
+                                    learned a universal representation suitable for quick knowledge transfer with limited data.
+                                                                                                    9
+                             Table 3: Few-shot classiﬁcation results on ModelNet40. We report the average accuracy (%) as
+                             well as the standard deviation over 10 independent experiments.
+                                                                            5-way                       10-way
+                                                                    10-shot       20-shot        10-shot       20-shot
+                                        DGCNN-rand[86]            31.6 ±2.8      40.8 ±4.6     19.9 ±2.1     16.9 ±1.5
+                                        DGCNN-OcCo[86]            90.6 ±2.8      92.5 ±1.9     82.9 ±1.3     86.5 ±2.2
+                                        Transformer-rand [85]     87.8 ±5.2      93.3 ±4.3     84.6 ±5.5     89.4 ±6.3
+                                        Transformer-OcCo [86]     94.0 ±3.6      95.9 ±2.3     89.4 ±5.1     92.4 ±4.6
+                                        Point-BERT [85]           94.6 ±3.1      96.3 ±2.7     91.0 ±5.4     92.7 ±5.1
+                                        POS-BERT                  96.4±1.9      97.0±2.2      92.6±4.0       94.9±2.9
+                             Table 4: Classiﬁcation results on the ScanObjectNN dataset. We report the accuracy (%) of three
+                             different settings.
+                                                 Methods                 OBJ-BG        OBJ-ONLY        PB-T50-RS
+                                                 PointNet [6]              73.3           79.2            68.0
+                                                 SpiderCNN[87]             77.1           79.5            73.7
+                                                 PointNet++ [88]           82.3           84.3            77.9
+                                                 PointCNN[7]               86.1           85.5            78.5
+                                                 DGCNN[81]                 82.8           86.2            78.1
+                                                 BGA-DGCNN[89]              −              −              79.7
+                                                 BGA-PN++[89]               −              −              80.2
+                                                 SimpleView [90]            −              −              80.5
+                                                 Transformer [85]         79.86          80.55           77.24
+                                                 Transformer-OcCo [86]    84.85          85.54           78.79
+                                                 Point-BERT [85]          87.43          88.12           83.07
+                                                 POS-BERT                 90.88          90.88           83.21
+                             3DObjectClassiﬁcation on Real-world Data In this experiment, we aim to explore whether the
+                             knowledge POS-BERT learns from ShapNet can be transferred to real-world data. We conduct
+                             experiments on three variants of ScanObjectNN [60] dataset, including OBJ-BG, OBJ-ONLY, and
+                             PB-T50-RS. We compare to several methods, including supervised methods using speciﬁc point
+                             cloud networks: PointNet, BGA-PN++, SimpleView, et al., as well as pre-training methods: OcCo,
+                             Point-BERT. The experimental results are summarized in Tab.4. It can be found from the table that
+                             our method obtains the best results. With OBG-BG and OBJ-ONLY, we have surpassed Point-BERT
+                             by3.45%and2.76%,respectively. We also outperform Point-BERT with the PB-T50-RS settings.
+                             Theresults of the experiments suggest that the knowledge learned by POS-BERT can easily transfer
+                             into real-world data.
+                             Part Segmentation In this section, we explore how the pre-training model performs in the pre-point
+                             classiﬁcation. We experimented on ShapeNetPart, a benchmark dataset commonly used in point cloud
+                             segmentation tasks. Compared with the classiﬁcation task, the segmentation task needs to obtain the
+                             label of each point intensively. We compare it with the commonly used point cloud analysis networks
+                             and the most advanced self-supervised methods. The mean Intersection Over Union (mIOU) metric
+                             of various methods is reported in Tab.5. From the table, our method is signiﬁcantly better than the
+                             most advanced method Point-BERT on mIoU . From a category perspective, we have exceeded
+                                                                              C
+                             other methods in most categories. These results show that our methods can also learn to distinguish
+                             details very well.
+                             5.3   Ablation study
+                             Todemonstratetheeffectiveness of our key modules, we conducted ablation study on the ModelNet40
+                             Linear SVMclassiﬁcation task. We have designed four variants. The ﬁrst variant uses a randomly
+                             initialized Transformernetworktoextractfeaturesdirectlywithoutanypre-training,andthenclassiﬁes
+                             them using SVM, which is deﬁned as POS-BERT-Var1. The second variant, deﬁned as POS-BERT-
+                             Var2, uses only masking patch modeling’s pretext task for pre-training. The third variant uses the
+                             randomly initialized momentum encoder as the tokenizer to pre-training, which is deﬁned as POS-
+                             BERT-Var3. The fourth variant, which uses only contrastive loss to train the point cloud transformer,
+                             is deﬁned as POS-BERT-Var4. The results are summarized in Tab.6. From the table we can see that
+                             a ﬁxed MomentumEncoderdoesnothelpthenetworktrainwell. Pre-training with masking patch
+                             modeling alone is difﬁcult to obtain high-level semantic information. The best results are obtained
+                             whenmaskingpatchmodelingandcontrastive learning work together.
+                                                                               10
+                                              Table 5: Part segmentation results on the ShapeNetPart dataset. We report the mean IoU across
+                                              all instances mIoU (%), aswellastheIoU(%)foreachcategoriesandmeanIoUacrossallcategories
+                                                                             I
+                                              mIoU (%).
+                                                        C
+                                                       Methods                      mIoU           mIoU           aero       bag         cap        car      chair     e-phone         guitar        knife
+                                                                                            C              I      lamp      laptop     motor       mug       pistol     rocket       skateboard      table
+                                                       PointNet [6]                   80.4           83.7        83.4       78.7       82.5       74.9       89.6        73.0          91.5         85.9
+                                                                                                                 80.8       95.3       65.2       93.0       81.2        57.9          72.8         80.6
+                                                       PointNet++ [88]                81.9           85.1        82.4       79.0       87.7       77.3       90.8        71.8          91.0         85.9
+                                                                                                                 83.7       95.3       71.6       94.1       81.3        58.7          76.4         82.6
+                                                       DGCNN[81]                      82.3           85.2        84.0       83.4       86.7       77.8       90.6        74.7          91.2         87.5
+                                                                                                                 82.8       95.7       66.3       94.9       81.1        63.5          74.5         82.6
+                                                       Transformer [85]               83.4           85.1        82.9       85.4       87.7       78.8       90.5        80.8          91.1         87.7
+                                                                                                                 85.3       95.6       73.9       94.9       83.5        61.2          74.9         80.6
+                                                       Transformer-OcCo [86]          83.4           85.1        83.3       85.2       88.3       79.9       90.7        74.1          91.9         87.6
+                                                                                                                 84.7       95.4       75.5       94.4       84.1        63.1          75.7         80.8
+                                                       Point-BERT [85]                84.1           85.6        84.3       84.8       88.0       79.8       91.0        81.7          91.6         87.9
+                                                                                                                 85.2       95.6       75.6       94.7       84.3        63.4          76.3         81.5
+                                                       POS-BERT                       84.2           86.0        84.9       86.4       87.4       81.0       91.3        78.4          92.0         88.2
+                                                                                                                 85.0       95.5       76.0       94.9       84.7        63.9          75.9         82.1
+                                                                                                           Table 6: Ablation study. .
+                                                                              ModelName                  MPM               GFC              MomentumEncoder                  Acc(%).
+                                                                            POS-BERT-Var1                                                                                    53.61
+                                                                            POS-BERT-Var2                  X                                                                 80.43
+                                                                            POS-BERT-Var3                  X                X                                                79.05
+                                                                            POS-BERT-Var4                                   X                        X                       91.29
+                                                                               POS-BERT                    X                X                        X                       92.14
+                                              6      Conclusion
+                                              In this paper, we propose a one-stage point cloud pre-training method POS-BERT, which is simple,
+                                              ﬂexible and efﬁcient. It uses momentum encoder as tokenizer to provide supervision for mask patch
+                                              model pretext tasks, and joint training of momentum encoder and MPM tasks greatly simpliﬁes
+                                              the training steps and saves training costs. Experiments show that our method has the best ability
+                                              to extract high-level semantic information in the Linear SVM classiﬁcation task, and it improves
+                                              signiﬁcantly compared with Point-BERT. At the same time, many downstream tasks, including
+                                              3Dobject classiﬁcation, few-shot classiﬁcation, part segmentation, have achieved state-of-the-art
+                                              performance.
+                                              References
+                                                [1] Y. Cui, R. Chen, W. Chu, L. Chen, D. Tian, Y. Li, and D. Cao, “Deep learning for image
+                                                       and point cloud fusion in autonomous driving: A review,” IEEE Transactions on Intelligent
+                                                       Transportation Systems, pp. 1–18, 2021.
+                                                [2] W. Liu, B. Lai, C. Wang, X. Bian, W. Yang, Y. Xia, X. Lin, S.-H. Lai, D. Weng, and J. Li,
+                                                      “Learning to match 2d images and 3d lidar point clouds for outdoor augmented reality,” in IEEE
+                                                       Conference on Virtual Reality and 3D User Interfaces Abstracts and Workshops (VRW), 2020,
+                                                       pp. 654–655.
+                                                [3] Z. Wang, Y. Xu, Q. He, Z. Fang, G. Xu, and J. Fu, “Grasping pose estimation for scara robot
+                                                       based on deep learning of point cloud,” The International Journal of Advanced Manufacturing
+                                                       Technology, vol. 108, no. 4, pp. 1217–1231, 2020.
+                                                [4] P. Gao, M. Zheng, X. Wang, J. Dai, and H. Li, “Fast convergence of detr with spatially
+                                                       modulated co-attention,” in IEEE/CVF International Conference on Computer Vision, 2021, pp.
+                                                       3621–3630.
+                                                [5] P. Gao, J. Lu, H. Li, R. Mottaghi et al., “Container: Context aggregation networks,” Advances
+                                                       in Neural Information Processing Systems (NeurIPS), vol. 34, 2021.
+                                                [6] C. R. Qi, H. Su, K. Mo, and L. J. Guibas, “Pointnet: Deep learning on point sets for 3d
+                                                       classiﬁcation and segmentation,” in IEEE/CVF Conference on Computer Vision and Pattern
+                                                       Recognition (CVPR), 2017, pp. 652–660.
+                                                                                                                               11
+                            [7] Y. Li, R. Bu, M. Sun, W. Wu, X. Di, and B. Chen, “Pointcnn: Convolution on x-transformed
+                                points,” Advances in Neural Information Processing Systems (NeurIPS), vol. 31, pp. 820–830,
+                                2018.
+                            [8] T. Xiang, C. Zhang, Y. Song, J. Yu, and W. Cai, “Walk in the cloud: Learning curves for point
+                                clouds shape analysis,” arXiv preprint arXiv:2105.01288, 2021.
+                            [9] K. Fu, S. Liu, X. Luo, and M. Wang, “Robust point cloud registration framework based on
+                                deep graph matching,” in IEEE/CVF Conference on Computer Vision and Pattern Recognition
+                                (CVPR), 2021, pp. 8893–8902.
+                           [10] M.Gadelha,R.Wang,andS.Maji,“Multiresolutiontreenetworksfor3dpointcloudprocessing,”
+                                in European Conference on Computer Vision (ECCV), 2018, pp. 103–118.
+                           [11] I. J. Goodfellow, J. Pouget-Abadie, M. Mirza, B. Xu, D. Warde-Farley, S. Ozair, A. Courville,
+                                and Y. Bengio, “Generative adversarial nets,” in Advances in Neural Information Processing
+                                Systems (NeurIPS), 2014, pp. 2672–2680.
+                           [12] P. Achlioptas, O. Diamanti, I. Mitliagkas, and L. Guibas, “Learning representations and genera-
+                                tive models for 3d point clouds,” in International Conference on Machine Learning (ICML),
+                                2018, pp. 40–49.
+                           [13] Y. Rao, J. Lu, and J. Zhou, “Global-local bidirectional reasoning for unsupervised representa-
+                                tion learning of 3d point clouds,” in IEEE/CVF Conference on Computer Vision and Pattern
+                                Recognition (CVPR), 2020, pp. 5376–5385.
+                           [14] S. Huang, Y. Xie, S.-C. Zhu, and Y. Zhu, “Spatio-temporal self-supervised representation
+                                learning for 3d point clouds,” in IEEE/CVF International Conference on Computer Vision
+                                (ICCV), 2021, pp. 6535–6545.
+                           [15] M.Gadelha,R.Wang,andS.Maji,“Multiresolutiontreenetworksfor3dpointcloudprocessing,”
+                                in European Conference on Computer Vision (ECCV), 2018, pp. 103–118.
+                           [16] P. Achlioptas, O. Diamanti, I. Mitliagkas, and L. Guibas, “Learning representations and genera-
+                                tive models for 3d point clouds,” in International Conference on Machine Learning (ICML),
+                                2018, pp. 40–49.
+                           [17] S. Huang, Y. Xie, S.-C. Zhu, and Y. Zhu, “Spatio-temporal self-supervised representation
+                                learning for 3d point clouds,” in IEEE/CVF International Conference on Computer Vision
+                                (ICCV), 2021, pp. 6535–6545.
+                           [18] J. Sauder and B. Sievers, “Self-supervised deep learning on point clouds by reconstructing
+                                space,” Advances in Neural Information Processing Systems (NeurIPS), vol. 32, 2019.
+                           [19] H. Wang, Q. Liu, X. Yue, J. Lasenby, and M. Kusner, “Pre-training by completing point clouds,”
+                                2020.
+                           [20] O. Poursaeed, T. Jiang, H. Qiao, N. Xu, and V. G. Kim, “Self-supervised learning of point
+                                clouds via orientation estimation,” in International Conference on 3D Vision (3DV).   IEEE,
+                                2020, pp. 1018–1028.
+                           [21] X. Chen, H. Fan, R. Girshick, and K. He, “Improved baselines with momentum contrastive
+                                learning,” arXiv preprint arXiv:2003.04297, 2020.
+                           [22] X. Chen, S. Xie, and K. He, “An empirical study of training self-supervised visual transformers,”
+                                arXiv e-prints, 2021.
+                           [23] J.-B. Grill, F. Strub, F. Altché, C. Tallec, P. H. Richemond, E. Buchatskaya, C. Doersch,
+                                B. A. Pires, Z. D. Guo, M. G. Azar et al., “Bootstrap your own latent: A new approach to
+                                self-supervised learning,” arXiv preprint arXiv:2006.07733, 2020.
+                           [24] L. Jing, L. Zhang, and Y. Tian, “Self-supervised feature learning by cross-modality and cross-
+                                view correspondences,” in IEEE/CVF Conference on Computer Vision and Pattern Recognition
+                                (CVPR), 2021, pp. 1581–1591.
+                                                                          12
+                          [25] M. Afham, I. Dissanayake, D. Dissanayake, A. Dharmasiri, K. Thilakarathna, and R. Rodrigo,
+                               “Crosspoint: Self-supervised cross-modal contrastive learning for 3d point cloud understanding,”
+                               IEEE/CVFConferenceonComputerVisionandPatternRecognition (CVPR), 2022.
+                          [26] P.-S. Wang, Y.-Q. Yang, Q.-F. Zou, Z. Wu, Y. Liu, and X. Tong, “Unsupervised 3d learning for
+                               shape analysis via multiresolution instance discrimination,” ACM Trans. Graphic, 2020.
+                          [27] S. Huang, Y. Xie, S.-C. Zhu, and Y. Zhu, “Spatio-temporal self-supervised representation
+                               learning for 3d point clouds,” in IEEE/CVF International Conference on Computer Vision
+                               (ICCV), 2021, pp. 6535–6545.
+                          [28] K. Fukushima and S. Miyake, “Neocognitron: A self-organizing neural network model for
+                               a mechanism of visual pattern recognition,” in Competition and Cooperation in Neural Nets.
+                               Springer, 1982, pp. 267–285.
+                          [29] D. P. Kingma and M. Welling, “Auto-encoding variational bayes,” arXiv preprint
+                               arXiv:1312.6114, 2013.
+                          [30] Y. Bengio, L. Yao, G. Alain, and P. Vincent, “Generalized denoising auto-encoders as generative
+                               models,” Advances in Neural Information Processing Systems (NeurIPS), vol. 26, 2013.
+                          [31] A. Sharma, O. Grau, and M. Fritz, “Vconv-dae: Deep volumetric shape learning without object
+                               labels,” in European Conference on Computer Vision (ECCV).   Springer, 2016, pp. 236–250.
+                          [32] Y. Yang, C. Feng, Y. Shen, and D. Tian, “Foldingnet: Point cloud auto-encoder via deep grid
+                               deformation,” in IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR),
+                               2018, pp. 206–215.
+                          [33] J. Li, B. M. Chen, and G. H. Lee, “So-net: Self-organizing network for point cloud analysis,”
+                               in IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), 2018, pp.
+                               9397–9406.
+                          [34] J. Yang, P. Ahn, D. Kim, H. Lee, and J. Kim, “Progressive seed generation auto-encoder for
+                               unsupervised point cloud learning,” in IEEE/CVF International Conference on Computer Vision
+                               (ICCV), 2021, pp. 6413–6422.
+                          [35] J. Wu, C. Zhang, T. Xue, B. Freeman, and J. Tenenbaum, “Learning a probabilistic latent space
+                               of object shapes via 3d generative-adversarial modeling,” Advances in Neural Information
+                               Processing Systems (NeurIPS), vol. 29, 2016.
+                          [36] Z. Han, M. Shang, Y.-S. Liu, and M. Zwicker, “View inter-prediction gan: Unsupervised
+                               representation learning for 3d shapes by learning global shape memories to support local
+                               view predictions,” in Conference on Artiﬁcial Intelligence (AAAI), vol. 33, no. 01, 2019, pp.
+                               8376–8384.
+                          [37] B. Eckart, W. Yuan, C. Liu, and J. Kautz, “Self-supervised learning on 3d point clouds by
+                               learning discrete generative models,” in IEEE/CVF Conference on Computer Vision and Pattern
+                               Recognition (CVPR), 2021, pp. 8248–8257.
+                          [38] S. Xie, J. Gu, D. Guo, C. R. Qi, L. Guibas, and O. Litany, “Pointcontrast: Unsupervised
+                               pre-training for 3d point cloud understanding,” in European Conference on Computer Vision
+                               (ECCV).   Springer, 2020, pp. 574–591.
+                          [39] J.-B. Grill, F. Strub, F. Altché, C. Tallec, P. Richemond, E. Buchatskaya, C. Doersch,
+                               B. Avila Pires, Z. Guo, M. Gheshlaghi Azar et al., “Bootstrap your own latent-a new approach
+                               to self-supervised learning,” Advances in Neural Information Processing Systems (NeurIPS),
+                               vol. 33, pp. 21271–21284, 2020.
+                          [40] X. Yu, L. Tang, Y. Rao, T. Huang, J. Zhou, and J. Lu, “Point-bert: Pre-training 3d point cloud
+                               transformers with masked point modeling,” IEEE/CVF Conference on Computer Vision and
+                               Pattern Recognition (CVPR), 2022.
+                          [41] J. Devlin, M.-W. Chang, K. Lee, and K. Toutanova, “Bert: Pre-training of deep bidirectional
+                               transformers for language understanding,” arXiv preprint arXiv:1810.04805, 2018.
+                                                                       13
+           [42] R. Sennrich, B. Haddow, and A. Birch, “Neural machine translation of rare words with subword
+              units,” arXiv preprint arXiv:1508.07909, 2015.
+           [43] J. T. Rolfe, “Discrete variational autoencoders,” arXiv preprint arXiv:1609.02200, 2016.
+           [44] A. Dosovitskiy, L. Beyer, A. Kolesnikov, D. Weissenborn, X. Zhai, T. Unterthiner, M. Dehghani,
+              M.Minderer, G. Heigold, S. Gelly et al., “An image is worth 16x16 words: Transformers for
+              image recognition at scale,” arXiv preprint arXiv:2010.11929, 2020.
+           [45] Z. Liu, Y. Lin, Y. Cao, H. Hu, Y. Wei, Z. Zhang, S. Lin, and B. Guo, “Swin transformer:
+              Hierarchical vision transformer using shifted windows,” in IEEE/CVF International Conference
+              onComputerVision (ICCV), 2021, pp. 10012–10022.
+           [46] P. Gao, Z. Jiang, H. You, P. Lu, S. C. Hoi, X. Wang, and H. Li, “Dynamic fusion with intra-and
+              inter-modality attention ﬂow for visual question answering,” in IEEE/CVF Conference on
+              ComputerVision and Pattern Recognition (CVPR), 2019, pp. 6639–6648.
+           [47] R. Strudel, R. Garcia, I. Laptev, and C. Schmid, “Segmenter: Transformer for semantic seg-
+              mentation,” in IEEE/CVF International Conference on Computer Vision (ICCV), 2021, pp.
+              7262–7272.
+           [48] Z. Zhang, X. Lu, G. Cao, Y. Yang, L. Jiao, and F. Liu, “Vit-yolo: Transformer-based yolo for
+              object detection,” in IEEE/CVF International Conference on Computer Vision (ICCV), 2021,
+              pp. 2799–2808.
+           [49] M.-H. Guo, J.-X. Cai, Z.-N. Liu, T.-J. Mu, R. R. Martin, and S.-M. Hu, “Pct: Point cloud
+              transformer,” arXiv preprint arXiv:2012.09688, 2020.
+           [50] H. Zhao, L. Jiang, J. Jia, P. H. Torr, and V. Koltun, “Point transformer,” in IEEE/CVF Interna-
+              tional Conference on Computer Vision (ICCV), 2021, pp. 16259–16268.
+           [51] J. Devlin, M.-W. Chang, K. Lee, and K. Toutanova, “Bert: Pre-training of deep bidirectional
+              transformers for language understanding,” arXiv preprint arXiv:1810.04805, 2018.
+           [52] H. Bao, L. Dong, and F. Wei, “Beit: Bert pre-training of image transformers,” International
+              Conference on Learning Representations (ICLR), 2022.
+           [53] K. He, X. Chen, S. Xie, Y. Li, P. Dollár, and R. Girshick, “Masked autoencoders are scalable
+              vision learners,” arXiv preprint arXiv:2111.06377, 2021.
+           [54] K. He, H. Fan, Y. Wu, S. Xie, and R. Girshick, “Momentum contrast for unsupervised visual
+              representation learning,” in IEEE/CVF Conference on Computer Vision and Pattern Recognition
+              (CVPR), 2020, pp. 9729–9738.
+           [55] T. Chen, S. Kornblith, M. Norouzi, and G. Hinton, “A simple framework for contrastive learning
+              of visual representations,” in International Conference on Machine Learning (ICML), 2020, pp.
+              1597–1607.
+           [56] J. Zbontar, L. Jing, I. Misra, Y. LeCun, and S. Deny, “Barlow twins: Self-supervised learning
+              via redundancy reduction,” arXiv preprint arXiv:2103.03230, 2021.
+           [57] I. Loshchilov and F. Hutter, “Fixing weight decay regularization in adam,” arXiv preprint
+              arXiv:1711.05101, 2017.
+           [58] A. X. Chang, T. Funkhouser, L. Guibas, P. Hanrahan, Q. Huang, Z. Li, S. Savarese, M. Savva,
+              S. Song, H. Su et al., “Shapenet: An information-rich 3d model repository,” arXiv preprint
+              arXiv:1512.03012, 2015.
+           [59] Z. Wu, S. Song, A. Khosla, F. Yu, L. Zhang, X. Tang, and J. Xiao, “3d shapenets: A deep
+              representation for volumetric shapes,” in IEEE/CVF Conference on ComputerVisionandPattern
+              Recognition (CVPR), 2015, pp. 1912–1920.
+           [60] M. A. Uy, Q.-H. Pham, B.-S. Hua, T. Nguyen, and S.-K. Yeung, “Revisiting point cloud
+              classiﬁcation: A new benchmark dataset and classiﬁcation model on real-world data,” in
+              IEEE/CVFInternational Conference on Computer Vision (ICCV), 2019, pp. 1588–1597.
+                               14
+                          [61] I. Armeni, O. Sener, A. R. Zamir, H. Jiang, I. Brilakis, M. Fischer, and S. Savarese, “3d semantic
+                               parsing of large-scale indoor spaces,” in IEEE/CVF Conference on Computer Vision and Pattern
+                               Recognition (CVPR), 2016, pp. 1534–1543.
+                          [62] M. Kazhdan, T. Funkhouser, and S. Rusinkiewicz, “Rotation invariant spherical harmonic
+                               representation of 3 d shape descriptors,” in Symposium on Geometry Processing, vol. 6, 2003,
+                               pp. 156–164.
+                          [63] D.-Y. Chen, X.-P. Tian, Y.-T. Shen, and M. Ouhyoung, “On visual similarity based 3d model
+                               retrieval,” in Computer Graphics Forum, vol. 22, no. 3, 2003, pp. 223–232.
+                          [64] R. Girdhar, D. F. Fouhey, M. Rodriguez, and A. Gupta, “Learning a predictable and generative
+                               vector representation for objects,” in European Conference on Computer Vision (ECCV), 2016,
+                               pp. 484–499.
+                          [65] A. Sharma, O. Grau, and M. Fritz, “Vconv-dae: Deep volumetric shape learning without object
+                               labels,” in European Conference on Computer Vision (ECCV).   Springer, 2016, pp. 236–250.
+                          [66] J. Wu, C. Zhang, T. Xue, W. T. Freeman, and J. B. Tenenbaum, “Learning a probabilistic
+                               latent space of object shapes via 3d generative-adversarial modeling,” in Advances in Neural
+                               Information Processing Systems (NeurIPS), 2016, pp. 82–90.
+                          [67] J. Li, B. M. Chen, and G. H. Lee, “So-net: Self-organizing network for point cloud analysis,”
+                               in IEEE/CVF conference on Computer Vision and Pattern Recognition (CVPR), 2018, pp.
+                               9397–9406.
+                          [68] Y. Yang, C. Feng, Y. Shen, and D. Tian, “Foldingnet: Point cloud auto-encoder via deep grid
+                               deformation,” in IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR),
+                               2018, pp. 206–215.
+                          [69] Z. Han, X. Wang, Y.-S. Liu, and M. Zwicker, “Multi-angle point cloud-vae: Unsupervised
+                               feature learning for 3d point clouds from multiple angles by joint self-reconstruction and half-
+                               to-half prediction,” in IEEE/CVF International Conference on Computer Vision (ICCV), 2019,
+                               pp. 10441–10450.
+                          [70] Z. Han, M. Shang, Y.-S. Liu, and M. Zwicker, “View inter-prediction gan: Unsupervised
+                               representation learning for 3d shapes by learning global shape memories to support local
+                               view predictions,” in Conference on Artiﬁcial Intelligence (AAAI), vol. 33, no. 01, 2019, pp.
+                               8376–8384.
+                          [71] Y. Zhao, T. Birdal, H. Deng, and F. Tombari, “3d point capsule networks,” in IEEE/CVF
+                               Conference on Computer Vision and Pattern Recognition (CVPR), 2019, pp. 1009–1018.
+                          [72] J.SauderandB.Sievers,“Self-superviseddeeplearningonpointcloudsbyreconstructingspace,”
+                               Advances in Neural Information Processing Systems (NeurIPS), vol. 32, pp. 12962–12972,
+                               2019.
+                          [73] O. Poursaeed, T. Jiang, H. Qiao, N. Xu, and V. G. Kim, “Self-supervised learning of point
+                               clouds via orientation estimation,” in International Conference on 3D Vision (3DV), 2020, pp.
+                               1018–1028.
+                          [74] L. Jing, L. Zhang, and Y. Tian, “Self-supervised feature learning by cross-modality and cross-
+                               view correspondences,” in IEEE/CVF Conference on Computer Vision and Pattern Recognition
+                               (CVPR), 2021, pp. 1581–1591.
+                          [75] P.-S. Wang, Y.-Q. Yang, Q.-F. Zou, Z. Wu, Y. Liu, and X. Tong, “Unsupervised 3d learning
+                               for shape analysis via multiresolution instance discrimination,” in Conference on Artiﬁcial
+                               Intelligence (AAAI), vol. 35, no. 4, 2021, pp. 2773–2781.
+                          [76] H. Chen, S. Luo, X. Gao, and W. Hu, “Unsupervised learning of geometric sampling invariant
+                               representations for 3d point clouds,” in IEEE/CVF International Conference on Computer
+                               Vision (ICCV), 2021, pp. 893–903.
+                                                                       15
+           [77] J. Yang, P. Ahn, D. Kim, H. Lee, and J. Kim, “Progressive seed generation auto-encoder for
+              unsupervised point cloud learning,” in IEEE/CVF International Conference on Computer Vision
+              (ICCV), 2021, pp. 6413–6422.
+           [78] B. Eckart, W. Yuan, C. Liu, and J. Kautz, “Self-supervised learning on 3d point clouds by
+              learning discrete generative models,” in IEEE/CVF Conference on Computer Vision and Pattern
+              Recognition (CVPR), 2021, pp. 8248–8257.
+           [79] X. Yu, L. Tang, Y. Rao, T. Huang, J. Zhou, and J. Lu, “Point-bert: Pre-training 3d point cloud
+              transformers with masked point modeling,” 2022.
+           [80] M. Afham, I. Dissanayake, D. Dissanayake, A. Dharmasiri, K. Thilakarathna, and R. Rodrigo,
+             “Crosspoint: Self-supervised cross-modal contrastive learning for 3d point cloud understanding,”
+              2022.
+           [81] Y. Wang, Y. Sun, Z. Liu, S. E. Sarma, M. M. Bronstein, and J. M. Solomon, “Dynamic graph
+              cnn for learning on point clouds,” Acm Transactions On Graphics (TOG), vol. 38, no. 5, pp.
+              1–12, 2019.
+           [82] Y. Liu, B. Fan, G. Meng, J. Lu, S. Xiang, and C. Pan, “Densepoint: Learning densely contextual
+              representation for efﬁcient point cloud processing,” in IEEE/CVF International Conference on
+              ComputerVision (ICCV), 2019, pp. 5239–5248.
+           [83] Y. Liu, B. Fan, S. Xiang, and C. Pan, “Relation-shape convolutional neural network for point
+              cloud analysis,” in IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR),
+              2019, pp. 8895–8904.
+           [84] H. Zhao, L. Jiang, J. Jia, P. H. Torr, and V. Koltun, “Point transformer,” in IEEE/CVF Interna-
+              tional Conference on Computer Vision (ICCV), 2021, pp. 16259–16268.
+           [85] X. Yu, L. Tang, Y. Rao, T. Huang, J. Zhou, and J. Lu, “Point-bert: Pre-training 3d point cloud
+              transformers with masked point modeling,” 2022.
+           [86] H. Wang, Q. Liu, X. Yue, J. Lasenby, and M. J. Kusner, “Unsupervised point cloud pre-training
+              via occlusion completion,” in IEEE/CVF International Conference on Computer Vision (ICCV),
+              2021, pp. 9782–9792.
+           [87] Y. Xu, T. Fan, M. Xu, L. Zeng, and Y. Qiao, “Spidercnn: Deep learning on point sets with
+              parameterized convolutional ﬁlters,” in European Conference on Computer Vision (ECCV),
+              2018, pp. 87–102.
+           [88] C. R. Qi, L. Yi, H. Su, and L. J. Guibas, “Pointnet++: Deep hierarchical feature learning on
+              point sets in a metric space,” Advances in Neural Information Processing Systems (NeurIPS),
+              vol. 30, 2017.
+           [89] M. A. Uy, Q.-H. Pham, B.-S. Hua, T. Nguyen, and S.-K. Yeung, “Revisiting point cloud
+              classiﬁcation: A new benchmark dataset and classiﬁcation model on real-world data,” in
+              IEEE/CVFInternational Conference on Computer Vision (ICCV), 2019, pp. 1588–1597.
+           [90] A. Goyal, H. Law, B. Liu, A. Newell, and J. Deng, “Revisiting point cloud shape classiﬁcation
+              with a simple and effective baseline,” in International Conference on Machine Learning (ICML).
+              PMLR,2021,pp.3809–3820.
+                               16

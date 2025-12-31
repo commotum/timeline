@@ -1,0 +1,61 @@
+                           4.1  Latent Program Inference
+                           TheencoderanddecoderplaysimilarrolesasinaVAE,whilethelatentoptimizationprocessattempts
+                           to solve a dynamic optimization problem. Unlike VAEs, we can utilize our encoder at test time as a
+                           starting point for latent program search, which we find crucial for performance.
+                           Encoder:   Theprobabilistic encoder is trained to approximate the Bayesian posterior over programs.
+                           Specifically, it maps an input-output pair (x,y) to a distribution in the latent space q (z|x,y),
+                                                                                                                 ϕ
+                           representing possible programs that could explain the given input-output mapping. Using a variational
+                           approach is important because, for any given input-output pair, there exists a broad range of possible
+                           programs that map the input to the output, even when restricting to e.g. programs of low Kolmogorov
+                           complexity [Solomonoff, 1964, Kolmogorov, 1965]. Intuitively, the encoder is trained to learn an
+                           abstract representation of programs in a continuous latent space, by implicitly encoding input-output
+                           pair examples. In practice, we use a multivariate normal distribution whose mean µ and diagonal
+                           covariance Σ parameters are inferred by the encoder. To take advantage of hardware parallelization,
+                           the encoder can process all the I/O pairs in a given specification in parallel. It should be noted that
+                           LPNispermutation invariant to the specification order by encoding each pair independently, contrary
+                           to a naive sequence model over the concatenation of I/O pairs.
+                           Decoder:   Theprobabilistic decoder is responsible
+                           for mapping a latent program and an input to the
+                           space of outputs, directly predicting the output pixel
+                           by pixel instead of via a DSL. It models the distri-
+                           bution of possible outputs y given an input x and a
+                           latent z. Note that even if the underlying I/O map-
+                           pings are deterministic, we still use a probabilistic
+                           decodingframeworkp (y|x,z)tobecompatiblewith
+                                                θ
+                           maximum likelihood learning. Figure 2 shows the
+                           decoder generating different outputs by keeping the
+                           input fixed but varying the latent program, which in
+                           this figure represents a specific grid pattern to repro-
+                           duce. In a real task, the aim of this encoder-decoder
+                           system is to learn a compressed representation of the
+                           space of possible programs we care about (e.g. in
+                           the case of ARC-AGI, this would correspond to pro- Figure 2: Conditioning the decoder on differ-
+                           grams that use the Core Knowledge priors [Chollet,  ent points of the latent space leads to different
+                           2019]).                                             outputs being generated. Experiment detailed
+                                                                               in figure 16.
+                           Latent Optimization:     The encoder is trained to
+                           approximate the posterior over programs and may not encode the right abstraction given an I/O pair.
+                           Especially if the task is very novel, the encoder may fail at producing the right latent program, which,
+                           fed to the decoder, would generate the wrong output. Therefore, we include a middle stage of latent
+                           optimization where, starting from the encoder’s prediction z, we search for a better latent program
+                           z′, one that would better explain the observed data according to the decoder p . The search process
+                                                                                                      θ
+                           is generally denoted z′ = f(p ,z,x,y) and can be implemented in several ways (c.f. section 4.2).
+                                                        θ
+                           Analogous to system 1/system 2 thinking [Kahneman, 2011], we can think of the encoder generating
+                           anintuitive first guess as to what the observed program may be (system 1), and the latent optimization
+                           process executing a search for hypotheses that would better explain the observations (system 2).
+                                              Encoder           Latent Optimization            Decoder                  (5)
+                                           z ∼ q (z|x,y)         z′ = f(p ,z,x,y)          yˆ ∼ p (y|x,z′)
+                                                ϕ                         θ                      θ
+                           4.2  Search Methods for Latent Optimization
+                           Given n input-output pairs {(x ,y )}     , the search process z′ = f(p ,z,x,y) attempts to find a
+                                                        i  i  i=1...n                           θ
+                           z′ that satisfies:
+                                                                         n
+                                                          z′ ∈ argmaxXlogp (y |x ,z)                                    (6)
+                                                                     z           θ  i  i
+                                                                        i=1
+                                                                          6

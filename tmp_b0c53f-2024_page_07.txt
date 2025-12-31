@@ -1,0 +1,105 @@
+                                                                                                                       ScatterFormer             7
+                                               Voxels grouped by window
+                                                                                                                 Inner loop
+                                                                                                                í µí°“
+                                                                                                                                           â‹®
+                                                                                                               í µí±²
+                                                                                                            Q                                v
+                                                                                                                                                I
+                                                                                                                                                n
+                                                                                                                                                n
+                                                                                                                                                e
+                                                                                                                                                r
+                                                                                                                                                 
+                                                                                                                                                l
+                                                                                                        M
+                                                                                                                                                o
+                                                                                                                                                o
+                                                                                                        u
+                                                                                                                                                p
+                                                                                í µí±‹
+                                                                                                        l
+                                                                                  à¬µ
+                                                                                                        t
+                                                                                                        i
+                                                                                                        -
+                                                                                                        t
+                                                                                                        h
+                                                                                                 K
+                                                                                                        r
+                                                                          Flatten
+                                                                                   Chunk
+                                                                                            QKV
+                                                                                                        e
+                                                                                                   S
+                                                                                                 e
+                                                                                                        a
+                                                                                                   L
+                                                                                                 r
+                                                                                                        d
+                                                                                                 n
+                                                                                                   A
+                                                                                                         
+                                                                                                                              HBM toSRAM
+                                                                                                        (
+                                                                                                 e
+                                                                                                        i
+                                                                                                    
+                                                                                                        n
+                                                                                í µí±‹
+                                                                                                 l
+                                                                                                         
+                                                                                  à¬¶
+                                                                                                  
+                                                                                                        p
+                                                                                                        a
+                                                                                                        r
+                                                                                                        a
+                                                                                                        l
+                                                                                                        l
+                                                                                                        e
+                                                                                                        l
+                                                                                                        )
+                                                                                í µí±‹
+                                                                                  à¬·
+                                                                                                             â‹®                               â‹®
+                                                                                 â‹®       â‹®
+                                                                                                                                           â‹®
+                                                                                                                      Multi-thread (in parallel)
+                                                                           (a)
+                                                                                                                            (b)
+                                         Fig.3: (a) The voxel features are sorted by windows and flattened to a single ma-
+                                         trix, which is further partitioned into multiple chunks of uniform length and sent to
+                                         SLAkernel for attention computation. (b) In SLA, we first allocate individual threads
+                                         to each window, each of them iterates over all corresponding key and value chunks,
+                                         calculates, and accumulates their products to obtain the hidden state matrix of each
+                                         window. Then, multiple threads are allocated to these query chunks q âˆˆ Q, calculating
+                                                                                                                             i
+                                         the chunk-wise output by multiplying q with the corresponding hidden state matrix.
+                                                                                          i
+                                         voxel and apply scatter3 operator to accumulate them within each window. How-
+                                         ever, this would consume a high memory overhead and IO latency. Considering
+                                         that GPUs feature a memory hierarchy that includes larger, slower global GPU
+                                         memory (high-bandwidth memory; HBM) and smaller, faster shared memory
+                                         (SRAM), optimal utilization of SRAM to minimize HBM I/O costs can lead
+                                         to significant speed-ups. Based on this, we partition the flattened Q,K,V into
+                                         multiple chunks, load them from slow HBM to fast SRAM. Specifically, for each
+                                         window, we allocate an single thread. Each thread iterates over all the key and
+                                         value chunks, calculates, and accumulates their products to obtain the hidden
+                                         state matrix of the current window. After calculating the hidden state matrix in
+                                                                                                                               j
+                                         window, we assign individual thread to each query chunk q âˆˆ Q and calculate
+                                                                                                                        i
+                                         the chunk-wise output can then be following Equation 3. Figure 3(b) illustrates
+                                         this chunk-wise matrix multiplication approach. As can be seen, it not only
+                                         avoids outputting large matrices but also allows for more flexible processing of
+                                         variable-length sequences.
+                                              In our implementation, we use Triton [44] to perform chunk-wise matrix mul-
+                                         tiplication. As illustrated in Figure 4, it outperforms the naive scattered-based
+                                         operation, demonstrating improved speed and reduced memory usage when com-
+                                         puting attention for extremely long sequences.
+                                         3.3     Cross Window Interaction
+                                         Traditional window-basedtransformers[8,40,47]utilizewindowshiftingforinter-
+                                         window connection. For point cloud sequences, this requires recalculating win-
+                                         dowcoordinates and rearranging the voxels. In DSVT, the computation of voxel
+                                          3 https://github.com/rusty1s/pytorch_scatter

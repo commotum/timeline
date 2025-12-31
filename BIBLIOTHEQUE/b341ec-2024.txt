@@ -1,0 +1,595 @@
+                                      This CVPRpaperisthe Open Access version, provided by the Computer Vision Foundation.
+                                                   Except for this watermark, it is identical to the accepted version;
+                                              the final published version of the proceedings is available on IEEE Xplore.
+                 Spherical Mask: Coarse-to-Fine 3D Point Cloud Instance Segmentation with
+                                                        Spherical Representation
+                     Sangyun Shin         Kaichen Zhou        MadhuVankadari            AndrewMarkham            Niki Trigoni
+                                                        Department of Computer Science
+                                                               University of Oxford
+                                                       firstname.lastname@cs.ox.ac.uk
+                                     Abstract
+                Coarse-to-fine 3D instance segmentation methods show
+             weak performances compared to recent Grouping-based,
+             Kernel-based and Transformer-based methods. We argue
+             that this is due to two limitations: 1) Instance size over-
+             estimation by axis-aligned bounding box(AABB) 2) False
+             negative error accumulation from inaccurate box to the re-
+             finement phase. In this work, we introduce Spherical Mask,
+             a novel coarse-to-fine approach based on spherical repre-
+             sentation, overcoming those two limitations with several
+             benefits. Specifically, our coarse detection estimates each in-
+             stance with a 3D polygon using a center and radial distance
+             predictions, which avoids excessive size estimation of AABB.      Figure 1. Pipeline of Spherical Mask with coarse-to-fine frame-
+             Tocuttheerrorpropagationintheexisting coarse-to-fine ap-          work. Given point cloud, instances are detected with 3D polygons
+             proaches, we virtually migrate points based on the polygon,       defined in spherical coordinates. In the refinement phase, the points
+             allowing all foreground points, including false negatives, to     virtually migrate based on the polygon to estimate fine instance
+             be refined. During inference, the proposal and point mi-          masks.
+             gration modules run in parallel and are assembled to form            Existing approaches for 3D instance segmentation are
+             binary masks of instances. We also introduce two margin-          broadly categorized into coarse-to-fine based[12, 14, 20, 33,
+             based losses for the point migration to enforce corrections       34], grouping-based[4, 13, 19, 30, 36], kernel-based[10, 11,
+             for the false positives/negatives and cohesion of foreground      13, 29, 31], and Transformer-based[1, 15, 21, 27, 28] ap-
+             points, significantly improving the performance. Experimen-       proaches. Recent progress in clustering techniques and at-
+             tal results from three datasets, such as ScanNetV2, S3DIS,        tention mechanisms have driven the performances of the
+             and STPLS3D, show that our proposed method outperforms            last three approaches to state-of-the-art. Compared to these
+             existing works, demonstrating the effectiveness of the new in-    three approaches, the coarse-to-fine approach has received
+             stance representation with spherical coordinates. The code        relatively less attention due to a low accuracy, caused by
+             is available at: https://github.com/yunshin/SphericalMask         twolimitations: 1) False negative error propagation from the
+                                                                               coarse detection to the refinement stage. 2) Overestimation
+             1. Introduction                                                   of instance size.
+                                                                                  Coarse-to-fine instance segmentation first performs
+             3D instance segmentation has gained immense attention             coarse detection, followed by refinement using the coarse
+             with its wide range of applications for Indoor Scanning[38],      detection as hard reference. The basic assumption of the
+             AugmentedReality(AR)[18], and Autonomous Driving[22].             approach is that the coarse detection stage always provides
+             Similar to 2D instance segmentation, the goal of the task is to   a neat detection for refinement. However, this assumption
+             identify each object along with its class label. Nevertheless,    is often violated as the coarse detection stage cannot al-
+             the sparse and unordered nature of point clouds has led           ways produce neat outputs, which causes an issue of up-
+             to the development of methods different from 2D image             per bound accuracy. For example, if the first coarse detec-
+             segmentation.                                                     tion does not include all foreground points, the following
+                                                                            4060
+             refinement(binary classification) step has no means to in-     2.1. Coarse to Fine(Proposal-based) Approach
+             clude them, only possibly accumulating the error from false    Coarse-to-fine-based methods are built on a conceptually
+             negative prediction. The other limitation is that the axis-    simple design, where they first perform coarse detection,
+             aligned-bounding-box(AABB)estimation,whichistypically          followed by a refinement stage to acquire fine segmenta-
+             used for the coarse detection, has been claimed to be an ill-  tion. Typically, 3D bounding box is employed for the coarse
+             defined problem[30] because commonly used box regression       detection. 3D-SIS[12] performs instance segmentation by
+             losses(L1, L2) result in overestimation of object sizes. For   first detecting the 3D boxes and refining points inside. 3D-
+             instance, the target values of AABB are minimum and maxi-      BoNet[33]matchesqueryAABBsandground-truthinstance
+             mumvaluesinx,y,zcartesian coordinates, making the box          using Hungarian algorithm for the supervision. The pre-
+             include redundant empty space, as points only lie on the       dicted AABBs are then concatenated with point features to
+             surface of the object.                                         produce binary masks for each instance. GSPN[34] adopts
+                In this work, we address the aforementioned two limi-       set-abstraction[24] to get query points and infer AABBs.
+             tations of coarse-to-fine instance segmentation. Our core      The features inside the AABBs are extracted and used for
+             intuition comes from the fact that the weakness of the coarse- per-point mask segmentation. More recently, TD3D [14]
+             to-fine approach is based on the structural disentanglement    proposes a fully sparse-convolutional approach for point in-
+             of coarse detection and fine refinement phase. Instead of      stance segmentation. It first detects AABBs and extracts
+             assuming that the coarse part should be perfect, we take       perpoint features inside the boxes to perform binary classi-
+             a relaxation approach, which regards the coarse detection      fication. Most of the works use coarse detection(bounding
+             as a soft reference during the refinement phase, providing     box) directly as geometric features for predicting per-point
+             moreaccess for refinement yet restricting access to unneces-   binary instance masks. Thus, their accuracies greatly depend
+             sary background points. Specifically, to improve the coarse    on the precision of the coarse detection, as inaccurate de-
+             detection part, we estimate a 3D polygon in spherical coor-    tection could easily lead to a large number of false negative
+             dinates instead of AABB, alleviating the issue of excessive    points.
+             object size estimation. To remove the error propagation from
+             inaccurate coarse detection to the refinement stage, we virtu- 2.2. Grouping-based Approach
+             ally migrate points based on the 3D polygon with reduced       Grouping-basedmethodslearnlatentembeddingstoperform
+             complexity in spherical coordinates.                           per-point predictions, such as semantic categories and clus-
+                In summary, our method Spherical Mask finds each in-        tering to acquire instances. PointGroup[13] predicts centroid
+             stance by estimating a 3D polygon fitting to an instance       offsets of each point and utilizes this shifted point cloud
+             in spherical coordinates and migrating points inside or out-   and original point cloud to obtain the clusters. Based on
+             side the polygon to produce the fine instance mask. Our        this concept, many studies improve the clustering technique
+             contributions are:                                             with hierarchical intra-instance predictions[4], superpoint-
+             • We introduce a new alternative instance representation       based divisive grouping[19], soft grouping[30], and binary
+               based on spherical coordinates, which overcomes the limi-    clustering[36]. The clustering-based methods have high ex-
+               tations in existing coarse-to-fine approaches.               pectations of the quality of per-point center prediction in
+             • Tocircumventtheissueofexcessiveestimationofinstance          3D, which is challenging to generalize with various spatial
+               size, we propose Radial Instance Detection(RID) that         extents of objects.
+               formulates an instance into a 3D polygon as a coarse de-     2.3. Kernel-based Approach
+               tection.
+             • To cut the error propagation from coarse detection to        Kernel-based methods learn convolution kernels that aggre-
+               the refinement phase, we introduce Radial Point Migra-       gate point features to estimate instance masks. DyCo3D[10]
+               tion(RPM), capable of refining both false positive and       proposes discriminative kernels by applying the cluster-
+               false negative points from RID.                              ing method from PointGroup[13].       Built on this, more
+             • Extensive experiments on ScanNetV2 [7], S3DIS [2], and       recent works improved the performance by replacing the
+               STPLS3D [3] show the effectiveness of our approach,          clustering part with farthest-point sampling[11], candidate
+               pushing the boundary of current SOTA.                        localization[31], and instance-aware point sampling for the
+                                                                            high-recall[29].
+             2. Related Work                                                2.4. Transformer-based Approach
+             Existing works on point cloud instance segmentation can        Recently, transformer-based methods have set the new
+             be categorized into proposal-based, clustering-based, kernel-  SOTA. Based on mask-attention[5, 6], Mask3D[27] and
+             based and transformer-based methods.                           SPFormer[28] present the pipeline that learns to output
+                                                                         4061
+              instance prediction directly from a fixed number of ob-              center fcenter and multiple rays fray emitting from the center
+              ject queries from voxel and superpoint features, respec-             forming each spherical sectors. Here, the sectors are defined
+              tively. Based on these works, recent studies improve the             by preset angles. Each ray then determines the distance to
+              performance with auxiliary center regression[15], query              be considered for their corresponding sectors, as shown in
+              initialization and set grouping[21], spatial and semantic            Figure 3.
+              supervision[1]. Although the powerful architectural advan-              We estimate the closest instances’ center fcenter using
+              tage has driven the performance of Transformer-based ap-             offsets predicted from an MLP network, CenterHead, which
+              proaches, low-recall and how to distribute initial queries           takes the respective f as input and outputs offsets. The
+                                                                                                           2
+              remain challenges.                                                   offsets are added to p to infer f        . After this, the input
+                                                                                                          2           center
+                                                                                   point cloud is converted into spherical coordinates using a
+              3. Method                                                            transformation as p = S(p ) centered around f           , where
+                                                                                                        s       1                     center
+              3.1. Overview                                                        S : (x,y,z) → (r,θ,φ) as follows:
+                                                    N ×3                                                    p 2       2     2
+              Given an input point cloud p ∈ R p           in 3-dimensional                             r =    x +y +z ,
+                                              1                                                                         x
+              cartesian coordinates and the corresponding color informa-                                   θ = arctany,                         (1)
+                             N ×3                                                                                  √ z
+              tion prgb ∈ R p      , we aim to design a system that seg-                              φ=arctan                 .
+                                                                                                                     x2+y2+z2
+              ments the point cloud into local binary masks of instances
+                 (i)     N ×1 No
+              {o    ∈R p }          using a coarse to fine approach. Here,         Here, r, θ, φ refer to radius, horizontal, and vertical angles
+                                i=1                                                in spherical coordinates, respectively. The p is then divided
+              N ,N are the total number of points and the number of                                                              s
+                p    o
+              instances, respectively. This is achieved using the proposed         uniformly with N and N separations for horizontal and
+                                                                                                       θ        φ
+              method depicted in Figure 2. Our system consists of mainly           vertical direction respectively, resulting in N · N     sectors,
+                                                                                                                                   θ     φ
+              two modules: 3D backbone and proposed instance mask                  as shown in Figure 3 (b) and (c).
+              estimation. The details of these modules are in Section 3.2             Weconsider points inside the same sector to have iden-
+              and Section 3.3, respectively.                                       tical (θ,φ), which enables us to close the sector using a
+                                                                                                                                   (i)  N N
+                                                                                   boundary estimated by f       . To estimate {f      } θ φ, an-
+              3.2. 3D backbone                                                                                 ray                 ray i=1
+                                                                                   other MLP named Ray Head is employed, which takes f2 as
+              Our 3D backbone is similar to [29] and is composed of                input.
+              two modules: a 3D encoder and a voting module. The                      Atthispoint,everypointinsidethecorrespondingsector’s
+              3D encoder uses U-Net [26] with sparse convolutions [9]              boundary from fray is considered foreground. Using the
+              to encode the given point cloud into deep features F         ∈       boundary, RID offers tighter boundaries of instances than
+                                                                         1
+                N ×D
+              R p     . Then, F and the respective input points p are              AABBinpointcloud,aseachsectorisclosedatthedistance
+                                 1                                      1
+              fed into the voting module. The voting module performs               of the farthest foreground point in the sector, alleviating the
+              set abstraction [24], producing K votes with query points            problem of redundant space in AABB. Please refer to our
+                       K×3                           K×D                           supplementary material for additional visualizations.
+              p ∈ R          and features F     ∈ R       .  Please find the
+               2                             2
+              original paper [25] for more details about this procedure.           CoarseInstanceLoss: During training, the estimated fcentre
+              These votes are spread in the scene, providing features to           and fray are compared against their respective ground truth
+              be further processed through the proposed instance mask              g      and g    to calculate L      :
+                                                                                     center     ray               coarse
+              estimationmodule. Thedetailsareexplainedinthefollowing
+              sections.                                                                               L       =L +L ,                           (2)
+                                                                                                        coarse    ray     center
+              3.3. Instance Mask Estimation                                        where Lray and Lcenter are defined with L1 loss:
+                                                                                                                 N N
+              Inthis section, we estimate the instance masks from the votes                                       θ  φ            
+                                                                                                            1     X (i)         (i)
+              predicted in the 3D backbone section using three modules:                          L =                    f    −g                 (3)
+                                                                                                  ray    N N            ray     ray1
+              RadialInstanceDetection, RadialPointMigration, andMask                                       θ  φ i=1
+              Assembly. All of the modules are explained in the following                            L      =|f       −g       | ,              (4)
+              sections. For the notation simplicity, we will explain how                              center     center   center 1
+              each vote feature is processed. Therefore, we write f to             Here, the ground-truth instance g is matched with f          by
+                                                                         2                                                                 center
+              refer to a single vote feature of F from here onwards.               an injective mapping obtained using Hungarian algorithm
+                                                 2
+                                                                                   as [29, 33]. For the details of the matching, please refer to
+              3.3.1   Radial Instance Detection(Coarse Mask)                       Sec 3.4. g(i) is set to the distance between g         and the
+                                                                                               ray                                   center
+              Radial Instance Detection(RID) aims to detect instances              furthest foreground point in the ith sector. If there are no
+                                                                                                                        (i)
+              for further refinement. Similar to PolarMask[32] for 2D              foreground points in the sector, g      is set to minimum as
+                                                                                                                        ray
+              segmentation, we define an instance as a 3D polygon with a           1e−5. Thetarget center g          is calculated as mean values
+                                                                                                                center
+                                                                                4062
+              Figure 2. Overall pipeline of our proposed method based on coarse to fine approach. Given the point cloud, the backbone produces base
+              features with 3D UNet and Voting module. Based on this, RID performs coarse detection while RPM produces the virtual point offsets to
+              refine the coarse detection. In Mask Assembly, K local binary masks are generated, where each mask is a proposal for a single instance. 3D
+              NMSisappliedtoacquirethe final instance masks using local binary masks, classifications, and confidence scores.
+              of foreground points of the matched groundtruth instance in          inside or outside the estimated coarse sector. There are two
+              cartesian coordinates.                                               possible cases where the misclassification could occur, as
+                                                                                   showninFigure4(a): Instance points could lie outside the
+              3.3.2   Radial Point Migration(Mask Refinement)                      sector boundary, acting as false negatives, or background
+              In this section, we introduce a refinement process to perform        pointscouldincorrectlyliewithinthesectorboundary,acting
+              per-point fine-tuning. This is because the coarse detection          as false positives. The goal is to move these points to the
+              will invariably include points belonging to the background           correct region.
+              or other instances (i.e. false positives) inside its boundary           Formally, given the point indices of foreground points
+                                                                                       (i) N+                                  (i) N−
+                                                                                   {j+ }        and background points {j−         }     from the
+              and neglect some instance points that fall outside (i.e. false               i=1                                     i=1
+                                                                                   groundtruth, the false negative points p    and the false posi-
+              negatives). We propose a conceptually simple yet effective                                                    fn
+                                                                                   tive points p  are defined as:
+              dual that jitters individual points to belong to the correct                      fp
+              instance. In particular, this is enabled by our innovative use                                           (j+)         ˜
+                                                                                                     (j+)     (j+)                (j+)
+                                                                                            p ={p         : (p     +f       ) > f     },       (5)
+              of spherical coordinates - we only need to learn a single                      fn      s        s        δ          ray
+              radial delta for each point to move it along the ray to the
+              instance centroid while keeping angular quantities ϕ and θ                                               (j−)         ˜
+                                                                                                     (j−)     (j−)                (j−)
+                                                                                            p ={p         : (p     +f       ) < f     },       (6)
+              constant. Note that this is a virtual point motion - we do not                 fp      s        s        δ          ray
+              alter the final point cloud. We use this as a virtual offset to         where N+ and N− stand for the number of fore-
+              obtain clean instance labels without modifying the coarse                                                                      ˜
+                                                                                   ground and background points, respectively. Here, j =
+              sector.                                                              findSector(p(j)) where findSector(.) is a function that takes
+                                                                                                s
+                 By estimating an offset value for each point p , these             (j)                                                        (j)
+                                                                    1              p    as input and returns the index of the sector that p
+              misclassified points can be virtually migrated to being in            s                                                          s
+              the correct region. Based on its good performance on per-            belongs to. Please refer to the supplementary material for
+              point prediction, we adopt Dynamic Convolution in a sim-             our implementation of findSector(.) function.
+                                                                                      The union of p     and p   forms the misclassified points
+              ilar manner to [10, 29] as our Point Migration Head, for                                fp       fn
+                                                                                   p    that we are interested: p       =p ∪p . Ouraimis
+                                                      K×N                           miss                           miss     fp    fn
+              predicting per-point offsets F     ∈ R       p using the vote
+                                              δ                                    to push or pull them inside/outside of the ray with margins.
+              features F ∈ RK×D as queries against the point features
+                         2                                                         Thus, the loss function Lmc is formulated with soft margin
+                       N ×D
+              F ∈ R p        . For the coherence with the notations, we
+                1                                                                  loss as:
+              write f ∈ RNp to refer to an output of F , corresponding to
+                     δ                                   δ
+              one vote. For the learning of fδ, we divide points into two
+                                                                                                  N
+                                                                                                    miss
+              groups. The first is to learn the radial delta for the case of                  1   X                                   ˆ      ˜
+                                                                                                                              (i)     (i)   (i)
+                                                                                   L    =              log(1+exp(y∗tanh(p         +f −f )))
+              misclassification, and the second is to make instances more            mc    N                                  miss   δ      ray
+                                                                                              miss i=1
+              compact and cohesive by migrating points to the centroid of                                                                      (7)
+              the sector.                                                             where              (
+                                                                                                             1   if p(i) ∈ p ,
+              Misclassification Correction Loss: This process aims to                               y =              miss     fp               (8)
+              estimate a radial delta to move the misclassified points either                              −1 if p(i) ∈ p ,
+                                                                                                                     miss     fn
+                                                                                4063
+                                                                                          Figure 4. Conceptual diagram showing per-point migration follow-
+                                                                                          ing both (a)L    and (b)L . ∆     and ∆     are distances penalized
+                                                                                                        mc          sc   FP        FN
+                                                                                          by L    with margin for misclassified points. ∆      is the distance
+                                                                                               mc                                           TP
+                                                                                          that L   penalizes to enforce the learning of general features of
+                                                                                                sc
+                                                                                          an instance by making each sample close to the other around the
+                                                                                          center.
+               Figure 3. Process of RID. (a) Object points in cartesian coordinates       L     and L     together form the refinement loss L         as:
+               (b) Converting points into a spherical coordinate system, using              mc         sc                                         fine
+               fcenter, and preset angles θ and φ. (c) Assigning points to each                                  L     =L +L .                            (12)
+               sector defined by θ and φ. The example shows 3/3 for θ/φ. (d) For                                   fine     mc      sc
+               each sector, the distance between the farthest point and the center           Ourproposed virtual point migration brings three advan-
+               becomes the target of fray. During inference, points with smaller          tages for refinement over existing approaches that strictly
+               distance than fray are considered foreground.                              disentangle coarse detection and refinement: 1) Instead of
+               Here, tanh is hyperbolic-tangent function and Lmc is calcu-                only focusing on points inside the coarse detection, predict-
+               lated for all the votes that are assigned to the ground truth              ing the offsets of all points allows the refinement of even
+               instance. N       stands for the number of element in p         and        false negative points outside of f       , sidestepping the error
+                            miss                                           miss                                                 ray
+               ˆ                                       (i)                                accumulation from the coarse detection. 2) By considering
+               i is index of fδ corresponding to p         . fray is only used for
+                                                       miss                               the sector radius, g    , it is possible to have a soft target for
+               reference and the gradient for learning fray is not calculated.                                  ray
+                  The misclassified points around the edge,g            , of an in-       each point rather than a hard target which is the center of the
+                                                                     ray
+               stance are provided with comparably easy learning targets.                 sector/instance. For example, false negative points outside
+               In contrast, misclassified points far from the predicted rays              of the sector boundary only need to be migrated a small dis-
+               are assigned targets with large discrepancies, encouraging                 tance to being with the sector (soft), rather than being driven
+               larger gradients during the training.                                      towards the center (hard). This makes it easier to learn how
+               SectorCohesionLossThegoalofthisblockistomovetrue-                          to perform the point migration. 3) We only need to learn a
+               positive points to the centroid of the sector. By doing so, the            one-dimensional number to migrate the point virtually along
+               sector becomes more cohesive, encouraging the learning of                  the radial line. This is far simpler than having to learn a
+               commonandsharedfeaturesofaninstanceastheforeground                         three-dimensional offset in cartesian coordinates.
+               features are getting close to each other. In addition, this helps          3.3.3   MaskAssembly
+               to provide a learning signal for true-positive points, as Lmc
+               only considers false negatives/positives. This is shown more               Our final mask is assembled by comparing virtually mi-
+               clearly in Figure 4 (b).                                                   grated points and fray. Specifically, the local binary mask
+                                                                                             (i)   N
+                  Similar to L      , using point indice of foreground points             {f     } p is formed as:
+                                 mc                                                          mask i=1
+               j+, we extract true positives ptp as :                                                            (
+                                                                                                                                               ˜
+                                                                                                                            (i)     (i)       (i)
+                                                                                                         (i)       1 if(p       +f )<f
+                                                       (j+)         ˜                                  f      =             s       δ         ray         (13)
+                                   (j+)      (j+)                  (j+)                                 mask
+                         p ={p           : (p      +f       ) < f      }        (9)
+                           tp      s         s         δ          ray                                              0 otherwise,
+               and formulate the loss with the soft margin calculation:                   3.4. Training
+                              N
+                                tp
+                          1 X                             ˆ                               For the training, we also learn classification and confidence
+                L =               log(1 +exp(tanh(f(i) +p(i) −f               ))),
+                  sc    N                                δ       tp      center           with respective MLPs. For classification, we apply cross-
+                           tp i=1                                                         entropyloss, L ,forlearningtheclassesofmatchedground-
+                                                                               (10)                        cls
+                                                                               ˆ          truth instances. For the confidence scores of the proposals,
+               where N stands for the number of element in p and i is
+                         tp                                             tp                weapply L2 loss to learn IoUs between the proposals and
+                                                 (i)
+               index of fδ corresponding to p       . Since fcenter is always 0 in
+                                                 tp                                       the groundtruth instances. Similar to [29], we also duplicate
+               centered spherical coordinate, the loss can be simplified as:              the number of grountruth for 4 times and create a cost matrix
+                                Ntp                                                       C:
+                            1 X                             (i)     (i)
+                   Lsc =             log(1 +exp(tanh(f          +p ))),        (11)
+                           N                                δ       tp                        C(k,i) = L          (k,i) +L      (k,i) +L (k,i),           (14)
+                             tp i=1                                                                         coarse           fine           cls
+                                                                                      4064
+              where L(,) refers to the loss value calculated using kth               Our backbone is similar to[29, 30], which outputs fea-
+              vote and i   ground-truth instance. Referring C, we apply           tures F with hidden dimensionD as 32 channels. For the
+                        th                                                               1
+              Hungarian algorithm to find the least-cost injective mapping        voting, we use two set-abstraction [24, 25] layers with the
+              from each ground-truth instance to the votes. The final loss        ball query radius 0.2 and 0.4, respectively. The number
+              using the acquired ground-truths is:                                seeds and votes are set to 1024 and 256, respectively. The
+                                                                                  number of neighbors is set to 32 for both layers, similar
+                      L=λL +λL +λL                        +λ L          (15)      to [29]. For Point Migration Head, we use two layers of
+                             1  cls    2 conf    3  coarse    4  fine
+              4. Experiment                                                       dynamicconvolution[10], and their hidden dimensions are
+                                                                                  set to 32. λ1, λ2, λ3, and λ4 are set to 0.5, 0.5, 1, and 1,
+                                                                                  respectively. For training and inference, we set N and N
+              4.1. Dataset                                                                                                            θ       φ
+                                                                                  to 5 and 5, respectively. During inference, Non-Maximum-
+              Weevaluate our method on three datasets: ScanNetV2 [7],             Suppression is applied to the K binary masks to delete re-
+              S3DIS [2], STPLS3D [3]. Following are descriptions of               dundant masks using a confidence score 0.2 as a threshold.
+              each dataset.                                                       Following[19,21,29,31],weaggregatesuperpoints[16,17]
+              ScanNetV2ScanNetV2datasetconsists of 1201, 312, and                 to align the final prediction masks on the ScanNetV2 dataset.
+             100 scans with 18 object classes for training, validation, and       Other details, such as the architecture of MLPs and runtime
+              testing, respectively. We report the evaluation results on the      analysis, are included in the supplementary material.
+              validation and hidden test sets as in the existing works.
+              S3DIS S3DIS dataset contains 271 scenes from 6 areas                4.4. Main Results
+              with 13 categories. We report evaluations for both Area             ScanNetV2Table1andTable2showthequantitative result
+              5. Additional evaluation results with 6-fold cross-validation       of instance segmentation on the test and validation sets. Our
+              can be found in the supplementary material.                         proposed method achieves the highest AP and AP        surpass-
+              STPLS3D The STPLS3D dataset is an aerial photogram-                                                                    50
+              metry point cloud dataset from real-world and synthetic             ing the previous strongest method by the margin of 4.1% and
+                                                                   2              2.4%forthetest set, and 6.7% and 5.7% for the validation
+              environments. It includes 25 urban scenes of 6km and 14             set, respectively. Compared to the previous methods based
+              instance categories. Following [4, 29, 30], we use scenes 5,        onthe coarse-to-fine approach, our method achieves 24.1%
+             10, 15, 20, and 25 for validation and the rest for training.         of the improvement in AP on the test set. In particular, for
+              4.2. Evaluation Metric                                              the test set, our method outperforms existing methods on
+                                                                                  instances that are typically located close to each other, such
+              Weadoptaverageprecisionasourprimaryevaluation metric.               as pictures, desks, and bookshelves. This suggests that ex-
+              Average precision is extensively used in vision tasks such          plicitly penalizing misclassified points around the edges of
+              as object detection and instance segmentation tasks. The            instances is helpful in RPM. Please refer to the supplemen-
+              metric calculates precisions by varying the IoU threshold.          tary material for more results about this.
+              Following the existing works, we evaluate our model with            S3DISTable3illustrates the quantitative result on Area 5.
+              three IoU thresholds: AP, AP , AP . AP             and AP           Ourproposed method outperforms the second best perform-
+                                               50     25      50          25
+              stand for average precisions with IoU threshold as 25% and          ing method with margins of 3.3 and 2.9 in mAP, AP50, and
+              50%,respectively. AP is an averaged score by varying IoU            mRec ,improvingtheperformanceofSOTA5.7%,4.2%,
+                                                                                        50
+              thresholds from 50% to 95% by increasing the threshold              and 5.6% respectively.
+              with step size 5%. For S3DIS, we also evaluate our model            STPLS3DTable4showsthequantitativecomparisononthe
+              with mean precision (mPrec50), and mean recall with IoU             validation set of STPLS3D dataset. Our method outperforms
+              threshold as 50%(mRec50).                                           all of the existing methods, improving SOTA performance
+              4.3. Implementation Detail                                          in mAPandAP50 for 3.0 and 4.3, respectively.
+              Webuild our model on PyTorch framework [23] and train               4.5. Qualitative Results
+              it for 300 epochs with AdamW optimizer with a single                Fig.5 shows visual comparisons of ISBNet[29], MAFT[15],
+              NVIDIAA10GPU.Thebatchsizeissetto10. Thelearning                     and our proposed Spherical Mask for challenging instances
+              rate and weight decay are initialized to 0.001 and 0.0001.          on ScanNetV2 validation set. Spherical Mask accurately
+              Cosine annealing [35] is used for scheduling the learning           segments large instances such as wall and book shelves(row
+              rate. Following [29, 30], the voxel size is set to 0.02m for        1), curtains and a window between them(row 2), a large
+              ScanNetV2andS3DIS,andto0.3mforSTPLS3D.Forthe                        sofa(row 3) and a circular shape sofa(row 4).
+              augmentation during training, we use random cropping for               ISBNet[29] struggles to segment large instances(wall and
+              each scene with a maximum number of 250,000 points. Dur-            bookshelves in row 1) and a disconnected instance(curtains
+              ing testing, a whole scene is used as an input to the network.      and a window between them in row 2). On the other hand,
+                                                                               4065
+                                                                                                                                .            a
+                   Method              mAP mAP                                                                                  cur
+                                                 50    bath  bed   bk.shfcabinetchair       curtaindesk door  other        fridges.    sink  sof   table toiletwind.
+                                                                                     counter                        picture
+                   3D-BoNet(C)[33]     25.3  48.8    51.9   32.4  25.1  13.7  34.5  3.1   41.9   6.9   16.2  13.1  5.2   20.2  33.8  14.7   30.1  30.3  65.1  17.8
+                   TD3D(C)[14]         48.9  75.1    85.2   51.1  43.4  32.2  73.5  10.1  51.2   35.5  34.9  46.8  28.3  51.4  67.6  26.8   67.1  51.0  90.8  32.9
+                   SoftGroup(G)[30]    50.4  76.1    66.7   57.9  37.2  38.1  69.4  7.2   67.7   30.3  38.7  53.1  31.9  58.2  75.4  31.8   64.3  49.2  90.7  38.8
+                   PBNet(G)[36]        57.3  74.7    92.6   57.5  61.9  47.2  73.6  23.9  48.7   38.3  45.9  50.6  53.3  58.5  76.7  40.4   71.7  55.9  96.9  38.1
+                   DKNet(K)[31]        53.2  71.8    81.5   62.4  51.7  37.7  74.9  10.7  50.9   30.4  43.7  47.5  58.1  53.9  77.5  33.9   64.0  50.6  90.1  38.5
+                   ISBNet(K)[29]       55.9  75.7    93.9   65.5  38.3  42.6  76.3  18.0  53.4   38.6  49.9  50.9  62.1  42.7  70.4  46.7   64.9  57.1  94.8  40.1
+                   MAFT(T)[15]         57.8  78.6    88.9   72.1  44.8  46.0  76.8  25.1  55.8  40.8   50.4  53.9  61.6  61.8  85.8  48.2   68.4  55.1  93.1  45.0
+                   QueryFormer(T)[21]  58.3  78.7    92.6   70.2  39.3  50.4  73.3  27.6  52.7   37.3  47.9  53.4  53.3  69.7  72.0  43.6   74.5  59.2  95.8  36.3
+                   Ours(C)             61.6  81.2    94.6   65.4  55.5  43.4  76.9  27.1  60.4  44.7   50.5  54.9  69.8  71.6  77.5  48.0   74.7  57.5  92.5  43.6
+               Table 1. Quantitative comparison of top-performing methods for each approach on ScanNetV2 hidden test set. (C),(G),(K), and (T) next to
+                the names of the methods refer to coarse-to-fine, grouping, kernel, and Transformer based methods, respectively. All the methods take the
+                sameinput, such as point cloud and corresponding color information. The best results are in bold, and the second best ones are in underlined.
+                                    Figure 5. Qualitative comparison of ISBNet[29], MAFT[15], and ours on ScanNetV2 validation set.
+                                                         Figure 6. Visually comparing impacts of RID, Lmc, and L          .
+                                                                                                                        sh
+                MAFT[15]showsbettergeneralization capability for learn-                      Impactofθ andφisshownatTable6. Forthis experiment,
+                ing semantics(curtains and a window between them(row 2)).                    wefixed the backbone and the RPM with Lmc and Lsc, and
+                However, it struggles to segment some parts of an instance                   change N andN . Intheory, increasing N and N should
+                                                                                                         θ        φ                              θ        φ
+                that look different, as shown in sofas(row 2,3) and overseg-                 always produce better results. However, in practice, increas-
+                ments the instance by considering physically further away                    ing them faces an issue of high complexity, as can be seen.
+                points as the same instance(wall in row 2 and sofa in row                    Using4/4and5/5ofN andN improvesthemAPfor0.9%
+                                                                                                                        θ         φ
+               4), probably due to the local queries that overfit to certain                 and 1.7%, respectively. However, increasing them from 5/5
+                semantics.                                                                   to 6/6 results in 2.8% of the performance drop, suggesting
+                                                                                             that too large N and N make a negative impact on the
+                                                                                                                 θ         φ
+                4.6. Ablation Study                                                          performance due to increased complexity. For example, too
+                                                                                             large N and N wouldresult in many sectors without any
+                                                                                                       θ        φ
+                In this section, we investigate Spherical Mask with ablation                 foreground points, leading to biased target values for learn-
+                studies designed for its core components.
+                                                                                          4066
+                       Method              Venue      mAP AP50 AP25                     N /N      mAP AP        AP        Seed/Vote    mAPAP AP
+                                                                                           θ  φ             50     25                           50    25
+                    3D-SIS(C)[12]         CVPR19        -      18.7     35.7            1/1       59.6   77.1   85.3      1024/128     62.3 79.2 87.8
+                    GSPN(C)[34]           CVPR19        -      37.8     53.4            2/2       60.0   77.7   86.1      1024/256     62.3 79.9 88.2
+                    TD3D(C)[14]          WACV23        47.3    71.2     81.9            3/3       60.6   78.4   87.1      1024/512     62.3 79.4 87.6
+                  PointGroup(G)[13]       CVPR20       34.8    51.7     71.3            4/4       61.2   80.0   89.3      2048/128     62.0 79.7 88.0
+                    SSTNet(G)[19]         ICCV21       49.4    64.3     74.0            5/5       62.3   79.9   88.2      2048/256     61.8 79.6 87.9
+                  MaskGroup(G)[37]        ICME22       27.4    42.0     63.3            6/6       60.6   78.5   88.2      2048/512     61.7 79.1 87.5
+                  SoftGroup(G)[30]        CVPR22       46.0    67.6     78.9           Table 6. Impact of Nθ and        Table 7. Impact of seed and vote
+                     RPGN(G)[8]          ECCV22         -      64.2       -            Nφ on ScanNetV2 valida-          numbers on ScanNetV2 valida-
+                    PBNet(G)[36]          ICCV23       54.3    70.5     78.9           tion set                         tion set
+                 PointInst3D(K)[11]       EECV22       45.6    63.7                    ing RPM. As the baseline model cannot refine the false posi-
+                    DKNet(K)[31]         ECCV22        50.8    66.9     76.9           tive points inside radial predictions or false negative points
+                    ISBNet(K)[29]         CVPR23       54.5    73.1     82.5           outside, as shown in Figure 6 (parts of chairs included as
+                   Mask3D(T)[27]          ICRA23       55.2    73.7     82.9
+                                                                                       tables), its performance with high iou thresholds(AP, AP )
+                   3IS-ESSS(T)[1]         ICCV23       56.1    75.0     83.7                                                                          50
+                 QueryFormer(T)[21]       ICCV23       56.5    74.2     83.3           are 17.1% and 13.1% worse than the full model. Including
+                    MAFT(T)[15]           ICCV23       58.4    75.6     84.5           RPMwith Lmc leads 13.3% of improvement in AP, sug-
+                       Ours(C)                -        62.3    79.9     88.2           gesting refinement to push and pull misclassified points is
+              Table 2. Quantitative 3D instance segmentation results on Scan-          crucial for the performance. Lsc shows 9.4% improvement
+               NetV2validation set. (C),(G),(K), and (T) next to the names of the      in APfromthebaseline,suggestingthatfocusingontruepos-
+               methods refer to coarse-to-fine, grouping, kernel, and Transformer      itive samples also contributes significantly to learning fine
+               based methods, respectively. The best results are in bold, and the      granularity and common features shared within an instance.
+               second best ones are in underlined.                                     As shown in Figure 6(column 5,6), adding L             improves
+                                                                                                                                           sc
+                       Method           mAP AP50 mPrec               mRec              the segmentation around the center of the objects, which
+                                                                50         50
+                      GSPN[34]            -        -       36.0       28.7             wasexpected as the true positive samples near the instance
+                   PointGroup [13]        -      5.78      61.9       62.1             centers could be neglected from Lmc as they are usually
+                      HAIS[4]             -        -       71.1       65.0             inside rays. As Lmc and Lsc target different samples, the
+                     SSTNet[19]         42.7     59.3      65.6       64.2             full model combining both L         and L     shows20.7%and
+                   SoftGroup [30]       51.6     66.1      73.6       66.6                                              mc        sc
+                                                                                       15.1% improvements for AP and AP , demonstrating the
+                    Mask3D[27]          56.5     69.3      68.7       70.7                                                       50
+                      RPGN[8]             -        -       64.0       63.0             synergy of the two losses.
+                   PointInst3D [11]       -        -       73.1       65.2             ImpactofVotingParametersisshowninTable7. Inthis
+                     DKNet[31]            -        -       70.8       65.3             experiment, we change the seed and vote numbers inside the
+                     ISBNet[29]         56.3     67.5      70.5       72.0             backbonewhilefixing RID and RPM.Ascanbeseen,aseed
+                     PBNet[36]          53.5     66.4      74.9       65.4             numberof1024producesmorereliable results without vari-
+                  QueryFormer [21]      57.7     69.9      70.5       72.2             ation than 2048, suggesting too many seed points negatively
+                     MAFT[15]             -      69.1        -          -              impact the system. Despite the slight difference, we observe
+                         Ours           60.5     72.3      71.3       76.3             that changing the seed and vote produces comparably small
+              Table 3. Quantitative 3D instance segmentation results on S3DIS          variations of ±0.6 in mAP for all settings.
+              Area 5. The best results are in bold, and the second best ones are in    5. Conclusion
+               underlined.
+                Method              mAPAP RIDL L mAPAP AP                              Wepresent Spherical Mask, a novel coarse-to-fine approach
+                                             50        mc sc            50    25
+                    HAIS[4]         35.0 46.7   ✓              51.6 69.4 86.8          for 3D instance segmentation in point cloud. As a coarse
+                PointGroup [13]     23.3 38.5   ✓ ✓            58.5 77.6 87.5          detection, the RID module finds instances as 3D polygons
+                  ISBNet[29]        49.2 64.0   ✓         ✓ 56.5 77.1 87.1             defined with center and rays. In contrast to existing coarse-
+                      Ours          52.2 68.3   ✓ ✓ ✓ 62.3 79.9 88.2                   to-fine approaches, the RPM module uses the polygons as
+              Table 4.    Quantitative in-     Table 5. Impact of each compo-          soft references and migrates points efficiently in spherical
+               stance segmentation results     nent on ScanNetV2 validation set        coordinates to acquire final masks. We demonstrate how
+               onSTPLS3D                                                               each module contributes to the instance segmentation and
+               ing. Despite the variation, all configurations of N and N               achieves state-of-the-art performances on public benchmarks
+                                                                      θ        φ       ScanNet-V2, S3DIS, and STPLS3D.
+               still outperform existing methods in Table 2, implying that             Acknowledgement
+               RIDwithRPMalwaysimprovestheperformance.
+               ImpactofRadialPointMigrationisillustrated in Table 5.                   This research was supported by ACE-OPS project
+               Here, weinvestigate the impact of the RPM and each loss for             (EP/S030832/1).
+               it. The baseline is the model trained with only RID, exclud-
+                                                                                   4067
+              References                                                                    grouping for 3d instance segmentation. In Proceedings of the
+                [1] Salwa Al Khatib, Mohamed El Amine Boudjoghra, Jean                      IEEE/CVFconference on computer vision and Pattern
+                    Lahoud, and Fahad Shahbaz Khan. 3d instance segmentation                recognition, pages 4867–4876, 2020. 1, 2, 8
+                    via enhanced spatial and semantic supervision. In                 [14] MaksimKolodiazhnyi, Danila Rukhovich, Anna Vorontsova,
+                    Proceedings of the IEEE/CVF International Conference on                 and Anton Konushin. Top-down beats bottom-up in 3d
+                    ComputerVision (ICCV), pages 541–550, 2023. 1, 3, 8                     instance segmentation. arXiv preprint arXiv:2302.02871,
+                [2] Iro Armeni, Sasha Sax, Amir R Zamir, and Silvio Savarese.               2023. 1, 2, 7, 8
+                    Joint 2d-3d-semantic data for indoor scene understanding.         [15] Xin Lai, Yuhui Yuan, Ruihang Chu, Yukang Chen, Han Hu,
+                    arXiv preprint arXiv:1702.01105, 2017. 2, 6                             and Jiaya Jia. Mask-attention-free transformer for 3d
+                [3] Meida Chen, Qingyong Hu, Zifan Yu, Hugues Thomas,                       instance segmentation. In Proceedings of the IEEE/CVF
+                    AndrewFeng,YuHou,KyleMcCullough,FengboRen,and                           International Conference on Computer Vision (ICCV), pages
+                    Lucio Soibelman. Stpls3d: A large-scale synthetic and real              3693–3703, 2023. 1, 3, 6, 7, 8
+                    aerial photogrammetry 3d point cloud dataset. arXiv preprint      [16] Loic Landrieu and Mohamed Boussaha. Point cloud
+                    arXiv:2203.09065, 2022. 2, 6                                            oversegmentation with graph-structured deep metric learning.
+                [4] Shaoyu Chen, Jiemin Fang, Qian Zhang, Wenyu Liu, and                    In Proceedings of the IEEE/CVF Conference on Computer
+                    Xinggang Wang. Hierarchical aggregation for 3d instance                 Vision and Pattern Recognition, pages 7440–7449, 2019. 6
+                    segmentation. In Proceedings of the IEEE/CVF International        [17] Loic Landrieu and Martin Simonovsky. Large-scale point
+                    Conference on Computer Vision, pages 15467–15476, 2021.                 cloud semantic segmentation with superpoint graphs. In
+                    1, 2, 6, 8                                                              Proceedings of the IEEE conference on computer vision and
+                [5] BowenCheng,AlexSchwing,andAlexanderKirillov.                            pattern recognition, pages 4558–4567, 2018. 6
+                                                                                                                                        ¨
+                    Per-pixel classification is not all you need for semantic         [18] Ville V Lehtola, Harri Kaartinen, Andreas Nuchter, Risto
+                    segmentation. Advances in Neural Information Processing                 Kaijaluoto, Antero Kukko, Paula Litkey, Eija Honkavaara,
+                    Systems, 34:17864–17875, 2021. 2                                        TomiRosnell, Matti T Vaaja, Juho-Pekka Virtanen, et al.
+                [6] BowenCheng,IshanMisra, Alexander G Schwing,                             Comparison of the selected state-of-the-art 3d indoor
+                    Alexander Kirillov, and Rohit Girdhar. Masked-attention                 scanning and point cloud generation methods. Remote
+                    masktransformer for universal image segmentation. In                    sensing, 9(8):796, 2017. 1
+                    Proceedings of the IEEE/CVF conference on computer vision         [19] Zhihao Liang, Zhihao Li, Songcen Xu, Mingkui Tan, and Kui
+                    and pattern recognition, pages 1290–1299, 2022. 2                       Jia. Instance segmentation in 3d scenes using semantic
+                [7] Angela Dai, Angel X Chang, Manolis Savva, Maciej Halber,                superpoint tree networks. In Proceedings of the IEEE/CVF
+                    ThomasFunkhouser, and Matthias Nießner. Scannet:                        International Conference on Computer Vision, pages
+                    Richly-annotated 3d reconstructions of indoor scenes. In                2783–2792, 2021. 1, 2, 6, 8
+                    Proceedings of the IEEE conference on computer vision and         [20] Hong Liu, Mingsheng Long, Jianmin Wang, and Yu Wang.
+                    pattern recognition, pages 5828–5839, 2017. 2, 6                        Learning to adapt to evolving domains. Advances in Neural
+                [8] Shichao Dong, Guosheng Lin, and Tzu-Yi Hung. Learning                   Information Processing Systems, 33:22338–22348, 2020. 1
+                    regional purity for instance segmentation on 3d point clouds.     [21] Jiahao Lu, Jiacheng Deng, Chuxin Wang, Jianfeng He, and
+                    In European Conference on Computer Vision, pages 56–72.                 Tianzhu Zhang. Query refinement transformer for 3d
+                    Springer, 2022. 8                                                       instance segmentation. In Proceedings of the IEEE/CVF
+                [9] Benjamin Graham, Martin Engelcke, and Laurens Van                       International Conference on Computer Vision (ICCV), pages
+                    Der Maaten. 3d semantic segmentation with submanifold                   18516–18526, 2023. 1, 3, 6, 7, 8
+                    sparse convolutional networks. In Proceedings of the IEEE         [22] Kyeong-BeomPark, Minseok Kim, Sung Ho Choi, and
+                    conference on computer vision and pattern recognition,                  Jae Yeol Lee. Deep learning-based smart task assistance in
+                    pages 9224–9232, 2018. 3                                                wearable augmented reality. Robotics and
+              [10] Tong He, Chunhua Shen, and Anton Van Den Hengel.                         Computer-Integrated Manufacturing, 63:101887, 2020. 1
+                    Dyco3d: Robust instance segmentation of 3d point clouds           [23] AdamPaszke, Sam Gross, Francisco Massa, Adam Lerer,
+                    through dynamic convolution. In Proceedings of the                      James Bradbury, Gregory Chanan, Trevor Killeen, Zeming
+                    IEEE/CVFconference on computer vision and pattern                       Lin, Natalia Gimelshein, Luca Antiga, et al. Pytorch: An
+                    recognition, pages 354–363, 2021. 1, 2, 4, 6                            imperative style, high-performance deep learning library.
+              [11] Tong He, Wei Yin, Chunhua Shen, and Anton van den                        Advances in neural information processing systems, 32, 2019.
+                    Hengel. Pointinst3d: Segmenting 3d instances by points. In              6
+                    European Conference on Computer Vision, pages 286–302.            [24] Charles Ruizhongtai Qi, Li Yi, Hao Su, and Leonidas J
+                    Springer, 2022. 1, 2, 8                                                 Guibas. Pointnet++: Deep hierarchical feature learning on
+              [12] Ji Hou, Angela Dai, and Matthias Nießner. 3d-sis: 3d                     point sets in a metric space. Advances in neural information
+                    semantic instance segmentation of rgb-d scans. In                       processing systems, 30, 2017. 2, 3, 6
+                    Proceedings of the IEEE/CVF conference on computer vision         [25] Charles R Qi, Or Litany, Kaiming He, and Leonidas J Guibas.
+                    and pattern recognition, pages 4421–4430, 2019. 1, 2, 8                 Deephoughvotingfor 3d object detection in point clouds. In
+              [13] Li Jiang, Hengshuang Zhao, Shaoshuai Shi, Shu Liu,                       proceedings of the IEEE/CVF International Conference on
+                    Chi-Wing Fu, and Jiaya Jia. Pointgroup: Dual-set point                  ComputerVision, pages 9277–9286, 2019. 3, 6
+                                                                                   4068
+              [26] Olaf Ronneberger, Philipp Fischer, and Thomas Brox. U-net:      [38] Dingfu Zhou, Jin Fang, Xibin Song, Liu Liu, Junbo Yin,
+                   Convolutional networks for biomedical image segmentation.            YuchaoDai, Hongdong Li, and Ruigang Yang. Joint 3d
+                   In Medical Image Computing and Computer-Assisted                     instance segmentation and object detection for autonomous
+                   Intervention–MICCAI 2015: 18th International Conference,             driving. In Proceedings of the IEEE/CVF Conference on
+                   Munich, Germany, October 5-9, 2015, Proceedings, Part III            Computer Vision and Pattern Recognition, pages 1839–1849,
+                   18, pages 234–241. Springer, 2015. 3                                 2020. 1
+              [27] Jonas Schult, Francis Engelmann, Alexander Hermans, Or
+                   Litany, Siyu Tang, and Bastian Leibe. Mask3d for 3d
+                   semantic instance segmentation. arXiv preprint
+                   arXiv:2210.03105, 2022. 1, 2, 8
+              [28] Jiahao Sun, Chunmei Qing, Junpeng Tan, and Xiangmin Xu.
+                   Superpoint transformer for 3d scene instance segmentation.
+                   In Proceedings of the AAAI Conference on Artificial
+                   Intelligence, pages 2393–2401, 2023. 1, 2
+              [29] Khoi Nguyen Tuan Duc Ngo, Binh-Son Hua. Isbnet: a 3d
+                   point cloud instance segmentation network with
+                   instance-aware sampling and box-aware dynamic
+                   convolution. In Proceedings of the IEEE/CVF Conference on
+                   ComputerVision and Pattern Recognition (CVPR), 2023. 1,
+                   2, 3, 4, 5, 6, 7, 8
+              [30] Thang Vu, Kookhoi Kim, Tung M Luu, Thanh Nguyen, and
+                   ChangDYoo. Softgroupfor 3d instance segmentation on
+                   point clouds. In Proceedings of the IEEE/CVF Conference
+                   onComputerVision and Pattern Recognition, pages
+                   2708–2717, 2022. 1, 2, 6, 7, 8
+              [31] Yizheng Wu, Min Shi, Shuaiyuan Du, Hao Lu, Zhiguo Cao,
+                   and Weicai Zhong. 3d instances as 1d kernels. In European
+                   Conference on Computer Vision, pages 235–252. Springer,
+                   2022. 1, 2, 6, 7, 8
+              [32] Enze Xie, Peize Sun, Xiaoge Song, Wenhai Wang, Xuebo
+                   Liu, Ding Liang, Chunhua Shen, and Ping Luo. Polarmask:
+                   Single shot instance segmentation with polar representation.
+                   In Proceedings of the IEEE/CVF conference on computer
+                   vision and pattern recognition, pages 12193–12202, 2020. 3
+              [33] Bo Yang, Jianan Wang, Ronald Clark, Qingyong Hu, Sen
+                   Wang,AndrewMarkham,andNikiTrigoni. Learning object
+                   bounding boxes for 3d instance segmentation on point clouds.
+                   Advances in neural information processing systems, 32, 2019.
+                   1, 2, 3, 7
+              [34] Li Yi, Wang Zhao, He Wang, Minhyuk Sung, and Leonidas J
+                   Guibas. Gspn: Generative shape proposal network for 3d
+                   instance segmentation in point cloud. In Proceedings of the
+                   IEEE/CVFConferenceonComputerVisionandPattern
+                   Recognition, pages 3947–3956, 2019. 1, 2, 8
+              [35] Biao Zhang and Peter Wonka. Point cloud instance
+                   segmentation using probabilistic embeddings. In
+                   Proceedings of the IEEE/CVF Conference on Computer
+                   Vision and Pattern Recognition, pages 8883–8892, 2021. 6
+              [36] Weiguang Zhao, Yuyao Yan, Chaolong Yang, Jianan Ye, Xi
+                   Yang, and Kaizhu Huang. Divide and conquer: 3d point
+                   cloud instance segmentation with point-wise binarization. In
+                   Proceedings of the IEEE/CVF International Conference on
+                   ComputerVision (ICCV), pages 562–571, 2023. 1, 2, 7, 8
+              [37] Min Zhong, Xinghao Chen, Xiaokang Chen, Gang Zeng, and
+                   YunheWang. Maskgroup: Hierarchical point grouping and
+                   masking for 3d instance segmentation. In 2022 IEEE
+                   International Conference on Multimedia and Expo (ICME),
+                   pages 1–6. IEEE, 2022. 8
+                                                                                4069

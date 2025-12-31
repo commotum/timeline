@@ -1,0 +1,76 @@
+                            text corpora (e.g., PG19 (Rae et al., 2020), GovRe-                                          whereΘ={θ0,θ1,··· ,θd                              }, and each R                   is
+                                                                                                                                                                        −1                          θj,m
+                            port (Huang et al., 2021), GitHub (Wu et al., 2022))                                         a 2 × 2 rotation matrix:                     2
+                            and complex tasks including summarization, ques-                                                                          cosmθ               −sinmθ 
+                            tion answering, and mathematical reasoning (An                                                            R           =                   j                    j     .        (3)
+                                                                                                                                         θj,m             sinmθ              cosmθ
+                            et al., 2023; Bai et al., 2023; Shaham et al., 2023).                                                                                    j                   j
+                            3 Background                                                                                 RoPEcomputestheattention logit q⊤k as follows:
+                                                                                                                                             q =Rd Wx                                                     (4)
+                            3.1       Rotary Position Embedding (RoPE)                                                                         m            Θ,m        q    m
+                                                                                                                                              k =Rd W x                                                   (5)
+                            In Transformers (Vaswani et al., 2017), the self-                                                                   n           Θ,n       k n
+                                                                                                                                           ⊤               ⊤            d
+                            attention scores are softmax-normalized scaled at-                                                          q k =x W R                                  Wx                    (6)
+                                                                                                                                           m n             m q Θ,n−m k n
+                            tention logits q⊤k:                                                                          For each two dimensions [2j : 2j + 1] of q and
+                                                                            q ⊤k                                       k, its corresponding θj reflects a temporal wave-
+                                                                                  m n
+                                              am,n = Softmax                       √                                     length λ . This wavelength describes the token
+                                                                                       d                                                j
+                                                                                                                         length for the corresponding RoPE features to en-
+                                 Suppose the input to a single attention head                                            counter approximately the same rotary angle mθ
+                                                                                                                                                                                                             j
+                                                                   d
+                            is x1,x2,...,xl ∈ R , where l is the sequence                                                in Equation 3:
+                            length and d is the dimension of an attention head.
+                                                                                                                                                              2π                2j
+                            RoPEinjectsthepositioninformationofeachtoken                                                                            λ =              =2πbd                                (7)
+                                                                                                                                                      j        θ
+                            into the q and k vectors by the following equations                                                                                  j
+                            in the complex space:                                                                        As an example, the wavelengths of LLaMA /
+                                                                                        imθj                             LLaMA2’sRoPEfeatures range from 2π ≈ 6.28
+                                                q                    =Wx e                                                                               126/128
+                                                  m,[2j:2j+1]                 q   m                                      for θ0 to 2 ∗ 10000                         π ≈ 54410.14 for θd−1.
+                                                                                        imθ                                                                                                            2
+                                               k                     =Wxme j
+                                                  m,[2j:2j+1]                 k                                          3.2       Critical Dimensions of RoPE
+                                                                           −2j
+                                                                θj = b d ,                                   (1)         In a TSTL scenario (Press et al., 2022), one takes
+                            where W ,W are trainable parameters, and b                                                   a model trained on texts with lengths up to L, and
+                                             q        k                                                                  tests it on a task with input lengths up to L′ = sL,
+                            is a constant called the rotary base, which is set                                           with the scaling factor s > 1. Recently, Liu et al.
+                            to 10,000 (Su et al., 2024) or other integers or                                             (2024) discovered that there may exist two “crit-
+                            fractions (Xiong et al., 2023; Peng et al., 2024).                                           ical dimensions” in RoPE features, which corre-
+                            This form makes the dot product between the m-th                                             spond to the dimensions [2c : 2c + 1] that satis-
+                            queryq andn-thkeyk onlydependontheinput
+                                         m                            n                                                  fies λ       ≥ L and λ                   < L. The dimensions of
+                            xm,xnandtheirrelative distance (m−n):                                                                  c                      c−1
+                                                                                                                         RoPEfeatures above and below the critical dimen-
+                                            ⟨q                   , k                  ⟩                                  sion (which wedenoteas“post-criticaldimensions”
+                                                m,[2j:2j+1]           n,[2j:2j+1]
+                                        =ℜhq∗                        k                  i                                and “pre-critical dimensions”, respectively) have
+                                                    m,[2j:2j+1] n,[2j:2j+1]                                              different behaviors in TSTL: for post-critical di-
+                                               h                 ∗                    i(m−n)θ i                          mensions (i.e., j > c), since their wavelengths sat-
+                                        =ℜ (W x ) (W x )e                                         j
+                                                        q   m             k n                                            isfy λ > L, the training corpus does not cover all
+                                                                                                                                   j
+                                        =g(x ,x ,m−n).                                                                   possible rotary angles mθ on a unit circle. Thus,
+                                                  m n                                                                                                                 j
+                            RoPE’s real-number implementation divides the d-                                             these dimensions will encounter OOD value range
+                            dimension space into multiple 2-dimensional sub-                                             on longer sequences. This is not an issue for pre-
+                            spaces and applies real rotation matrix to each of                                           critical dimensions due to their shorter temporal
+                            them. Formally, define a d × d block-diagonal                                                wavelengths.
+                            matrix:                                                                                          The concept of RoPE’s critical dimensions im-
+                                                                                                                       plicitly guides the development of RoPE scaling
+                                                   R                 · · ·       · · ·           0                       methods. For example, previous RoPE scaling
+                                                θ0,m                                                                   methods (Chen et al., 2023; Xiong et al., 2023;
+                                                0                Rθ ,m ···                      0        
+                                   d                                  1                                                Peng et al., 2024) mainly focus on reducing or
+                               RΘ,m =                   .              .         .               .            ,
+                                                .                     .           ..            .        
+                                                .                     .                         .                      avoiding value extrapolation on post-critical dimen-
+                                                       0              0          · · ·    R
+                                                                                              θd−1,m                     sions, and minimize post-training modifications to
+                                                                                                2            (2)         the pre-critical dimensions.
+                                                                                                                   588

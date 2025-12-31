@@ -1,0 +1,50 @@
+                           Encoder Theencodertakesboththeinput and output grids from a given pair and returns a distribu-
+                           tion of inferred program latents that underlie the task. More specifically, it returns the mean and the
+                           diagonal covariance of a multivariate normal distribution from which one can sample. Each grid se-
+                           quence contains 902 values, and we add an extra CLS token for the output embedding. Therefore, the
+                           total sequence length of the encoder transformer is 1805. To process such sequences, we implement
+                           the encoder as a standard transformer [Vaswani et al., 2017] with pre-layer normalization [Baevski
+                           and Auli, 2019, Xiong et al., 2020] and multi-head attention. To account for spatial information, we
+                           factorize positional embeddings to be of the following form: pe(i,j,c) = pr(i) + pc(j) + emb(c)
+                           with i,j ∈ [1,30], c ∈ {0,1} the channel index (0 for input and 1 for output), pr are the row
+                           embeddings, pc are the column embeddings. All embeddings are in RH with H being the embedding
+                           size of the transformer. All 1800 color values between 0 and 9, the 4 shape values between 1 and
+                           30, and the cls token are separately embedded into RH using look-up tables. We mask the padded
+                           tokens given by the shape values and feed the sequence to multiple transformer blocks (more details
+                           onthearchitecture hyper-parameters can be found in the appendix section A). The attention mask
+                           is non-causal as all non-padded tokens can attend to all other non-padded tokens for the encoding
+                           computation. The CLS embedding then goes through a layer-norm and two parallel dense layers
+                           to output the mean and diagonal log-covariance of the multivariate normal distribution over latents.
+                           Sampledprogramlatents are of dimension d which may differ from H.
+                           Decoder The decoder takes an input grid and a latent program and auto-regressively generates
+                           an output grid. The decoder is designed similarly to the encoder with a few differences. First, it
+                           prefixes the flattened sequence with (a projection of) the latent embedding. Then, because the decoder
+                           auto-regressively generates the output, its attention mask is made causal on the second half of the
+                           sequence, which is the output grid. The attention mask on the output sequence is also a function
+                           of the predicted output shapes, dynamically masking padding tokens. The sequence embeddings
+                           corresponding to the output are then extracted and projected to either shape logits for the first two
+                           embeddings, or grid logits for the 900 other output grid embeddings. Note that an output token
+                           embedding maps to logits for the next token in a raster-scan fashion. However, due to padding at
+                           each line, we map the last embedding of each row to the first token of the next row instead.
+                           5.2  Validating the Decoder
+                           Training deep networks from scratch to solve ARC-like tasks has been challenging [Li et al., 2024b].
+                           If it is true that such networks struggle even to learn to execute single programs, then this would
+                           represent a significant bottleneck to models training from scratch on a broad distribution of programs.
+                           Therefore, before training LPN end-to-end, we conclusively show that our decoder architecture does
+                           not suffer from such a bottleneck, and is able to learn individual programs.
+                           Wetake5ofthe400tasksfromtheARC-AGItrainingset,andforeachofthesetasks,wetrainasmall
+                           LPNarchitecture of 800k parameters (except for the last task which required a bigger model with
+                           8.7Mparameters) on the corresponding task generator from re-arc [Hodel, 2024]. Specifically, we
+                           select the first five tasks from the arc-agi_training_challengesjsonfile(007bbfb7,00d62c1b,
+                           017c7c7b, 025d127b, 045e512c) shown in figure 5.
+                                007bbfb7           00d62c1b          017c7c7b                              045e512c
+                                                                                        025d127b
+                           Figure 5: Overfit training on the first 5 ARC-AGI training tasks. The captions correspond to task IDs.
+                           For each task, the top row contains the input grids, and the bottom row the output grids. Each task
+                           consists of observing all pairs but the first and inferring the output of the leftmost pair given its input.
+                           Each curve corresponds to a separate training run.
+                           Weevaluateboththedistribution of re-arc generated tasks on which it is trained and on the true task
+                           from the ARC-AGI training set in figure 6. We show that for each task, the small LPN decoder-only
+                           modelsuccessfully learns individual programs and manages to solve the corresponding ARC-AGI
+                           task. Therefore, our model outperforms previously reported results in Li et al. [2024b], and concludes
+                                                                         10

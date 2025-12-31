@@ -1,0 +1,79 @@
+                                                                                                                        Augmented
+                                                                                                                                                      Agglomerative
+                                                                                                2D instance masks
+                                  Recall     Recall        Recall         Recall                                                                   C
+                                                    head           com           tail
+                                                                                                                        3D proposals
+                                                                                                                                                          Clustering
+                   Only 3D         61.63       81.92          53.68        12.06
+                   Only 2D         68.61       76.66          74.73        34.68                                                         C
+                                                                                                                                
+                                                                                                                                                           
+                   2Dand3D         73.29       87.48          74.16        34.31
+                   Table 1. Recall rate (%) of 2D, 3D, or combined proposals.
+                                                                                                   
+                                                                                                                                C                C
+                due to occlusions (Fig. 2 - 2 ). To address this, we propose                                            
+                                                                                                                                                               
+                a strategy that constructs 3D object instance proposals by
+                                                                                                   
+                hierarchically aggregating and merging point cloud regions
+                from back-projected 2D masks of the same object. To en-                                                    C                          C
+                hance the robustness and geometric homogeneity, we use
+                “superpoints” [11] during the merging process. This yields                        Per-frame
+                                                                                               Superpoint Merging
+                complete object instances, complementing those extracted
+                                                                                                                              Per-frame 3D object proposals
+                by 3DIS networks. Detailed analysis in Tab. 1 on Scan-
+                net200 dataset [41] exhibits the signiﬁcant enhancement in                    Figure 3. 2D-Guided-3D Instance Proposal Module. We gen-
+                recall rate, especially for rare classes, when integrating 2D                 erate initial 3D proposals using Per-frame Superpoint Merging,
+                and 3D proposals.                                                             followed by hierarchical traversal across the RGB-D sequence to
+                                                                                              mergeregionsetsbetweenframesusingAgglomerativeclustering.
+                   To enable open-vocabulary classiﬁcation, we addition-
+                ally employ a point-wise feature extraction module to con-                       However, 2D masks may include background regions or
+                struct a dense feature map across the 3D point cloud. In the                  parts of nearby objects, making IoU alone insufﬁcient to de-
+                following sections, we explain our modules in more detail,                    termine superpoints belonging to a 3D proposal. To address
+                starting with the 2D-Guided-3D Instance Proposal Module                       this, we leverage the 3D backbone of a 3D proposal net-
+                which constitutes our main contribution.                                      work [36, 42] to extract per-point feature F3D ∈ RN×D3D
+                3.1. 2D-Guided-3D Instance Proposal Module                                    and measure feature similarity among these superpoints qu
+                                                                                              whosefeatures are determined by averaging their point fea-
+                                                                                  N                   3D         1×D3D                                            2D
+                Thismoduletakesasinputa3DpointcloudP = {pn}                           ,
+                                                                                  n=1         tures fu     ∈ R          .  For each 2D instance mask mi ,
+                where N is the number of points, and p ∈ R6 includes
+                                                                  i                           weinitiate a point cloud region ri with the superpoint hav-
+                3D coordinates and RGB color. Additionally, it receives                       ing the largest IoU with the mask. We extend this region
+                                                                          T
+                an RGB-D video sequence V = {(It,Dt,Πt)}                      , where
+                                                                          t=1                 by merging with neighboring superpoints qu that meet the
+                each frame t contains RGB image It, depth map Dt, and                         overlapping condition (τ         ) and also have the highest co-
+                                                                                                                            iou
+                camera matrix Πt (i.e., the product of intrinsic and extrin-                                      max                         3D   3D
+                                                                                              sine similarity s        = max ′         cos(f ′ ,f     ) with those
+                                                                                                                  i              u ∈ri        u    u
+                sic matrices used for projecting 3D points onto the image                     already in the region r above a threshold (smax > τ                   )
+                                                                                                                          i                           i         sim
+                plane). The output comprises K1 binary instance masks                         (we will discuss the effect of all thresholds in our results
+                represented in a K1×N binary matrix M1 (Fig. 2 - 3 ).                         section). Thegrowthcontinuesuntilnootheroverlappingor
+                Superpoints.       In a pre-processing step, we utilize the                   neighboringsuperpointsarefound. Oursuperpointmerging
+                method of [11] to group points into geometrically homoge-                     procedure, compared to using points alone or other merg-
+                neous regions, termed superpoints (Fig. 2 - 1 ). This yields                  ingstrategies (see Tab. 7), produces more well-formed point
+                                                   U               U×N                        cloud regions corresponding to 2D masks per frame.
+                a set of U superpoints {qu}              ∈ {0,1}         , where qu
+                                                   u=1
+                is a binary mask of points. Superpoints enhance processing                    3D object proposal formation. To create 3D object pro-
+                efﬁciency in the later stages of our pipeline and contribute                  posals, one option is to utilize the point cloud regions
+                to well-formed candidate object instances.                                    obtained from the merging procedure across individual
+                Per-frame superpoint merging.               For all input frames,             frames. However, this results in fragmented proposals, cap-
+                we utilize a pretrained 2D instance segmenter, employing                      turing only parts of object instances, as the regions corre-
+                Grounding-DINO [32] and SAM [26]. The network out-                            spond to 2D masks from single views (Fig. 2 - 2 ). To
+                puts a set of 2D masks (Fig. 2 - 2 ). For each 2D mask with                   address this, we merge point cloud regions from different
+                index m (unique across all frames), we calculate the IoU                      frames in a bottom-up manner, creating more complete and
+                ou,m with each superpoint qu when projecting all points of                    coherent 3D object masks. Agglomerative clustering com-
+                quontotheimageplaneofmaskmusingtheknowncamera                                 bines region sets from pairs of frames until no compatible
+                matrix, excluding points outside the camera’s ﬁeld of view,                   pairs remain. The resulting set includes merged and stan-
+                and determining image pixels containing projected points.                     daloneregions,whichcanbematchedwithotherregionsets
+                Asuperpoint is considered to have sufﬁcient overlap with a                    from subsequent frames. In the following paragraphs, we
+                2DmaskiftheIoUishigherthanathresholdo                         >τ .            discuss three crucial design choices in this process: (a) the
+                                                                        u,m       iou
+                                                                                          4021

@@ -1,0 +1,572 @@
+                                                                    This CVPRpaperisthe Open Access version, provided by the Computer Vision Foundation.
+                                                                                            Except for this watermark, it is identical to the accepted version;
+                                                                                   the final published version of the proceedings is available on IEEE Xplore.
+                                                  BWFormer: BuildingWireframeReconstructionfromAirborne
+                                                                                      LiDARPointCloudwithTransformer
+                                                                                           1,2                                 3                                1,2                                               4
+                                                                 YuzhouLiu , LingjieZhu , HanqiaoYe , ShangfengHuang ,
+                                                                                                              1*                                       5                                    1,2*
+                                                                                      Xiang Gao , Xianwei Zheng , Shuhan Shen
+                                                                               1Institute of Automation, Chinese Academy of Sciences
+                                                       2School of Artificial Intelligence, University of Chinese Academy of Sciences
+                                   3Cenozoic Robotics 4University of Calgary 5The State Key Lab. LIESMARS, Wuhan University
+                                                                        {liuyuzhou2021,xiang.gao}@ia.ac.cn; shshen@nlpr.ia.ac.cn
+                                                                       Abstract
+                           In this paper, we present BWFormer, a novel Transformer-
+                           based model for building wireframe reconstruction from
+                           airborne LiDAR point cloud. The problem is solved in a
+                           ground-up manner here by detecting the building corners
+                           in 2D, lifting and connecting them in 3D space afterwards                                                                   Lack of dataset        Sparsity         Incompleteness           Noise          Minor structure
+                           with additional data augmentation. Due to the 2.5D char-                                                                 (a) Difficulties in wireframe reconstruction from LiDAR point clouds    
+                           acteristic of the airborne LiDAR point cloud, we simplify
+                           the problem by projecting the points on the ground plane                                                                                               C                                      E
+                                                                                                                                                                                  o                                      d
+                                                                                                                                                                                  rn                                     g
+                           to produce a 2D height map. With the height map, a heat                                                                                                                                       e 
+                                                                                                                                                                                  e                                      Atten
+                           map is first generated with pixel-wise corner likelihood to                                                                 Real height map            r T
+                                                                                                                                                                                  ra                                     tio
+                                                                                                                                                                                  n
+                           predict the possible 2D corners. Then, 3D corners are pre-                                                                          ‚Ä¶                  s                                      n
+                           dicted by a Transformer-based network with extra height                                                                                                .
+                           embedding initialization. This 2D-to-3D corner detection                                                                   Synthetic height maps             2D-to-3D Corner detection                 Edge classification
+                           strategy reduces the search space significantly. To recover                                                                                          (b) Overview of BWFormer
+                           thetopologicalconnectionsamongthecorners,edgesarefi-                                                                  Figure 1. (a) There are numerous challenges in reconstructing
+                           nally predicted from the height map with the proposed edge                                                            buildingwireframefromairborneLiDARpointcloud,suchaslack
+                           attention mechanism, which extracts holistic features and                                                             of labeled point cloud dataset with wireframes, sparsity with few
+                           preserves local details simultaneously. In addition, due to                                                           points, incomplete areas, noise from trees or other buildings, and
+                           the limited datasets in the field and the irregularity of the                                                         minorstructures like chimneys. (b) To solve the difficulties above,
+                           pointclouds,aconditionallatentdiffusionmodelforLiDAR                                                                  with synthetic height maps, 2D-to-3D corner detection with re-
+                           scanning simulation is utilized for data augmentation. BW-                                                            duced search space, and holistic edge attention, BWFormer pre-
+                           Formersurpassesotherstate-of-the-art methods, especially                                                              dicts the final complete wireframe. Trans. is short for Transformer.
+                           in reconstruction completeness. Our code is available at:
+                           https://github.com/3dv-casia/BWformer/.
+                                                                                                                                                 seen a breakthrough with the development of deep learn-
+                                                                                                                                                 ing community. Various types of input data, including Li-
+                           1. Introduction                                                                                                       DAR point clouds, multi-view images, and remote sens-
+                                                                                                                                                 ing images are utilized for building reconstruction, with the
+                           Building reconstruction has become more and more impor-                                                               results being represented in different forms such as point
+                           tant nowadays for wide applications such as smart cities [4,                                                          clouds, meshes, and wireframes [2, 9, 38]. Among vari-
+                           15, 17], VR/AR [23, 33], autonomous driving [13], and                                                                 ousinputtypesandoutputrepresentations, airborne LiDAR
+                           robotics [16]. In recent years, building reconstruction has                                                           point clouds are preferred due to their large coverage and
+                                                                                                                                                 high accuracy, and wireframes are favored for their concise
+                                  *Corresponding authors                                                                                         representation and low-memory consumption.
+                                                                                                                                      22215
+                   However, several common challenges are presented in                a synthetic LiDAR scanning method to simulate the LiDAR
+                building wireframe reconstruction from airborne LiDAR                 sampling locations for data augmentation.
+                point cloud (as shown in Figure 1(a)). The resolution of                 In summary, we outline our contributions below:
+                the LiDARisrelatively low and inconsistent across the area            ‚Ä¢ A novel end-to-end method named BWFormer targeting
+                due to the flight height and angle, resulting in data spar-             in building wireframe reconstruction from airborne Li-
+                sity and incompleteness. Occlusion and noise are also in-               DARpointcloud. Evaluations on the challenging dataset
+                evitable, posing extra difficulty to the task. Minor structures         Building3D [28] prove the effectiveness of our model de-
+                like chimneys may be overwhelmed by those artifacts. This               sign with +12.2% in WED,+8.1%inACO,+7.4%incor-
+                motivates the community to come up with effective algo-                 ner F1 score, and +2.2% in edge F1 score improvements
+                rithms to tackle these issues.                                          comparing with the current state-of-the-art PBWR [9].
+                   Existing deep learning-based methods directly predict              ‚Ä¢ An efficient corner detection module that handles point
+                building wireframe from 3D point cloud. Point2Roof [11]                 cloud in 2D image space and 3D space subsequently. It
+                is the first deep learning-based method to reconstruct roof             utilizes the 2.5D characteristic of the LiDAR point cloud
+                structures from airborne LiDAR point clouds. It converts                and reduces the search space significantly.
+                the problem into vertex detection and edge prediction tasks           ‚Ä¢ An effective edge detection module with edge atten-
+                and solves them with PointNet++ [20] and the proposed                   tion mechanism. It recovers the topological connections
+                Paired Point Attention (PPA) module. Building3D[28]pro-                 among corners from both the local and holistic features
+                poses new feature extraction modules and self-supervised                from the height map.
+                pre-training methods for better wireframe reconstruction              ‚Ä¢ An additional data augmentation module based on the
+                performance. However, they suffer from missing corner                   conditional latent diffusion model. It simulates the Li-
+                detection from the sparse and unevenly distributed point                DARscanningprocesswithvaryingLiDARsamplinglo-
+                clouds. Recently, PBWR[9]proposesanewpipelinetofirst                    cations to enhance data diversity.
+                regressedgesandthenpredictthefinalwireframewithpost-
+                processing. Nevertheless, it is not end-to-end and relies on          2. Related Work
+                the design of post-processing. Apart from the drawbacks               2.1. Structured Building Reconstruction
+                discussed, the lack of high-quality datasets also plagues the
+                development of this field.                                            Reconstructing buildings from point clouds [27] focuses
+                   Focusing on the challenges above, we propose a novel               on structured characteristics, such as flat planes and sharp
+                model named BWFormer in this paper for building wire-                 edges, for a concise and accurate representation.        Some
+                frame reconstruction from airborne LiDAR point cloud (as              methods [6, 7] fit buildings with pre-defined building mod-
+                shown in Figure 1(b)). Due to the 2.5D data characteris-              els based on architectural priors, but suffer from the lack
+                tic of airborne LiDAR point clouds, there is no roof plane            of generalization across buildings of diverse shapes. Others
+                occlusion from the Bird‚Äôs Eye View (BEV), thus restoring              detect planes with RANSAC [24] or region-growing algo-
+                the 3D roof structures from a 2D height map is feasible.              rithms [10] and then solve it as an optimization problem to
+                Andwith the 2D input, akin to BEV-related work [12], the              strike a balance between model complexity and reconstruc-
+                mature deformable DTER [39] could be utilized. Specifi-               tion precision [18, 38]. However, they encounter challenges
+                cally, we divide the wireframe reconstruction process into            with large-scale and detailed scenes for the large time con-
+                two parts, including corner detection and edge prediction.            sumption. Besides, many methods treat the building roof as
+                For 3D corner detection, with the sparse point clouds and             a graph and form the model with vertices and edges [9, 29]
+                large search space in 3D, we adopt a 2D-to-3D corner de-              while topological errors may occur in some cases.
+                tection paradigm to deal with it. Firstly, 2D corners are pre-        2.2. Building Wireframe Reconstruction
+                dicted from a corner heat map with pixels of high probabil-
+                ities. With the known 2D positions, added with the random             Wireframe reconstruction identifies and models the edges
+                initialized height embeddings, the 3D corner queries are ini-         and vertices of the objects, creating a skeletal represen-
+                tialized, which are then refined explicitly in the Transformer        tation of their geometric shapes from input data such as
+                decoder. In this way, the search space for 3D corner detec-           images [31, 32] or point clouds [14, 40].        For building
+                tion is reduced significantly. Subsequently, with corners de-         wireframereconstruction, somemethodsreconstructthe2D
+                tected, possible edges connecting two corners are classified          wireframes from satellite images without height informa-
+                as valid or not. To overcome the sparsity and incomplete-             tion [3, 36]. To restore the 3D structures of buildings, Li-
+                ness of point clouds, edge attention is performed to extract          DARpointcloudsarecommonlyuseddatasources. Differ-
+                both the holistic and local features for the final prediction.        ent from the densely-scanned point cloud used in the gen-
+                With valid edges, the 3D wireframe is reconstructed. Last             eral wireframe reconstruction methods [14, 40], building
+                but not the least, for the lack of labeled datasets, we propose       wireframe reconstruction is challenging due to the sparse,
+                                                                               22216
+                                                                                                                                                                                                     1
+                                                                                                                                  (Ì†µÌ±• , Â†µÌ±¶ )     1                Cro D                 (Ì†µÌ±• , Â†µÌ±¶ , Ì†µÌ±ß )                                                    Edge             S      E
+                                                                                                                                               Ì†µÌ±ß
+                                                                                                                                                                                                                                                                 1
+                                                                                                                                                                                           1    1
+                                                                                                                                                                                                    1
+                                                                                                                                    1    1                                                                                                                                                F
+                                                                                                                                                 1         S                F                                                                                                      dge
+                                                                                          B         E              D                   ‚Ä¶                   e          e     e                 ‚Ä¶                                                                             e             e
+                                                                                                               1   i                                       l          f                                                                                                     l             e
+                                                                                          a                    √ó   l                                              s   or    e                                                                             Edge              f
+                                                                                                    nc             a    R                        Ì†µÌ∞ª        f      s         d                       Ì†µÌ∞ª                                                           2          -             d
+                                                                                          c                    1 C t              (Ì†µÌ±• , Â†µÌ±¶ )   Ì†µÌ±ß          -      -                     (Ì†µÌ±• , Â†µÌ±¶ , Ì†µÌ±ß )                                                                     a      A
+                                                                                          kbone                    e    e           1    1       1         a      a   m     -              1    1   1                                                          ‚Ä¶            t             -
+                                                                                                    ode            d C  LU             ‚Ä¶                   t      t         Fo                ‚Ä¶                                                                             t      tte    Fo
+                                                 Real height map                                                                                           t      t   a                                                                                                     e
+                                                                                                               onv                                         e      e   ble                                                                                                   nt            rw
+                                                                                                                   onv           (Ì†µÌ±•  , Â†µÌ±¶ )   z1          nt     nt        rw          (Ì†µÌ±•  , Â†µÌ±¶ , Ì†µÌ±ß1)                                                                           ntion
+                                                                                                                                    Ì†µÌ±Å   Ì†µÌ±Å                                                                                                                                 i
+                                                                                                                                                                                           Ì†µÌ±Å   Ì†µÌ±Å
+                                                                                                                                                                                                     Ì†µÌ±Å                                                  Edge
+                                                                                                    r                                            Ì†µÌ±Å        i
+                                                                                                                                       ‚Ä¶                   on     i         ard               ‚Ä¶                                                                 Ì†µÌ±ô‚àí1        on            ard
+                                                         ‚Ä¶                                                                       (Ì†µÌ±•  , Â†µÌ±¶ )   Ì†µÌ±ßÌ†µÌ∞ª               on                    (Ì†µÌ±• , Â†µÌ±¶  , Ì†µÌ±ßÌ†µÌ∞ª)                                                  EdgeÌ†µÌ±ô
+                                                                                                                                                                                          Ì†µÌ±Å    Ì†µÌ±Å
+                                                                                                                                                                                                     Ì†µÌ±Å
+                                                                                                                                    Ì†µÌ±Å   Ì†µÌ±Å
+                                                                                                                                                 Ì†µÌ±Å
+                                           Synthetic height map                                                                                                        Ref.
+                                        (a) Data Augmentation                                                                              (b) 2D-to-3D Corner Detection                                                                                     (c) Edge Detection                          (d) 3D Wireframe
+                                   Figure 2. Overall architecture of BWFormer. With real height maps projected from point clouds and synthetic ones from simulated
+                                   LiDARscans (a), BWFormer first detects 2D corners and initializes the 3D corner queries with 2D positions. Then, with a Transformer-
+                                   based network, the 3D corners are predicted (b). Finally, edges are classified as valid or not (c) while valid ones form the final wireframe
+                                   (d). (x ,y ,zj) indicates the j-th corner initialized in the i-th possible 2D position. The predicted coordinates are in the yellow box while
+                                                  i      i     i
+                                   the unpredicted ones are in the gray ones. Besides, 2D corners are marked as red while 3D ones as purple. Lines marking the 2D-3D
+                                   correspondences are black for one-to-one correspondences while yellow for one-to-many ones. l indicates the number of candidate edges.
+                                   incomplete, and noisy point clouds. Point2Roof [11] and                                                                                                   sists of a deformable self-attention layer and a feed-forward
+                                   methods in Building3D [28] construct roof wireframe from                                                                                                  network, then, the 2D features serves as the input for the
+                                   airborne LiDAR point cloud with vertex detection and edge                                                                                                 Transformer decoder. For the Transformer decoder, each
+                                   prediction. However, they suffer from missing vertices and                                                                                                layer consists of a self-attention layer, a deformable cross-
+                                   edges due to the challenges in detecting vertices and edges                                                                                               attention / edge attention layer, and a feed-forward network.
+                                   in sparse point clouds. PBWR [9] significantly improves
+                                   reconstruction quality by directly regressing edges, but it                                                                                               3.2. 2D-to-3D Corner Detection
+                                   relies on post-processing and is not fully end-to-end.                                                                                                    For 3D corner detection, there are two major challenges:
+                                   3. Method                                                                                                                                                 Firstly, with large search space, detecting corners from
+                                                                                                                                                                                             sparse point cloud directly is difficult; Secondly, though
+                                   Withtheheight maps projected from airborne LiDAR point                                                                                                    there is no overlapping for roof planes, corners at different
+                                   clouds and each pixel value corresponds to the point height,                                                                                              heights may share the same 2D coordinates (yellow lines in
+                                   the proposed BWFormer reconstructs 3D building wire-                                                                                                      Figure 2(b)). To address the above problems, we first detect
+                                   frames from them in an end-to-end manner. As shown in                                                                                                     possible 2D corners and then lift them into 3D space with
+                                   Figure 2, it first detects 2D corners with high possibili-                                                                                                different heights. This two-stage strategy effectively sim-
+                                   ties from a heat map predicted with dilated residual net-                                                                                                 plifies the 3D detection task with a smaller search space,
+                                   works[34],andthen,withxy valuesknown,3Dcornersare                                                                                                         yielding superior performance in terms of both reconstruc-
+                                   detected in the 3D space. Finally, edges with 3D corners as                                                                                               tion quality and resource consumption.
+                                   the endpoints are classified. For the 2D-to-3D corner detec-                                                                                              2DCornerDetection. For the sparse height map, we take
+                                   tion and edge detection module, they are both DETR-based                                                                                                  the feature map from the multi-scale features outputted by
+                                   models [39]. To achieve better performance, we also pro-                                                                                                  the Transformer encoder, and send it to the dilated convo-
+                                   pose a new height map synthesis method to generate syn-                                                                                                   lution layers [34] to predict the 2D corner possibility heat
+                                   thetic data and mix both the synthetic and real data for train-                                                                                           map. Then, with Non-Maximum Suppression (NMS), the
+                                   ing. In this section, we will first introduce the backbone                                                                                                top N pixels are selected as the 2D corners, where N is the
+                                   and Transformer encoder. Then, we give a detailed illus-                                                                                                  maximum2Dcornernumber.
+                                   tration of our 2D-to-3D corner detection module and edge                                                                                                  3DCornerDetection. As shown in Figure 3(a), 3D corner
+                                   attention-based edge detection module. Following that, we                                                                                                                                                                                                      NH√ód
+                                                                                                                                                                                             queries consist of content queries C ‚àà R                                                                              and posi-
+                                   provide a comprehensive explanation of the loss functions.                                                                                                tional queries P ‚àà RNH√ód, in which H indicates maxi-
+                                   Finally, we present the synthetic data generation model.                                                                                                  mumnumberofcorners that share the same 2D coordinate
+                                   3.1. Backbone and Transformer Encoder                                                                                                                     and d indicates the dimension of decoder embedding. For
+                                                                                                                                                                                             positional queries, they are generated from corner queries
+                                   With the point cloud projected as height map, BWFormer                                                                                                    R ‚àà RNH√ó3 by P = MLP(PE(R)), where corner queries
+                                   takes the height map as input and extracts 2D features with                                                                                               are explicitly represented by 3D corner coordinates, MLP
+                                   a ResNet-50 network [5]. Then the multi-level features                                                                                                    is a multi-layer perception network, and PE is the positional
+                                   added with positional embedding are served as the input                                                                                                   encodingwhichcalculatesthed-dimensionalsinusoidalpo-
+                                   of the Transformer encoder. The corner module and edge                                                                                                    sitional embedding of the corner queries. In this way, 3D
+                                   module are both encoder-decoder-based Transformer net-                                                                                                    corners with the same 2D positions but different heights
+                                   works [39]. For the Transformer encoder, each layer con-                                                                                                  could be distinguished. With 2D corners detected, the first
+                                                                                                                                                                                22217
+                         F            Â†µÌ∞∂         3D position     F            E         Edge endpoints                 Candidate edge  Edge endpoint   Reference point  Sampling location
+                                        Â†µÌ±ñ+1                                    Â†µÌ±ñ+1
+                                              MLP
+                                 Add & Norm                               Add & Norm
+                                 Feed Forward                            Feed Forward
+                                 Add & Norm                               Add & Norm                          (a) Height Map / Wireframe   (b) Vanilla Deform. Attn.  (c) Edge Attention (Ours)
+                                Cross-Attention                           Edge Attention                      Figure4. EdgeAttention. (a)Theheightmapandthecorrespond-
+                                            Ref.                                    Ref.
+                                  Add & Norm                              Add & Norm                          ing ground-truth wireframe (top view). (b) Vanilla deformable at-
+                                 Self-Attention                          Self-Attention                       tention with only midpoints as reference points. (c) Our proposed
+                                                                                                              edge attention with holistic reference points along the edge.
+                                                 MLP                                  MLP Uniform 
+                                                                                            Sampling          as depicted in Figure 4.
+                                                                 F             E                                  Taking the sparse and incomplete characteristics of air-
+                         F             Â†µÌ∞∂        3D position                         Edge endpoints
+                                                                                 Â†µÌ±ñ
+                                        Â†µÌ±ñ                                                                    borne LiDAR point clouds into consideration, it is neces-
+                     (a) Decoder layer in 3D corner model        (b) Decoder layer in edge model
+                                                                                                              sary to pay attention to the whole edge and extract local
+                     Figure 3. Illustration of Transformer decoders. Details of the                           details from different positions. To this end, we propose
+                     decoder layer in the 3D corner model (a) and the edge model (b).                         the edge attention mechanism to enhance the holistic per-
+                                                                                                              ception of edges. We uniformly sample M reference points
+                     two dimensions of corner queries are initialized with them                               along an edge with the sampling point set S represented
+                                                                                                              as {s }M , where s                indicates the m-th sampled point.
+                     while the height dimension is randomly initialized. In the                                      m m=1                   m
+                     decoder, the self-attention layer enables information shar-                              Then, the edge content queries are replicated M times and
+                     ing between queries first. Then in the deformable cross-                                 focus on the corresponding areas to the sampled points. In
+                     attention layer, reference points are the 2D positions and                               the end, a max-pooling operation is performed to aggregate
+                     queries interact with the image features. Finally, height off-                           information from all positions.
+                     sets and corner labels are predicted by two separate MLPs                                    Givenamulti-scalefeaturemapF outputtedbytheback-
+                                                                                                              bone, an edge query q ‚àà RC, and the sampled point set S,
+                     using the content queries, and 3D corners are obtained with                              the Edge Attention (EA) is calculated by:
+                     the corner label predicted as valid.
+                                                                                                                EA(q,S,F) = MaxPool(MDA(q,s ,F))|s ‚àà S), (1)
+                     3.3. Edge Detection                                                                                                                          m           m
+                     Edge Transformer. With 3D corners predicted, we cast                                     where MaxPool is the max-pooling operation and MDA is
+                     the edge detection task as a binary classification problem to                            the vanilla multi-head deformable attention. With the pro-
+                     label connections between two corners as valid or not.                                   posed edge attention, the edge feature is extracted holisti-
+                         AsshowninFigure3(b),werepresentedgequerieswith                                       cally while the local details are also preserved.
+                     bothedgecontentqueriesandedgepositionalqueries. Edge                                     3.4. Loss Functions
+                     content queries are represented with the edge features ex-                               Bipartite Matching. For 3D corners, we perform bipartite
+                     tracted by the image feature fusion module proposed in                                   matching between the predicted and the ground-truth ones
+                     HEAT [3] which injects the image features into the edge                                  according to the corner L distance and corner labels. The
+                     with deformable attention [39]. Edge positional queries in-                                                                 1
+                     dicate the space position of the edges. The sinusoidal po-                               matching cost C is defined as:
+                                                                                                                                  N
+                     sitional embeddings of the edge endpoints are calculated.                                                      gt
+                                                                                                                          C=X(d (c,c )+L (c,c )),                                          (2)
+                     With an MLP network, the positional queries are obtained.                                                            L     i   œÉ(i)         ce   i   œÉ(i)
+                                                                                                                                           1
+                         In the decoder layer, through the interaction of self-                                                   i=1
+                     attention and edge attention, the final probabilities of the                             where Ngt is the number of ground truth corners, ci and
+                     edges are predicted by an MLP from edge queries. With                                    cœÉ(i) are the ground-truth corners and the matched corner
+                     valid edges, the building wireframe is reconstructed.                                    predictionsrespectively, d             (¬∑, ¬∑) is the L distance between
+                     Edge Attention. Due to the sparsity, incompleteness, and                                                                    L1                   1
+                     noise of the airborne LiDAR point clouds, it is challenging                              the two corners, and Lce(¬∑,¬∑) is the binary cross-entropy be-
+                                                                                                              tween the probabilities of two corners. An optimal match-
+                     to determine whether a line connecting two corners is an                                 ing is determined by minimizing the above matching cost.
+                     edge or not. For vanilla deformable attention [39] in edge                               Total Loss. We train our BWFormer model in an end-to-
+                     detection, the reference points are placed at the midpoints                              end manner, where the total loss is defined as:
+                     of edges, attending to only areas near the midpoints. How-                                                  L=Œª L            +Œª L           +Œª L ,                    (3)
+                                                                                                                                         1 c           2 c            3 e
+                     ever, it may fall short of a holistic understanding of edges                                                             2D             3D
+                                                                                                      22218
+                                                             Latent Space                                  Footprint                LDM               Syn. Sampling                 (LDM) [21] has proven to be an effective tool for content
+                                        I      E            Diffusion Process                                                                                                       generation [26, 30]. As shown in Figure 5, a conditional
+                                                        Z                         Z      Footprint                                                                                  LDMis utilized to simulate the sampling locations with a
+                                                                                   Ì†µÌ±á
+                                                         0   Denoising U-Net
+                                                                                                                                                                                    given building footprint. We project a point cloud along the
+                                         ÔøΩ
+                                        I      D Z                                Z       œÑ                                                                                         gravity axis and mark the corresponding pixel as 0 to obtain
+                                                                                   Ì†µÌ±á
+                                     Pixel Space          0                             Condition           Wireframe             Height map         Syn. Height map                the sampling image.
+                                                      (a) Training process                                                (b) Synthesis process                                     Training Process. A latent space is constructed by train-
+                                  Figure 5. Illustration of synthetic data generation. The syn-                                                                                     ing an autoencoder with the real LiDAR sampling images
+                                  thetic process includes the LiDAR scanning simulation process                                                                                     as input. Given a sampling image I which is a binary image
+                                  and the height map synthesis process. The LiDAR scanning sim-                                                                                     in pixel space, the encoder E encodes I into a latent repre-
+                                                                                                                                                                                                                                                                                                             e
+                                  ulation process is based on a conditional generation process. Tak-                                                                                sentation Z, then, the decoder reconstructs the image I with
+                                                                                                                                                                                     e
+                                  ing the building footprint as the condition, a latent diffusion model                                                                             S = D(Z) = D(E(I)). With the sampling location latent
+                                  generates the LiDAR sampling locations accordingly. The train-                                                                                    space, a latent diffusion model is trained with the building
+                                  ing process is shown on the left (a), while the synthesis process is                                                                              footprint (fp) as the condition. With the attention mecha-
+                                  shownontheright (b).                                                                                                                              nism [25], the learning objective is represented as:
+                                                                                                                                                                                                                                                                                                       2
+                                                                                                                                                                                            L=E                                                   [||œµ ‚àí œµ (z ,t, œÑ(fp))|| ],                                       (7)
+                                  where L                    , L            , L are 2D corner loss, 3D corner loss,                                                                                        E(I),fp,œµ‚àºN(0,1),t                                     Œ∏      t                             2
+                                                     c2D            c3D            e                                                                                                where œµ is the noise added, t is the time step, œµ is the pre-
+                                  and edge loss respectively. And Œª1, Œª2, and Œª3 are the cor-                                                                                                                                                                                                  Œ∏
+                                  responding loss weights. The 2D corner loss is defined as:                                                                                        dicted noise, and œÑ is the condition encoder.
+                                                                                                                                                                                    Synthesis Process. Building footprints are obtained from
+                                                                                                                                                                                    the 3D wireframe and serve as conditions. With the LDM,
+                                                                           L             =L (l ,l ),                                                             (4)
+                                                                               c                  ce       pre        gt
+                                                                                 2D                                                                                                 thesyntheticsamplinglocationsaregenerated. Finally,with
+                                  where l                  and l             are the per-pixel labels for the predicted                                                             the roof height map calculated from the 3D wireframe and
+                                                   pre                 gt                                                                                                           the synthetic LiDAR sampling locations, the LiDAR scan-
+                                  and ground truth. The 3D corner loss is defined as:                                                                                               ning process is simulated, and synthetic height maps are
+                                                                        N
+                                                                            gt
+                                                                1 X                                                                                                                 generated for data augmentation.
+                                         L             =                        (d         (c ,c              ) +L (c ,c                           )).           (5)
+                                             c                                       L         i      œÉ(i)                 ce       i      œÉ(i)
+                                               3D            N                          1                                                                                                  Withthe conditional generation method, the synthesized
+                                                                  gt i=1                                                                                                            data is rich and diverse, and the sparsity and missing are
+                                  Besides, the edge loss is defined as:                                                                                                             well simulated. Mixed with the real data, the data augmen-
+                                                                             L =L (e ,e ),                                                                       (6)                tation process boosts the performance of our BWFormer.
+                                                                                 e             ce       pre         gt
+                                  where e                     and e                are the labels for the predicted and                                                             4. Experiments
+                                                     pre                    gt
+                                  ground truth edges respectively.                                                                                                                  4.1. Dataset and Evaluation Metrics
+                                  3.5. Synthetic Data Augmentation                                                                                                                  Dataset. We evaluate our method on the Building3D [28]
+                                  In many domains of computer vision, such as autonomous                                                                                            dataset.               Building3D is an urban-scale dataset collected
+                                  driving and point cloud understanding, data augmentation                                                                                          with airborne LiDAR. The open-sourced Tallinn city part
+                                  with additional synthetic data has proven to be an effective                                                                                      is divided into a training set (32618) and a test set (3472).
+                                  tool to boost the model performance [22, 35]. Limited by                                                                                          Evaluation Metrics. We adopt the same evaluation met-
+                                  the number of real-world LiDAR point clouds of buildings,                                                                                         rics as Building3D leaderboard 1, which are briefly intro-
+                                  weintroduce a new height map synthesis method to gener-                                                                                           duced in the following. For wireframe-level metrics, Wire-
+                                  ate synthetic data for augmenting the real-world dataset.                                                                                         frame Edit Distance (WED) is a modified version of Graph
+                                        WhentheairborneLiDARfliesoverabuilding,itemitsa                                                                                             Edit Distance (GED) [1] to measure the number of ele-
+                                  laser downward for sampling, and a point cloud is obtained                                                                                        mentary graph edit operators for transforming the predicted
+                                  when the laser intersects with the roof of the building. To                                                                                       wireframe to the ground truth [14] while Average Corner
+                                  simulate this process, we divide the synthetic process into                                                                                       Offset (ACO) calculates the average distance between pre-
+                                  the LiDARscanningsimulationprocesstosamplelocations                                                                                               dicted and ground-truth corners. For corner-level and edge-
+                                  on the 2D plane and the height map synthesis process to                                                                                           level metrics, Corner Precision (CP), Corner Recall (CR),
+                                  collect the height of the building at that location.                                                                                              Corner F1 (CF1), Edge Precision (EP), Edge Recall (ER)
+                                        The LiDAR sampling locations present different data                                                                                         and Edge F1 (EF1) are introduced to evaluate the recon-
+                                  distributions due to the different aircraft types and Li-                                                                                         struction quality of the corners and edges.
+                                  DAR equipment. Thus, simulating the distribution simi-                                                                                                     1https://huggingface.co/spaces/Building3D/
+                                  lar to the real data is important. Latent Diffusion Model                                                                                         USM3D
+                                                                                                                                                                        22219
+                                                                      Distance                       Corner (%)                         Edge(%)
+                                        Method                  WED‚Üì          ACO‚Üì          CP‚Üë        CR‚Üë         CF1‚Üë         EP‚Üë         ER‚Üë        EF1‚Üë
+                                              ‚àó
+                                    PointMAE [19]                  -           0.330        75.0        47.0        58.0        52.0        12.0        20.0
+                                   PointM2AE‚àó [20]                 -           0.320        79.0        58.0        67.0        50.0         7.0        12.0
+                                    Point2Roof [11]                -           0.390        65.0        30.0        41.0        66.0         8.0        14.0
+                              Linear self-supervised [28]          -           0.350        70.0        60.0        65.0        67.0        16.0        25.0
+                                    Supervised [28]                -           0.290        90.0        53.0        66.0        88.0        23.0        36.0
+                                     PC2WF[14]                     -           0.520        18.0        67.0        28.0         2.0        15.0         1.0
+                                      PBWR[9]                    0.271         0.222        98.5        68.8        81.0        94.3        65.4        77.2
+                                  BWFormer(Ours)                 0.238         0.204        94.9        82.7        88.4        85.5        74.1        79.4
+                  Table 1. Quantitative evaluation results on the Building3D dataset [28]. Results of previous works are taken from [9] and the Build-
+                  ing3D leaderboard, where X‚àó indicates the method X serves as the feature extractor in the baseline network of Building3D [28]. The best
+                  results are in bold font, and the same notation applies to the subsequent tables.
+                  4.2. Implementation Details                                                    City3D [8, 18], PC2WF [14], Point2Roof [11], and
+                  Input Pre-processing. Given a point cloud with the z-axis                      PBWR [9]. The first two comparative methods are tradi-
+                  aligned along the gravity direction, we first normalize it to                  tional ones which output mesh models, and the last three
+                  the range [-1.0, 1.0]. We then project it onto the xy-plane                    are proprietary deep learning-based wireframe reconstruc-
+                  andcomputea256√ó256heightmap,whereeachpixelvalue                                tion methods that directly output wireframes.
+                  represents the average z-value of points projected onto that                       Thetraditional methods often strive to fit the point cloud
+                  pixel. Pixels with no projected points are set to 0.                           as closely as possible during the optimization process,
+                  ModelSettings. LayernumbersintheTransformerencoder                             which makes them very sensitive to noise and would also
+                  anddecoderareboth6. N,H,andM definedinSection3.2                               reconstruct the point clouds of trees (blue boxes in the 1-st
+                  and Section 3.3 are set to be 150, 2, and 5 respectively. Œª ,                  and 4-th rows in Figure 6). While they usually fit planes
+                                                                                        1        with a threshold of point numbers, they also miss small de-
+                  Œª2, and Œª3 are set to 1, 2000, and 1 respectively. And we                      tails like the chimney (green boxes in the 3-rd and 6-th rows
+                  train the model for 650 epochs with an initial learning rate                   in Figure 6). For the deep learning-based methods, prior
+                  of 2e-4, which decays by 10% in the last 50 epochs. For the                    works lack special designs for the sparse and noisy LiDAR
+                  data augmentation, we mix the synthetic data with the real                     point clouds and are struggling with the missing vertices
+                  data in a ratio of 3:1 and train them together.                                and edges (5-th to 7-th columns in Figure 6). The results
+                  4.3. Quantitative Evaluations.                                                 of our BWFormer are more complete and with more details
+                                                                                                 (the last column in Figure 6). Please refer to the supplemen-
+                  We compare BWFormer with seven other approaches, in-                           tary materials for more visualization results.
+                  cluding Point2Roof [11] and its variants (including Point-                     4.5. Synthetic LiDAR Scanning Evaluation.
+                  MAE[19], PointM2AE [20], Linear self-supervised [28],
+                  and supervised [28]), PC2WF [14], and PBWR [9]. As                             We compare our simulated scanning method with several
+                  shown in Table 1, our method surpasses other SOTA meth-                        uniform sampling-based methods. For the first three meth-
+                  ods, especially on the metrics of corner recall and edge re-                   ods, each synthetic data is generated by uniformly sampling
+                  call, showcasing the superior adaptation of our proposed                       points within the building footprint at fixed sparsity levels
+                  BWFormertosparse3Dpointcloudswithmorereconstruc-                               of 90%, 85%, and 80%, denoted as Uni.(90%), Uni.(85%),
+                  tion completeness. This is due to our pixel-by-pixel 2D cor-                   and Uni. (80%) respectively. For the last method, a Gaus-
+                  ner detection and 2D-to-3D strategy with a smaller search                      sian distribution (mean value 85.75%, variance 0.19%) on
+                  space, as well as the edge attention mechanism that focuses                    point sparsity is fitted across all real data in the Building3D
+                  onboththewholeanddetails. Intermsofspecificnumbers,                            dataset.   For each synthetic sample, the sparsity for uni-
+                  our method achieves an improvement of +12.2% in WED,                           form sampling is then randomly drawn from this distribu-
+                  +8.1% in ACO, +7.4% in corner F1 score, and +2.2% in                           tion, which is denoted as Uni. (Gau). As shown in Ta-
+                  edge F1 score with the state-of-the-art method PBWR.                           ble 2, using the widely-adopted metrics in image gener-
+                                                                                                               ¬¥
+                  4.4. Qualitative Evaluations.                                                  ation of Frechet Inception Distance (FID) and Maximum
+                                                                                                 Mean Discrepancy (MMD), our method significantly out-
+                  The qualitative evaluations are shown in Figure 6, and                         performs both fixed and Gaussian-based uniform scanning
+                  our BWFormer is compared with five representative meth-                        approaches. For the qualitative evaluations, shown in Fig-
+                  ods, including 2.5D dual contouring [37], PolyFit-based                        ure 7, our simulated scanning locations exhibit greater di-
+                                                                                          22220
+                             Point Cloud         Right View         2.5D Dual        City3D/PolyFit        PC2WF          Point2Roof          PBWR              Ours
+                   Figure 6. Quantitative evaluation results on the Building3D dataset [28]. The 1-st column is the point clouds segmented with single
+                   buildings but messed with noise, the 2-nd column is the right views of the original point clouds in the 1st column but without removing
+                   the non-building parts. The results of the traditional methods (3-rd and 4-th columns) are mesh models, while 3D wireframes for deep
+                   learning-based methods (5-th to 8-th columns). Though the ground truth wireframe models for the test set are not open-sourced, please
+                   refer to the right view and pay attention to the tree noise (1-st and 4-th rows), chimney at the top of the roof (3-rd and 6-th rows), and roof
+                   planes of different angles (5-th row). Green boxes mark the details, while the blue ones mark the reconstruction results.
+                    Metric            Uni. (90%)   Uni. (85%)   Uni. (80%)    Uni. (Gau)  Ours
+                    FID‚Üì       ‚àí2        180.2        152.0        140.3        159.5      53.9
+                    MMD(√ó10 )‚Üì           2.10         2.63          2.67         0.89      0.37
+                   Table 2. Effetcs of synthetic LiDAR scanning. The methods of
+                   Uni. (X%) and Uni. (Gau) are described in the main text.
+                   versity, reflecting different sparsities and missing regions
+                   that closely resemble the real-world data. Additional visu-                         Wireframe      Real        Uniform           Synthetic LiDAR Scanning
+                   alizations are provided in the supplementary materials.                            Figure 7. Examples of simulated LiDAR scanning. Compared
+                   4.6. Ablation Studies                                                              with uniform sampling of different sparsities (80%, 85%, 90%,
+                   All the ablation studies are done on the test set of the Build-                    and95%fromtoptobottominthe3-rdcolumn),ourmethodhigh-
+                                                                                                      lights data diversity in both sparsity and completeness.
+                   ing3D dataset [28]. Considering the training time, ablation
+                   studies on the 2D and 3D corner number, and number of
+                   sampling points are trained without the synthetic data.                            What is more, the adding of edge attention boosts the EF1
+                   Different Components. As shown in Table 3, the base-                               by 3.6%. Finally, the use of synthetic height maps en-
+                   line method directly predicts 3D corners from height maps.                         hances both precision and completeness in the reconstruc-
+                   However, it struggles with sparse point clouds, leading to                         tion, demonstrating the effectiveness of data augmentation.
+                   poor results.       The introduction of 2D-3D corner detec-                        2Dand3DCornerNumber. Inthe2D-to-3Dcornerdetec-
+                   tion significantly improves model performance by leverag-                          tionprocess,the2Dcornernumber(N)and3Dcornernum-
+                   ing dense 2D corner detection and a smaller search space.                          bers (NH) are both significant for the detection of sparse
+                                                                                              22221
+                                                   Distance          Corner (%)            Edge(%)                                   Distance              Corner (%)               Edge(%)
+                      Method                   WED‚Üì ACO‚Üì CP‚Üë CR‚Üë CF1‚Üë EP‚Üë ER‚Üë EF1‚Üë                               Method          WED‚Üì ACO‚Üì CP‚Üë CR‚Üë CF1‚Üë EP‚Üë ER‚Üë EF1‚Üë
+                      Baseline                  0.463    0.415   90.4   67.0   77.0   69.2   50.2   58.2         Real             0.253     0.207     94.1    82.8    88.1     83.7   73.6     78.3
+                      +2D-3Dcornerdetection     0.290    0.235   93.3   79.8   86.0   81.3   69.1   74.7         Uni. (√ó1)        0.259     0.211     94.6    81.5    87.6     84.0   72.0     77.5
+                      +Edgeattention            0.253    0.207   94.1   82.8   88.1   83.7   73.6   78.3         Mixed(√ó1)        0.239     0.211     94.0    83.0    88.2     84.1   74.5     79.0
+                      +DataAugmentation         0.238    0.204   94.9   82.7   88.4   85.5   74.1   79.4         Mixed(√ó3)        0.238     0.204     94.9    82.7    88.4     85.5   74.1     79.4
+                     Table3. AblationstudyofdifferentcomponentsofBWFormer.                                       Mixed(√ó5)        0.237     0.204     94.7    82.7    88.3     85.0   74.0     79.1
+                                                                                                                Table6. AnalysisondataaugmentationmethodofBWFormer.
+                                      Distance(m)             Corner (%)                Edge(%)                 Real indicates training only with the Building3D dataset [28].
+                       N     NH WED‚Üì ACO‚Üì CP‚Üë CR‚Üë CF1‚Üë EP‚Üë ER‚Üë EF1‚Üë                                             Mixed means mixed dataset with both the real-world dataset and
+                      100    200     0.255     0.212     94.1    81.7     87.5     83.4    72.3     77.5        synthetic dataset, while the numbers in the brackets behind repre-
+                      200    400     0.250     0.211     93.9    82.6     87.9     83.2    73.8     78.2        sent the multiples of the synthetic data and the real-world data.
+                      150    150     0.322     0.220     93.4    74.2     82.7     81.0    62.9     70.8
+                      150    450     0.275     0.224     93.0    81.5     86.9     81.5    71.4     76.1
+                      150    300     0.253     0.207     94.1    82.8     88.1     83.7    73.6     78.3
+                     Table 4. Analysis on 2D and 3D corner number of BWFormer.
+                                                                                                                              (a) Missing corners/edges              (b) Redundant corners/edges
+                                Distance(m)               Corner (%)                   Edge(%)
+                      M     WED‚Üì        ACO‚Üì       CP‚Üë       CR‚Üë      CF1‚Üë       EP‚Üë      ER‚Üë      EF1‚Üë         Figure 8. Failure case analysis. (a) Our model sometimes misses
+                      3      0.272       0.224      92.8     81.8      87.0      80.5     72.0      76.0        corners and edges because of the extremely sparse point clouds.
+                      4      0.268       0.216      94.2     80.9      87.0      83.3     71.1      76.7        (b) In some cases, redundant corners and edges could be predicted.
+                      5      0.253       0.207      94.1     82.8      88.1      83.7     73.6      78.3        Blue and green boxes mark the errors in the failure, and the point
+                      6      0.255       0.209      94.1     82.3      87.8      83.4     73.1      77.9        clouds are added to the wireframes to illustrate the errors.
+                      7      0.259       0.211      94.6     81.5      87.6      84.0     72.0      77.5
+                     Table5. AnalysisonNumberofsamplingpointsofBWFormer.
+                                                                                                                proved. Asthenumberofsyntheticdataincreases,theeffect
+                     point clouds. With more 2D corners, the 3D corner queries                                  gradually becomes saturated. We believe that a 3:1 ratio be-
+                     are more dense while also introducing more memory con-                                     tween synthetic data and real data could achieve a balance
+                     sumption and introducing more redundancy. we seek a bal-                                   between training effect and time efficiency.
+                     ance between the accuracy and memory consumption to                                        4.7. Analysis of Failure Cases
+                     choose 150 as the 2D corner number. For the 3D corners,
+                     there are rare cases for 3 corners sharing the same 2D co-                                 Despite significant progress has been made by BWFormer,
+                     ordinate, but common for 2 corners. Thus, we set H to 2                                    there are still some failure cases. For extremely sparse point
+                     as our 3D corner number with the same 2D positions and                                     clouds, BWFormer misses corners and edges (as shown in
+                     experiments prove the effectiveness. The detailed experi-                                  Figure 8(a)). Besides, with the dense 2D corner prediction,
+                     mental results are in Table 4.                                                             in some cases, redundant corners and edges that are close to
+                     NumberofSamplingPoints. Inthisexperiment, we study                                         each other are predicted (as shown in Figure 8(b)).
+                     the effect of different numbers of sampling points (M) in
+                     the edge attention. For sparse point clouds, it‚Äôs essential to
+                     focus on areas with point clouds covered, which requires                                   5. Conclusion
+                     high attention to details. However, with too many sampling
+                     points, critical information in smaller detailed areas will be                             We propose BWFormer, a novel end-to-end Transformer-
+                     diluted and computational overhead will increase signifi-                                  based network for 3D building wireframe reconstruction
+                     cantly. To seek a balance between model performance and                                    from airborne LiDAR point cloud. With 2D-to-3D corner
+                     computational cost, we set M to 5, as shown in Table 5.                                    detection, 3D corners are predicted from known 2D posi-
+                     Effectiveness of Data Augmentation. Table 6 shows how                                      tions within a smaller search space, simplifying the prob-
+                     the data augmentation strategies influence the model per-                                  lem complexity. For the edge classification, edge attention
+                     formance. The uniform sampling simulation (Uni.) re-                                       extracts the holistic edge features while preserving details.
+                     places our simulated LiDARscanningprocesswithuniform                                       Furthermore,syntheticdatasimulatingtheLiDARscanning
+                     sampling under the Gaussian distribution described in sec-                                 process is used for data augmentation. Our method outper-
+                     tion 4.5. This simple method leads to the performance drop-                                forms other state-of-the-art methods, particularly in terms
+                     ping for the unrealistic data distribution. With our method,                               of reconstruction completeness. Further ablation experi-
+                     both the reconstruction precision and completeness are im-                                 ments demonstrate the effectiveness of our model design.
+                                                                                                         22222
+                Acknowledgements                                                           PRS Journal of Photogrammetry and Remote Sensing, 193:
+                This work was supported by the Beijing Natural Science                     17‚Äì28, 2022. 2, 3, 6
+                Foundation (No. L223003), the National Natural Science                [12] Zhiqi Li, Wenhai Wang, Hongyang Li, Enze Xie, Chong-
+                                                                                           hao Sima, Tong Lu, Yu Qiao, and Jifeng Dai. BEVFormer:
+                Foundation of China (No.         U22B2055, 62273345, and                   Learning bird‚Äôs-eye-view representation from multi-camera
+                62373349), and the Key R&D Project in Henan Province                       images via spatiotemporal Transformers. In European Con-
+                (No. 231111210300).                                                        ference on Computer Vision (ECCV), pages 1‚Äì18, 2022. 2
+                                                                                      [13] BenchengLiao,ShaoyuChen,YunchiZhang,BoJiang,Qian
+                References                                                                 Zhang, Wenyu Liu, Chang Huang, and Xinggang Wang.
+                                                                                           MapTRv2: An end-to-end framework for online vectorized
+                 [1] Zeina Abu-Aisheh, Romain Raveaux, Jean-Yves Ramel, and                HD map construction. International Journal of Computer
+                      Patrick Martineau. An exact graph edit distance algorithm            Vision, pages 1‚Äì23, 2024. 1
+                      for solving pattern recognition problems. In International      [14] Yujia Liu, Stefano D‚ÄôAronco, Konrad Schindler, and
+                      Conference on Pattern Recognition Applications and Meth-             Jan Dirk Wegner.    PC2WF: 3D wireframe reconstruction
+                      ods (ICPRAM), 2015. 5                                                from raw point clouds.     In International Conference on
+                 [2] Sameer Agarwal, Noah Snavely, Ian Simon, Steven M Seitz,              Learning Representations (ICLR), 2021. 2, 5, 6
+                      and Richard Szeliski. Building Rome in a day. In IEEE           [15] Yuzhou Liu, Lingjie Zhu, Xiaodong Ma, Hanqiao Ye, Xiang
+                      International Conference on Computer Vision (ICCV), pages            Gao, Xianwei Zheng, and Shuhan Shen. PolyRoom: Room-
+                      72‚Äì79, 2009. 1                                                       aware transformer for floorplan reconstruction. In European
+                 [3] Jiacheng Chen, Yiming Qian, and Yasutaka Furukawa.                    Conference on Computer Vision, pages 322‚Äì339, 2024. 1
+                      HEAT:HolisticedgeattentionTransformerforstructuredre-           [16] Guanxing Lu, Shiyi Zhang, Ziwei Wang, Changliu Liu, Ji-
+                      construction. In IEEE/CVF Conference on Computer Vision              wenLu,andYansongTang. ManiGaussian: Dynamic gaus-
+                      and Pattern Recognition (CVPR), pages 3866‚Äì3875, 2022.               sian splatting for multi-task robotic manipulation. In Euro-
+                      2, 4                                                                 pean Conference on Computer Vision (ECCV), pages 349‚Äì
+                 [4] Jiali Han, Yuzhou Liu, Mengqi Rong, Xianwei Zheng, and                366, 2024. 1
+                      Shuhan Shen. Floorusg: Indoor floorplan reconstruction by       [17] Xiaodong Ma, Lingjie Zhu, Yuzhou Liu, Zexiao Xie, Xi-
+                      unifying 2d semantics and 3d geometry. ISPRS Journal of              ang Gao, and Shuhan Shen. BPN: Building pointer network
+                      Photogrammetry and Remote Sensing, 196:490‚Äì501, 2023.                for satellite imagery building contour extraction. IEEE Geo-
+                      1                                                                    science and Remote Sensing Letters, 2024. 1
+                 [5] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun.           [18] Liangliang Nan and Peter Wonka. PolyFit: Polygonal sur-
+                      Deep residual learning for image recognition.     In IEEE            face reconstruction from point clouds. In IEEE International
+                      Conference on Computer Vision and Pattern Recognition                Conference on Computer Vision (ICCV), pages 2353‚Äì2361,
+                      (CVPR), pages 770‚Äì778, 2016. 3                                       2017. 2, 6
+                 [6] Hai Huang, Claus Brenner, and Monika Sester. 3D building         [19] Charles R Qi, Hao Su, Kaichun Mo, and Leonidas J Guibas.
+                      roof reconstruction from point clouds via generative mod-            PointNet: Deep learning on point sets for 3D classification
+                      els. In ACM SIGSPATIAL International Conference on Ad-               and segmentation. In IEEE Conference on Computer Vision
+                      vances in Geographic Information Systems (SIGSPATIAL),               and Pattern Recognition (CVPR), pages 652‚Äì660, 2017. 6
+                      pages 16‚Äì24, 2011. 2                                            [20] Charles R Qi, Li Yi, Hao Su, and Leonidas J Guibas. Point-
+                 [7] Hai Huang, Claus Brenner, and Monika Sester. A genera-                Net++: Deep hierarchical feature learning on point sets in a
+                      tive statistical approach to automatic 3D building roof recon-       metric space. In Advances in Neural Information Processing
+                      struction from laser scanning data. ISPRS Journal of Pho-            Systems (NIPS), 2017. 2, 6
+                      togrammetry and Remote Sensing, 79:29‚Äì43, 2013. 2               [21] Robin Rombach, Andreas Blattmann, Dominik Lorenz,
+                 [8] Jin Huang, Jantien Stoter, Ravi Peters, and Liangliang Nan.                               ¬®
+                                                                                           PatrickEsser, andBjornOmmer. High-resolutionimagesyn-
+                      City3D: Large-scale building reconstruction from airborne            thesis withlatentdiffusionmodels. InIEEE/CVFConference
+                      lidar point clouds. Remote Sensing, 14(9):2254, 2022. 6              onComputerVisionandPatternRecognition (CVPR), pages
+                 [9] Shangfeng Huang, Ruisheng Wang, Bo Guo, and Hongxin                   10684‚Äì10695, 2022. 5
+                      Yang. PBWR:Parametricbuildingwireframereconstruction            [22] Guodong Rong, Byung Hyun Shin, Hadi Tabatabaee, Qiang
+                      from aerial LiDAR point clouds. In IEEE/CVF Conference                                      ¬Ø    Àá    Àá
+                                                                                           Lu, Steve Lemke, Martin¬∏s Mozeiko, Eric Boise, Gee-
+                      onComputerVisionandPatternRecognition (CVPR), pages                  hoon Uhm, Mark Gerow, Shalin Mehta, Eugene Agafonov,
+                      27778‚Äì27787, 2024. 1, 2, 3, 6                                        Tae Hyung Kim, Eric Sterner, Keunhae Ushiroda, Michael
+                                             ¬¥
+                [10] Florent Lafarge and Clement Mallet. Creating large-scale              Reyes, Dmitry Zelenkovsky, and Seonman Kim. LGSVL
+                      city models from 3D-point clouds: A robust approach with             simulator: A high fidelity simulator for autonomous driving.
+                      hybridrepresentation. International Journal of Computer Vi-          In IEEE International Conference on Intelligent Transporta-
+                      sion, 99:69‚Äì85, 2012. 2                                              tion Systems (ITSC), pages 1‚Äì6, 2020. 5
+                [11] Li Li, Nan Song, Fei Sun, Xinyi Liu, Ruisheng Wang, Jian         [23] Paul-Edouard    Sarlin,  Mihai   Dusmanu,     Johannes   L
+                                                                                               ¬®
+                      Yao,andShaoshengCao. Point2Roof: End-to-end3Dbuild-                  Schonberger,    Pablo Speciale,    Lukas Gruber,     Viktor
+                      ing roof modeling from airborne LiDAR point clouds. IS-              Larsson, Ondrej Miksik, and Marc Pollefeys.       LaMAR:
+                                                                                22223
+                      Benchmarking localization and mapping for augmented                [36] Fuyang Zhang, Nelson Nauata, and Yasutaka Furukawa.
+                      reality.   In European Conference on Computer Vision                    Conv-MPN: Convolutional message passing neural net-
+                      (ECCV), pages 686‚Äì704, 2022. 1                                          work for structured outdoor architecture reconstruction. In
+                 [24] R. Schnabel, R. Wahl, and R. Klein. Efficient RANSAC for                IEEE/CVF Conference on Computer Vision and Pattern
+                      point-cloud shape detection. Computer Graphics Forum, 26                Recognition (CVPR), pages 2798‚Äì2807, 2020. 2
+                      (2):214‚Äì226, 2007. 2                                               [37] Qian-Yi Zhou and Ulrich Neumann. 2.5D building model-
+                 [25] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszko-                 ing by discovering global regularities. In IEEE Conference
+                      reit, Llion Jones, Aidan N Gomez, ≈Åukasz Kaiser, and Illia              onComputerVisionandPatternRecognition (CVPR), pages
+                      Polosukhin. Attention is all you need. In Advances in Neural            326‚Äì333, 2012. 6
+                      Information Processing Systems (NIPS), 2017. 5                     [38] Lingjie Zhu, Shuhan Shen, Xiang Gao, and Zhanyi Hu.
+                 [26] Vikram Voleti, Chun-Han Yao, Mark Boss, Adam Letts,                     Large scale urban scene modeling from MVS meshes. In
+                      David Pankratz, Dmitry Tochilkin, Christian Laforte, Robin              European Conference on Computer Vision (ECCV), pages
+                      Rombach, and Varun Jampani. SV3D: Novel multi-view                      614‚Äì629, 2018. 1, 2
+                      synthesis and 3D generation from a single image using la-          [39] Xizhou Zhu, Weijie Su, Lewei Lu, Bin Li, Xiaogang Wang,
+                      tent video diffusion. In European Conference on Computer                and Jifeng Dai. Deformable DETR: Deformable Transform-
+                      Vision (ECCV), pages 439‚Äì457, 2024. 5                                   ers for end-to-end object detection. In International Confer-
+                 [27] RuishengWang,JijuPeethambaran,andDongChen.LiDAR                         ence on Learning Representations (ICLR), 2021. 2, 3, 4
+                      pointcloudsto3-Durbanmodels: Areview. IEEEJournalof                [40] Xiangyu Zhu, Dong Du, Weikai Chen, Zhiyou Zhao, Yinyu
+                      Selected Topics in Applied Earth Observations and Remote                Nie, and Xiaoguang Han.         NerVE: Neural volumetric
+                      Sensing, 11(2):606‚Äì627, 2018. 2                                         edges for parametric curve extraction from point cloud.
+                 [28] Ruisheng Wang, Shangfeng Huang, and Hongxin Yang.                       In IEEE/CVF Conference on Computer Vision and Pattern
+                      Building3D: A urban-scale dataset and benchmarks for                    Recognition (CVPR), pages 13601‚Äì13610, 2023. 2
+                      learning roof structures from point clouds. In IEEE/CVF In-
+                      ternational Conference on Computer Vision (ICCV), pages
+                      20076‚Äì20086, 2023. 2, 3, 5, 6, 7, 8
+                 [29] B.Xiong,S.OudeElberink,andG.Vosselman. Agraphedit
+                      dictionary for correcting errors in roof topology graphs re-
+                      constructedfrompointclouds. ISPRSJournalofPhotogram-
+                      metry and Remote Sensing, 93:227‚Äì242, 2014. 2
+                 [30] Xiang Xu,      Joseph   Lambourne,     Pradeep Jayaraman,
+                      Zhengqing Wang, Karl Willis, and Yasutaka Furukawa.
+                      BrepGen: A B-rep generative diffusion model with struc-
+                      tured latent geometry. ACM Transactions on Graphics, 43
+                      (4):1‚Äì14, 2024. 5
+                 [31] Nan Xue, Tianfu Wu, Song Bai, Fudong Wang, Gui-Song
+                      Xia, Liangpei Zhang, and Philip HS Torr.        Holistically-
+                      attracted wireframe parsing. In IEEE/CVF Conference on
+                      Computer Vision and Pattern Recognition (CVPR), pages
+                      2788‚Äì2797, 2020. 2
+                 [32] Nan Xue, Tianfu Wu, Song Bai, Fu-Dong Wang, Gui-Song
+                      Xia, Liangpei Zhang, and Philip HS Torr.        Holistically-
+                      attracted wireframe parsing:     From supervised to self-
+                      supervised learning. IEEE Transactions on Pattern Analysis
+                      and Machine Intelligence, 45(12):14727‚Äì14744, 2023. 2
+                 [33] Hanqiao Ye, Yuzhou Liu, Yangdong Liu, and Shuhan Shen.
+                      NeuralPlane: Structured 3D reconstruction in planar prim-
+                      itives with neural fields.  In International Conference on
+                      Learning Representations (ICLR), 2025. 1
+                 [34] FisherYu,VladlenKoltun,andThomasFunkhouser. Dilated
+                      residual networks. In IEEE Conference on Computer Vision
+                      and Pattern Recognition (CVPR), pages 472‚Äì480, 2017. 3
+                 [35] Xumin Yu, Lulu Tang, Yongming Rao, Tiejun Huang,
+                      Jie Zhou, and Jiwen Lu.       Point-BERT: Pre-training 3D
+                      point cloud Transformers with masked point modeling. In
+                      IEEE/CVF Conference on Computer Vision and Pattern
+                      Recognition (CVPR), pages 19313‚Äì19322, 2022. 5
+                                                                                  22224

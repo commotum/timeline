@@ -1,0 +1,72 @@
+               Article
+                                                                                                              both during synthetic data generation and after each successful proof 
+               Traceback for geometric-rule deduction                                                         search during test time.
+               To do this, we record the equality transitivity graph. For example, if 
+               ‘a = b’, ‘b = c’, ‘c = d’ and ‘a = d’ are deduced, which results in nodes a,                   Parallelized data generation and deduplication
+               b, c and d being connected to the same ‘equality node’ e, we maintain                          We run our synthetic-data-generation process on a large number 
+               a graph within e that has edges [(a, b), (b, c), (c, d), (a, d)]. This allows                  of parallel CPU workers, each seeded with a different random seed 
+               the traceback algorithm to perform a breadth-first search to find the                          to reduce duplications. After running this process on 100,000 CPU 
+               shortest path of transitivity of equality between any pair of variables                        workers for 72 h, we obtained roughly 500 million synthetic proof 
+               among a, b, c and d. For collinearity and concyclicity, however, the                           examples. We reformat the proof statements to their canonical form 
+               representation is more complex. In these cases, hypergraphs G(V, E)                            (for example, sorting arguments of individual terms and sorting terms 
+               with 3-edges or 4-edges are used as the equality transitivity graph.                           within the same proof step, etc.) to avoid shallow deduplication against 
+               The traceback is now equivalent to finding a minimum spanning tree                             itself and against the test set. At the end, we obtain 100 million unique 
+               (denoted MST in the following equation) for the target set S of nodes                          theorem–proof examples. A total of 9 million examples involves at 
+               (three collinear nodes or four concyclic nodes) whose weight is the                            least one auxiliary construction. We find no IMO-AG-30 problems 
+               cardinality of the union of its hyperedges e′:                                                 in the synthetic data. On the set of geometry problems collected in 
+                                                                                                                     17
+                                  MST(Sw)=min(⋃                      eS′) s.t.   ⊂T                           JGEX , which consists mainly of problems with moderate difficulty and 
+                                                    TE⊂′eT⊂                                                   well-known theorems, we find nearly 20 problems in the synthetic data. 
+                                                                                                              This suggests that the training data covered a fair amount of common 
+                  Such optimization is NP-hard, as it is a reduction from the decision                        knowledge in geometry, but the space of more sophisticated theorems 
+               version of vertex cover. We simply use a greedy algorithm in this case                         is still much larger.
+               to find a best-effort minimum spanning tree.
+                                                                                                              Language model architecture and training
+               Traceback for algebraic deduction                                                                                                  35
+                                                                                                              We use the Meliad library  for transformer training with its base  
+               Traceback through Gaussian elimination can be done by recogniz-                                settings. The transformer has 12 layers, embedding dimension of 1,024, 
+               ing that it is equivalent to a mixed integer linear programming                                eight heads of attention and an inter-attention dense layer of dimension 
+               problem. Given the coefficient matrix of input equations A con-                                4,096 with ReLU activation. Overall, the transformer has 151 million  
+               structed as described in the previous sections and a target equa-                              parameters, excluding embedding layers at its input and output 
+               tion with coefficients vector b ∈ RN, we determine the minimal set                             heads. Our customized tokenizer is trained with ‘word’ mode using 
+                                                                                                                                  36
+               of premises for b by defining non-negative integer decision vectors                            SentencePiece  and has a vocabulary size of 757. We limit the maxi-
+               x, y ∈ ZM and solve the following mixed-integer linear programming                             mum context length to 1,024 tokens and use T5-style relative posi-
+                                                                                                                                    37                           38,39
+               problem:                                                                                       tion embedding . Sequence packing                       is also used because more 
+                                                                                                              than 90% of our sequences are under 200 in length. During training, a  
+                                                                        T                                                 40
+                                  xy,=min(xy+)s.t.Ax(−yb)=                                                    dropout  rate of 5% is applied pre-attention and post-dense. A 4 × 4 
+                                              xy, ∑ i i
+                                                      i                                                       slice of TPUv3 (ref. 41) is used as its hardware accelerator. For pre-
+                  The minimum set of immediate parent nodes for the equality repre-                           training, we train the transformer with a batch size of 16 per core 
+               sented by b will be the ith equations (ith rows in A) whose corresponding                      and a cosine learning-rate schedule that decays from 0.01 to 0.001 
+               decision value (xi − yi) is non-zero.                                                          in 10,000,000 steps. For fine-tuning, we maintain the final learn-
+                                                                                                              ing rate of 0.001 for another 1,000,000 steps. For the set-up with 
+               Integrating DD and AR                                                                          no pretraining, we decay the learning rate from 0.01 to 0.001 in 
+               DD and AR are applied alternately to expand their joint deduction clo-                         1,000,000 steps. We do not perform any hyperparameter tuning. 
+               sure. The output of DD, which consists of new statements deduced                               These hyperparameter values are either selected to be a large round 
+               with deductive rules, is fed into AR and vice versa. For example, if DD                        number (training steps) or are provided by default in the Meliad  
+               deduced ‘AB is parallel to CD’, the slopes of lines AB and CD will be                          codebase.
+               updated to be equal variables in AR’s coefficient matrix A, defined in 
+               the ‘Algebraic reasoning’ section. Namely, a new row will be added to A                        Parallelized proof search. Because the language model decoding 
+               with ‘1’ at the column corresponding to the variable slope(AB) and ‘−1’ at                     process returns k different sequences describing k alternative auxiliary 
+               the column of slope(CD). Gaussian elimination and mixed-integer linear                         constructions, we perform a beam search over these k options, using 
+               programming is run again as AR executes, producing new equalities                              the score of each beam as its value function. This set-up is highly paral-
+               as inputs to the next iteration of DD. This loop repeats until the joint                       lelizable across beams, allowing substantial speed-up when there are 
+               deduction closure stops expanding. Both DD and AR are deterministic                            parallel computational resources. In our experiments, we use a beam 
+               processes that only depend on the theorem premises, therefore they                             size of k = 512, the maximum number of iterations is 16 and the branch-
+               do not require any design choices in their implementation.                                     ing factor for each node, that is, the decoding batch size, is 32. This is 
+                                                                                                              the maximum inference-time batch size that can fit in the memory of a 
+               Proof pruning                                                                                  GPU V100 for our transformer size. Scaling up these factors to examine 
+               Although the set of immediate ancestors to any node is minimal, this                           a larger fraction of the search space might improve AlphaGeometry 
+               does not guarantee that the fully traced back dependency subgraph                              results even further.
+               G(N) and the necessary premise P are minimal. Here we define minimal-                             For each problem, we used a pool of four GPU workers, each hosting 
+               ity to be the property that G(N) and P cannot be further pruned without                        a copy of the transformer language model to divide the work between 
+               losing conclusion reachability. Without minimality, we obtained many                           alternative beams, and a pool of 10,000 CPU workers to host the sym-
+               synthetic proofs with vacuous auxiliary constructions, having shallow                          bolic solvers, shared across all beams across all 30 problems. This way, 
+               relation to the actual proof and can be entirely discarded. To solve                           a problem that terminates early can contribute its share of computing 
+               this, we perform exhaustive trial and error, discarding each subset of                         power to longer-running problems. We record the running time of the 
+               the auxiliary points and rerunning DD + AR on the smaller subset of                            symbolic solver on each individual problem, which—by design—stays 
+               premises to verify goal reachability. At the end, we return the minimum                        roughly constant across all beams. We use this and the language model 
+               proof obtainable across all trials. This proof-pruning procedure is done                       decoding speed to infer the necessary parallelism needed for each 

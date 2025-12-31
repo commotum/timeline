@@ -1,0 +1,72 @@
+             mentation. So, we aim to close this gap with a simplified          query, and an instance proposal derived from this instance
+             version of query selection adapted for 3D data and a non-          query. Finally, by skipping intermediate correspondences,
+             transformer encoder. Particularly, we initialize queries with      wecandirectlymatchaninstanceproposaltoagroundtruth
+             backbonefeaturesafteraflexiblepooling. Byaqueryselec-              instance. The obtained correspondence disentangles the bi-
+             tion, werandomlyselectonlyahalfofinitializedqueriesfor             partite graph of proposals and ground truth instances, that
+             anextra augmentation during the training. During the infer-        is why we refer to it as our disentangled matching.
+             ence, we initialize queries similarly, but do not filter queries      Still, the number of proposals exceeds the number of
+             to keep all input information.                                     ground truth instances, so we need to filter out proposals
+             3.3. Training                                                      that do not correspond to ground truth objects to obtain a
+                                                                                bipartite matching. The disentangled matching trick sim-
+             Totrainatransformer-basedmethodend-to-end,weneedto                 plifies cost function optimization, as we can set the most
+             define a cost function between queries and ground truth ob-        weights in a cost matrix to infinity:
+             jects, develop a matching strategy that minimizes this cost            ˆ      Cik ifi-thsuperpoint ∈ k-th object
+             function, and formulate a loss function being applied to the           Cik =    +∞ otherwise                                (3)
+             matched pairs.
+                                                                                In a standard case, all cost matrix elements are non-infinite,
+             Cost function.    Following SPFormer [32], we use a pair-          and the optimal solution can be obtained via a Hungar-
+             wise matching cost Cik to measure the similarity of the i-th       ian matching with a computational complexity of O(K3 ).
+             proposal and the k-th ground truth. C      is derived from a                                                               ins
+                                                     ik                         Ourdisentangledmatchingisnotablymoreefficient,having
+             classification probability and a superpoint mask matching          a O(K     ) complexity. For a ground truth instance k, we
+                                                                                       ins
+             cost Cmask:                                                                                                          ˆ
+                   ik                                                           only need to select the proposal i with the least Cik. Since
+                                                                                there is only one non-infinite value per proposal, this oper-
+                              C =−λ·p          +Cmask,                 (1)
+                               ik          i,ck    ik                           ation is trivial and can be performed in a linear time.
+             where p      indicates the probability of i-th proposal be-
+                      i,ck                                                      Loss.   After matching proposals with ground truth in-
+             longing to the c   semantic category. In our experiments,
+                              k                                                 stances, instance losses can finally be calculated. Classi-
+             we use λcls = 0.5. The superpoint mask matching cost               fication errors are penalized with a cross-entropy loss L   .
+             Cmask is a sum of a binary cross-entropy (BCE) and a Dice                                                                   cls
+               ik                                                               Besides, for each match between a proposal and a ground
+             loss with a Laplace smoothing:                                     truth instance, we compute the superpoint mask loss as a
+                                                           gt                   sumofbinarycross-entropy L        and a Dice loss L     .
+                                                    m ·m +1                                                    bce                  dice
+                 mask                 gt              i    k  
+               Cik     =BCE(mi,m )+1−2                              ,  (2)         K      semantic queries correspond to ground truth
+                                      k                     gt                     sem
+                                                  |m | + m      +1
+                                                     i       k                  masks of K       semantic categories given in a fixed order,
+                                                                                            sem
+                              gt                                                sonospecificmatchingisrequired. ThesemanticlossLsem
+             wherem andm areapredictedandgroundtruthmaskof
+                      i       k                                                 is defined as a binary cross-entropy.
+             a superpoint, respectively.                                           Thetotal loss L is formulated as:
+             Disentangled       matching.    Previous      state-of-the-art                L=β·L +L +L +L ,                              (4)
+                                                                                                     cls    bce     dice     sem
+             2D transformer-based methods [2, 4, 5, 20] and 3D
+             transformer-based methods [31, 32] exploit a bipartite             where β = 0.5 as in [32].
+             matching strategy based on a Hungarian algorithm [16].             3.4. Inference
+             This commonly-used approach has though a major draw-
+             back: an excessive number of meaningful matches between            Duringinference,givenaninputpointcloud,OneFormer3D
+             proposals and ground truth instances makes the training            directly predicts K     semantic masks and K        instance
+                                                                                                   sem                          ins
+             process long-lasting and unstable.                                 with classification scores p , i ∈ 1, ... K    , where each
+                                                                                                            i               ins
+                On the contrary, we perform a simple trick that elim-           mask m is a set of superpoints. Then, we convolve su-
+                                                                                        i
+             inates the need for resource-exhaustive Hungarian match-           perpoint features S ∈ RM×C with each predicted kernel
+             ing.  Since an instance query is initialized with features         l  ∈ R1×C to get a mask m ∈ RM×1: m = S ∗ l .
+                                                                                i                              i                i          i
+             of a superpoint, this instance query can be unambiguously          Thefinalbinarysegmentationmasksareobtainedbythresh-
+             matched with this superpoint. We assume that a superpoint          olding probability scores. Besides, for m , we calculate a
+                                                                                                                           i
+             canbelongonlytooneinstance,thatgivesacorrespondence                maskscore qi ∈ [0,1] by averaging probabilities exceeding
+             betweenasuperpointandagroundtruthobject. Bybringing                the threshold, and use it to set an initial ranking score si:
+             everything together, we can establish the correspondence           s = p ·q . Finally, s values are leveraged for re-ranking
+                                                                                 i     i   i           i
+             between a ground truth object, a superpoint, an instance           predicted instances using matrix-NMS [37].
+                                                                            20946

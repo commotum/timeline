@@ -1,0 +1,78 @@
+                              Pre-trained            Extrapolation         scaling strategies to each dimension according to r .
+                     1                                                                                                         i
+                                                                           Given two threshold hyperparameters α,β, YaRN
+                   oPE0                                                    modifies the RoPE as follows:
+                   R                                                                
+                                                                                    
+                                                                                      θ /s,                    if r < α
+                                                                                     i                            i
+                     1                                                        ˆ
+                                                                              θi =    θ ,                      if r > β ,    (4)
+                      0                     4096                    8192             i                            i
+                              Interpolation                                         
+                     1                                                                (1−γi)θi/s+γiθi, otherwise
+                                                                           wheresisthescalingfactorandγ = (r −α)/(β−
+                                                                                                              i     i
+                   oPE(PI)0                                                α). As shown in eq. (4), extrapolation is used
+                   R                                                       for high-frequency dimensions (r > β), while in-
+                                                                                                               i
+                     1                                                     terpolation is used for low-frequency dimensions
+                      0                     8192                           (r < α). Others are deployed with NTK-aware
+                                           Position                          i
+                  Figure 2: An example of context window extension,        (bloc97, 2023b,a) methods. Peng et al. (2023) em-
+                  where green and blue points denote pre-trained and       pirically suggest α = 1 and β = 32 for LLaMAs.
+                  OODposition indices. Upper: Extrapolation directly       3 Method
+                  models position indices with RoPE. Lower: Interpo-
+                  lation mitigates the OOD problem of position indices     In this section, we first introduce how to estimate
+                  while introducing unseen rotary angles (cross points).   the rotary angle distribution. Then, we propose a
+                                                                           novel approach that extends the context window of
+                  is the sequence length and d is the dimension of an      LLMsbyminimizingthedisturbance of the rotary
+                  attention head. With trainable parameters W and          angle distribution.
+                                                                 q
+                  Wk,thetheattention logit q⊤kn with RoPE can
+                                                 m                         3.1   Rotary Angle Distribution
+                  be calculate as follows:                                 LLMs generate language sequences by sam-
+                           ⊤           d         ⊤    d
+                         q k =(R W x ) (R W x )                            pling from the learned distribution p(x)           =
+                           m n         m q m          n   k n       (2)    Q
+                                     ⊤       d                                  p(x |x      ), where the position order is im-
+                                =x WR Wx                                      m     m <m
+                                     m q n−m k n                           plicitly controlled by position embedding. This
+                           d           d T d                               meansthat changes in the distribution of position
+                  where R        =(R ) R (Suetal.,2021).
+                           n−m         m      n                            embedding will have an impact on the language
+                  2.2   Position Interpolation (PI)                        distribution. Thus, we need to model this distribu-
+                  Asshowninthelowerpart of Figure 2, PI (Chen              tion and maintain its consistency when extending
+                  et al., 2023) suggests linear interpolation to all di-   the context window.
+                                                                                                                           i
+                  mensions to keep position indices within the pre-           As illustrated in eq. (1), rotary angles Θ      =
+                                                                                                                           m
+                  trained range. When extending the context window         (mθ mod2π) of a specific dimension i are fi-
+                                                                               i
+                               ′                                   ′       nite discrete numbers during the pre-training stage,
+                  from L to L , with the scaling factor s = L /L,
+                           ˆ                                 ˆ             since 0 ≤ m < L,m ∈ N. Considering them as
+                  the new θi is scaled correspondingly as θi = θi/s.
+                  Although alleviating OOD position indices, this          sampled from the rotary angle distribution, we can
+                  approach is likely to disturb the original periodicity   statistically estimate this distribution. We divide
+                  and add unseen rotary angles.                            the rotary range [0,2π) uniformly into b intervals,
+                                                                           where the kth interval in ith dimension is defined:
+                  2.3   YaRN                                                                i    2kπ 2(k+1)π
+                                                                                    Interval =         ,               ,     (5)
+                  Foreachdimensionpair(2i,2i+1)inRoPE,Peng                                  k       b         b
+                  et al. (2023) define its wavelength as follows:          wherek = 0,...,b−1,wesetthedefaultvalueof
+                                                              2i           b to 360. The frequency of rotary angles Fi(L) in
+                        λ =λ          =2π/θ =2π·10000d.             (3)                                                 k
+                         2i     2i+1          i                            each interval is calculated as:
+                                                                                                                        
+                  YaRN (Peng et al., 2023) argues that high-                  i            i            i               	 
+                                                                            F (L) =  Θ ∈Interval , ∀m ∈ [0,L)  L.
+                  frequency dimensions should employ less scaling,            k            m            k
+                  significantly improving the performance of posi-                                                           (6)
+                  tional interpolation. They introduce the ratio r         Therefore, the discrete probability density function
+                                                                      i    of rotary angle distribution at the ith dimension is:
+                  between the original context size L and the wave-
+                                                                                        i               i       i
+                  length λ , which is r = L/λ , and apply different                   P (Θ∈Interval ) = F (L),               (7)
+                           i            i        i                                      L               k      k
+                                                                       7290

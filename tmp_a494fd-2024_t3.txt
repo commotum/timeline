@@ -1,0 +1,696 @@
+                                               HiRoPE:LengthExtrapolationforCodeModelsUsingHierarchical
+                                                                                                                                               Position
+                                                                                                                                                 ∗                                                                             ∗
+                                                                                           Kechi Zhang, Ge Li, Huangzhao Zhang, Zhi Jin
+                                                       KeyLabofHighConfidenceSoftwareTechnology(PKU),MinistryofEducation
+                                                                                        School of Computer Science, Peking University, China
+                                                                          {zhangkechi,lige,zhang_hz,zhijin}@pku.edu.cn
+                                                                                   Abstract                                                                                                Traditional Position Index
+                                              Addressing the limitation of context length in                                                                                                           The token at position 100
+                                              large language models for code-related tasks is                                                                                                                                           100th token
+                                                                                                                                                                                             (…preceding tokens…) return a + b
+                                              the primary focus of this paper. Existing LLMs                                                                                                                                       idx=100
+                                              are constrained by their pre-trained context                                                                                                 Hierarchical Position Index
+                                                                                                                                                                                                                                     th
+                                              lengths, leading to performance issues in han-                                                                                                           The token, in the 9 function,
+                                              dling long complex code sequences. Inspired                                                                                                                                at position 100
+                                                                                                                                                                                                                            def func1()…
+                                              byhowhumanprogrammersnavigatecode,we                                                                                                                                         9th function
+                                                                                                                                                                                                                            def func9()…
+                                                                                                                                                                                                                                         th
+                                              introduce Hierarchical Rotary Position Embed-                                                                                                                                         10000 token
+                                              ding (HiRoPE), a novel approach that enhances                                                                                                                                       return a + b
+                                              the traditional rotary position embedding into                                                                                                                                       idx=(9,100)
+                                              a hierarchical format based on the hierarchical                                                                    Figure 1: Illustration of the hierarchical position in
+                                              structure of source code. HiRoPE offers easy                                                                       source code, such as function-level and token-level po-
+                                              integration into existing LLMs without extra                                                                       sitions. We also show a simplified abstract syntax tree
+                                              training costs. Our method is extensively eval-                                                                    of the code in the bottom left corner.
+                                              uated with various LLMs, demonstrating stable
+                                              performance in tasks such as language model-
+                                              ing and long code completion. We also intro-
+                                              duce a new long code understanding task with                                                                            Various methods have been developed to extend
+                                              real-world code projects, in hopes of promoting                                                                    the context window of LLMs. Some approaches
+                                              further development in this code-related field.                                                                    involve fine-tuning on extensive texts (Xiong et al.,
+                                              Theoretically and experimentally, we find that                                                                     2023; Chen et al., 2023b,a; Peng et al., 2023),
+                                              HiRoPEalsoaddresses the out-of-distribution                                                                       which can be resource-intensive and potentially
+                                              issue in position encoding. Our HiRoPE signif-                                                                     lead to overfitting and loss of performance on
+                                              icantly expands the context length capabilities                                                                    shorter sequences. There are also some training-
+                                              of LLMs, enabling inference at lengths expo-
+                                              nentially greater than the training length.                                                                        free methods (Xiao et al., 2023; Han et al., 2023;
+                                      1 Introduction                                                                                                             Dingetal., 2023). However, these methods usually
+                                                                                                                                                                 usewindowattentionrelyonlocalinformation,and
+                                      Large language models (LLMs) such as LLaMA-2                                                                               ignore the long dependency in code. It is essential
+                                     (Touvron et al., 2023b), and CodeLLaMA (Rozière                                                                             to incorporate certain structural characteristics of
+                                      et al., 2023) have achieved significant performances                                                                       the code into position encoding to efficiently model
+                                      in code-related tasks. These Transformer-based                                                                             these long-distance code dependencies.
+                                      models excel in code comprehension and genera-                                                                                  Our work diverges from these methods by fo-
+                                      tion but face a notable challenge: the limitation                                                                          cusing on the hierarchical information of source
+                                      of maximum context length. LLMs are typically                                                                              code in position encoding, inspired by how human
+                                      pre-trained with a context length ranging from 2k                                                                          programmers navigate code. Traditional positional
+                                      to 16k tokens, which often proves insufficient for                                                                         encoding uses token counts for positioning, and
+                                      complex, extended source code. Exceeding this                                                                              treats code as plain text. However, human pro-
+                                      length limitation during inference may lead to per-                                                                        grammers often use hierarchical information in the
+                                      formance degradation for these code models, par-                                                                           code, representing positions in the code efficiently
+                                      ticularly in tasks like project-level code completion                                                                      through multi-level hierarchical positions. We pro-
+                                      or long code generation.                                                                                                   poseahierarchical position approach that identifies
+                                            *Corresponding authors.                                                                                              token positions within specific levels, such as func-
+                                                                                                                                                      13615
+                           Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), pages 13615–13627
+                                                                                          August 11-16, 2024 ©2024 Association for Computational Linguistics
+                   tions or statements. Figure 1 shows the comparison                ing language modeling and code completion.
+                   of the traditional position and our hierarchical po-              We also introduce a new long code under-
+                   sition. It is clear that the hierarchical positional              standing task with real-world code projects,
+                   encoding, benefiting from the full utilization of                 in hopes of promoting further development in
+                   structural information in the code, can more con-                 this code-related field.
+                   veniently locate positional information within long             • We demonstrate that HiRoPE effectively ad-
+                   code sequences. This method could more effec-                     dresses the out-of-distribution issue in posi-
+                   tively model long dependencies in source code.                    tion encoding, enabling inference at lengths
+                      Following such inspirations, we introduce a                    exponentially greater than the training length.
+                   novel approach, Hierarchical Rotary Position Em-
+                   bedding (HiRoPE), which enhances the popular                 2 Preliminary
+                   rotary position embedding (RoPE) (Su et al., 2024)
+                   into a hierarchical format. HiRoPE differentiates            We first introduce rotary position embedding in
+                   itself by extracting hierarchical information from           Transformer in Section 2.1. While existing work
+                   the source code and splitting the RoPE dimension             usually regards source code as plain text for model-
+                   to represent different hierarchical levels. It simul-        ing, we will also introduce the ignored hierarchical
+                   taneously models token-level relative location and           information in source code in Section 2.2.
+                   higher-level relative location information. We also          2.1   Rotary Position Embedding in
+                   add a window mechanism to ensure stability with                    Transformer
+                   short texts, aligning with traditional positional en-
+                   coding.                                                      Transformer models require explicit positional in-
+                      HiRoPEisaplug-and-play solution, easily inte-             formationtobeinjected,typicallyintheformofpo-
+                   grated into existing LLMs without additional train-          sitional encodings, to represent the order of inputs.
+                   ing costs. Our extensive experiments with popu-              Recently, the rotary position embedding (RoPE)
+                   lar LLMs on tasks like language modeling and to-             (Su et al., 2024) has become one of the most popu-
+                   ken completion in long code contexts (CodeParrot,            lar and elegant position encoding strategies and is
+                   2022) demonstrate its effectiveness. We compare              adopted by various LLMs (Touvron et al., 2023a,b;
+                   HiRoPE with existing length extrapolation meth-              Rozière et al., 2023). The main point of the RoPE
+                   odsusinglongcodebenchmarkssuchasLCC(Guo                      methodisusingabsolutepositionencodingtoshow
+                   et al., 2023) and RepoBench (Liu et al., 2023a). We          relative position information. Formally, given a po-
+                   also introduce a new long code understanding task            sition index m ∈ [0,L) and an embedding vector
+                   namedcodesymbolunderstanding with real-world                 x := [x ,x ,...,x         ]⊤, where d is the dimen-
+                                                                                         0   1        d−1
+                   code libraries. Theoretically and experimentally,            sion of the attention head, RoPE defines a complex
+                   wefind that HiRoPE effectively addresses the out-            function f(x,m) as follows:
+                   of-distribution issue (Liu et al., 2023b) in position
+                                                                                                         imθ              imθ
+                                                                                  f(x,m) = [(x +ix )e       0,(x +ix )e      1,...,
+                   encoding. Our HiRoPE significantly expands the                               0     1          2     3              (1)
+                                                                                                                        imθd/2−1 ⊤
+                                                                                                        (x    +ix     )e         ]
+                   context length capabilities of LLMs, enabling in-                                      d−2      d−1
+                   ference at lengths exponentially greater than the                          √
+                   training length. We believe our work with HiRoPE             where i :=      −1is the imaginary unit and θj =
+                                                                                       −2j/d
+                   not only addresses a critical length limitation in           10000        .
+                   LLMapplications but also opens new avenues for                  With RoPE, the self-attention score can be cal-
+                   long-structured data modeling research.                      culated as:
+                      In summary, we make the following main contri-
+                   butions:                                                       a(m,n) = Re⟨f(q,m),f(k,n)⟩
+                                                                                        d/2−1                                       
+                      • Wepropose Hierarchical RoPE (HiRoPE), en-                          X                                i(m−n)θ
+                                                                                  =Re         (q   +iq     )(k   −ik     )e        j
+                        hancing the traditional rotary position embed-                           2j     2j+1   2j     2j+1
+                        ding into a hierarchical format based on the                       j=0
+                                                                                     d/2−1
+                        hierarchical structure of source code, provid-            = X[(q k +q             k     )cos((m−n)θ )
+                                                                                             2j 2j    2j+1 2j+1                j
+                        ing improved extrapolation capabilities.                      j=0
+                                                                                     +(q k       −q      k )sin((m−n)θ )]
+                      • We conducted comprehensive experiments                           2j 2j+1    2j+1 2j                j
+                        with LLMs on various long code tasks involv-              =: a(m−n)                                           (2)
+                                                                          13616
+                   Here Re⟨...⟩ denotes the real part function for a             add a window mechanism, so that when dealing
+                   complex number. q and k are the query and key                 with short texts, our proposed method is consistent
+                   vector for a specific attention head. At each layer,          with the original positional encoding. An illustra-
+                   RoPEisappliedonbothqueryandkeyembeddings                      tion of our HiRoPE is shown in Figure 2.
+                   for computing attention scores. We can observe                3.1   Hierarchical format
+                   that the calculated attention score is only depen-
+                   dent on relative position m − n through trigono-              Unlike previous work that encodes the information
+                   metric functions, which reflects the core of RoPE             of each position as a number index m ∈ [0,L), we
+                   that uses the absolute position to represent the rel-         use a h-dimensional vector to represent the hierar-
+                   ative distance. Existing studies show that when               chical position index from high-level to low-level,
+                   dealing with long plain text, the RoPE will meet              where h is a hyperparameter that indicates how
+                   O.O.D issues where the value of m − n during                  manylevels of information we consider in the en-
+                   inference is unseen (Liu et al., 2023b), leading to           coding. We begin with a simple case that we set
+                   poor performances.                                            h=2andeachtokenpositioncanberepresented
+                                                                                 as (m ,m ). We use the higher and lower dimen-
+                                                                                        1    2
+                   2.2    Hierarchical Position in Source Code                   sions in RoPE respectively to represent these two
+                   Most LLMs treat source code as plain text, pro-               hierarchical position indexes, so the Equation 1 can
+                   cessing it as if it were ordinary natural language.           be rewritten as:
+                   However, it is essential to take the structural in-           f′(x,m1,m2) =
+                                                                                             im θ                         im θ
+                   formation of code into mind. Source code can be               [(x +ix )e 1 0,...,(x         +ix      )e   1 ds/2−1,
+                                                                                    0     1               d −2      d −1
+                                                                                                           s         s
+                   transformed into abstract syntax trees, and these                             im2θ                          im2θ      ⊤
+                                                                                 (x   +ix      )e    ds/2,...,(x     +ix     )e    d/2−1]
+                                                                                   d      d +1                   d−2     d−1
+                   tree structures contain rich hierarchical position in-           s      s
+                                                                                                                                       (3)
+                   formation. For example, the code snippets usually             There are a total of d dimensions in RoPE, and we
+                   can be split into several class or function units, and        use the lower d dimensions to represent the hierar-
+                   each class/function contains various types of code                             s
+                   blocks and statements. Figure 1 shows an illustra-            chical index of m1, and the remaining dimensions
+                                                                                 to represent m . When we apply it to self-attention,
+                   tion of the simplified abstract syntax tree for a code                        2
+                   snippet in the bottom left corner. This higher-level          wecangetanewcalculation of the attention score:
+                   positional information contains rich semantics of              hierarchicalAttn = Re⟨f(q,m ,m ),f(k,n ,n )⟩
+                                                                                                                 1   2        1   2
+                   source code, making it easy for human program-                    ds/2−1
+                                                                                  = X [(q k +q              k    )cos((m −n )θ )
+                   mers to locate and refer to different semantic parts.                      2j 2j    2j+1 2j+1          1    1   j
+                   Therefore, in manyexistingprogramrepresentation                     j=0
+                                                                                     +(q k       −q      k )sin((m −n )θ )]
+                   tasks, this hierarchical information plays a very im-                 2j 2j+1     2j+1 2j         1    1  j
+                                                                                         d/2−1
+                   portant role (Allamanis et al., 2018; Zhang et al.,               + X [(q k +q               k     )cos((m −n )θ )
+                   2023). However,fortoday’slargelanguagemodels,                                  2j 2j     2j+1 2j+1         2     2  j
+                                                                                       j=d /2+1
+                                                                                          s
+                   this high-level hierarchical positional information               +(q k       −q      k )sin((m −n )θ )]
+                                                                                         2j 2j+1     2j+1 2j         2    2  j
+                   is almost ignored. In this paper, we try to incorpo-           =: a′(m −n ,m −n )
+                   rate this hierarchical information into the position                    1    1   2     2
+                                                                                                                                       (4)
+                   encoding method.                                                                      ′
+                                                                                 Theattention score a (...) we ultimately obtained
+                   3 Hierarchical RoPE                                           through the inner product is quite elegant. It in-
+                                                                                 cludes the relative position distance of various hi-
+                   In this paper, we propose HiRoPE, a hierarchical              erarchical levels, and this form can be similarly
+                   rotary position encoding for source code model-               extended to the representation of more hierarchi-
+                   ing. Our proposed HiRoPE requires two modified                cal positional structures, as shown in Equation 5.
+                   stages: ❶ Hierarchical Format: We first take                  Specifically, when h = 1, it remains the same as
+                   the step to transfer the existing rotary position em-         the original RoPE.
+                   bedding into a hierarchical format. We verify our
+                   approach theoretically and find that the hierarchi-              hierarchicalAttnh
+                                                                                    =Re⟨f(q,m ,...,m ),f(k,n ,...,n ))⟩
+                   cal format can bring stable extrapolation ability for                            1         h          1        h
+                   RoPE.❷WindowMechanism. Toensureperfor-                           =: a′(m −m ,...,m −n )
+                                                                                              1      2          h     h
+                   mance stability without further training, we also                                                                   (5)
+                                                                           13617
+                                                                                       Relative Distance in Attention                             HiRoPE
+                                            Absolute Distance                                           0                                            0
+                                              in Code Tokens                                            1 0                                          1 0
+                                                                                          Low dim       2 1 0                         Low Dim:       2 1 0
+                                                                                        (Token-level)   3 2 1 0                    Same as original  3 2 1 0
+                                                                                                        4 3 2 1 0                                    4 3 2 1 0
+                                                                                                        5 4 3 2 1 0                                  5 4 3 2 1 0
+                                                    hierarchial pos_idx:                                0                                            0
+                                                 (function_idx,token_idx)                               0 0                                          1 0
+                                             (0,0) (0,1) (0,2) (0,3) (0,4) (1,5) (1,6)   High dim       0 0 0                        High Dim:       2 1 0
+                                                                                        (Func-level)    0 0 0 0                   Add  Window = 3    2 2 1 0
+                                                                                                        1 1 1 1 0                                    3 3 2 1 0
+                                                                                                        1 1 1 1 0 0                                  3 3 3 2 1 0
+                           Figure 2: Overview of our HiRoPE. We transfer the existing position encoding method into a hierarchical format
+                           (i.e.,, function-level and token-level) and apply it across different dimensions. We also add a window mechanism to
+                           ensure performance stability (in this figure we set L                                     to 3).
+                                                                                                         window
+                               It indicates that the RoPE has the potential to be                                             Task                     Dataset             Avg. Length     Samples
+                           transformed into a hierarchical form, and we can                                                                                 0-2048            1031.46         100
+                                                                                                                           LongCode          CodeParrot     2048-4096         3667.76         100
+                           use the hierarchical position index in the source                                          Language Modeling                     4096-8192         7074.57         100
+                           code for this new form of RoPE, as shown in the                                                                                  8192-16384       14353.94         100
+                                                                                                                           LongText                 ReRoPE-eval              21367.55         200
+                           left part of Figure 2.                                                                     Language Modeling
+                                                                                         −2j/d                           CodeSymbol           Real-world Code Project        12976.89         56
+                               Theoriginal RoPE sets θj to 10000                                 , which                 Understanding
+                           meansthat the lower the dimension, the higher its                                               LongCode                     LCC                  17855.73         300
+                           frequency, and the more emphasis on modeling the                                               Completion                 RepoBench               21103.42         300
+                           relative position information of short distances (Pal                                            Table 1: Statistics of the evaluation datasets
+                           et al., 2023). Therefore, in our hierarchical format,
+                           we use those low dimensions to represent token-
+                           level information, and high dimensions to represent                                      ble in various scenarios with arbitrary input lengths.
+                           higher-level hierarchical information, such as the                                       Anillustration of the final HiRoPE is shown in the
+                           function level or statement level in source code.                                        right part of Figure 2.
+                           3.2      WindowMechanism                                                                 4 ExperimentSetup
+                           To ensure performance stability without further
+                           training, we follow existing extrapolation methods                                       In this section, we aim to answer the following
+                           (Xiao et al., 2023; Han et al., 2023) and add a win-                                     research questions through a series of experiments.
+                           dowmechanism. Specifically, when dealing with                                            Detailsoftheevaluationdatasetstatisticsareshown
+                           short code snippets, we believe that existing LLMs                                       in Table 1.
+                           have already mastered the ability to model these                                             RQ1. How is the language modeling capa-
+                           short semantic structures from vast pre-training                                         bility of HiRoPE on long code sequences? We
+                           code datasets. Therefore, when calculating the at-                                       evaluate HiRoPE’s language modeling ability on
+                           tention score, we directly use the original RoPE for                                     CodeParrot-valid dataset (CodeParrot, 2022) in
+                           those parts that are shorter than a specific length                                      Section 5.1.
+                           Lwindow. And for those long context parts that the                                           RQ2. How is the language modeling capa-
+                           distance is larger than Lwindow, we transfer them to                                     bility of HiRoPE on long natural language se-
+                           the new hierarchical format by adding Lwindow −1                                         quences? Thenatural language lacks the explicit
+                           to each high-level distance. Our subsequent experi-                                      hierarchical structure information found in code,
+                           mentshaveprovedthatevenwithoutanyadditional                                              so we have made some modifications: we set every
+                           training, this window mechanism can bring strong                                        128 tokens as a segment, and encode it as higher-
+                           stability, making the model’s performance applica-                                       level position information. We use the evaluation
+                                                                                                            13618
+                                   LLaMA-2   ShearedLLaMA   TinyLLaMA   Vicuna     without training, including NTK (bloc97, 2023),
+                     Para.            7B          1.3B         1.1B      7B        ReRoPE (Su, 2023) and Self-Extend (Jin et al.,
+                     L               4096         4096         2048      2048
+                       pretrain                                                    2024). ReRoPE sets a window when calculating
+                     Vocab Size      32000       32000        32000     32000      the relative distance, and clips those distances out-
+                     Hidden Size     4096         2048         2048      4096
+                     Attention Head   32          16            32       32        side the window. Self-Extend uses group atten-
+                     RoPEDim          128         128           64       128       tion with the floor operation to calculate relative
+                                Table 2: Statistics of base LLMs                   distances. These methods have shown impressive
+                                                                                   performance on long context language modeling.
+                    dataset from ReRoPE-eval 1 (Su, 2023) in Section               Wealsomakecomparisonswiththeoriginal RoPE
+                    5.2. It is a dataset curated from Common Crawl                 method, which is denoted as “origin” in the first
+                    (Crawl, 2023), refined by length-based selection               rowofTable4,5and6.
+                    criteria.                                                      4.3    Inference Settings
+                       RQ3. Howdoes HiRoPE perform in under-
+                    standingreal-world,long-codeprojects? Toeval-                  In our experiments, our HiRoPE uses a two-layer
+                    uate the effect of the method in real long-code sce-           hierarchy, accounting for the position index at the
+                    narios, we design a new evaluation task on real                token and function/class levels of the source code
+                    code projects: Code Symbol Understanding in                    based on tree-sitter (Brunsfeld et al., 2024). For
+                    Section 5.3. Given a long code file, the model                 long context in natural language, we make some
+                    is required to output all the function names and               modifications and set every 128 tokens as a higher-
+                    class names defined in it. We extract long code                level segment. We set the split dimension half of
+                    files from popular open-sourced code repositories,             the total: ds = 0.5 ∗ dtotal, and choose a window
+                    especially those newly updated code projects to                length: Lwindow = 512. We keep the hyperparam-
+                    avoid data leakage. Details of these code projects             eters the same for those state-of-the-art baselines
+                    are shown in Table 3.                                          for a fair comparison. We use greedy search decod-
+                       RQ4. HowdoesHiRoPEperformonexisting                         ing for generation. We use 4 A6000 GPUs for all
+                    benchmarks for long code completion?                   We      experiments.
+                    further perform the evaluation using two long code
+                    completion benchmarks: LCC (Guo et al., 2023)                  4.4    Details of Code Symbol Understanding
+                    and RepoBench (Liu et al., 2023a) in Section 5.4.                     task
+                       RQ5. Whatistheimpactofvarioussettings
+                    in HiRoPE? Todemonstrate that each setting in                  In RQ3, we design a new task: Code Symbol Un-
+                    the design of our HiRoPE works, we carry out                   derstanding. Given a long code context, the model
+                    extensive ablation studies that include the dimen-             is required to output all the function names and
+                    sions’ split settings, the window mechanism, and               class names defined in it. We extract long code
+                    the high-level segment split strategy in Section 5.5.          files from popular open-sourced code repositories,
+                    4.1   Base LLMs                                                especially those newly updated code projects to
+                                                                                   avoid data leakage. We construct a static analysis
+                    Themodelsusedinclude LLaMA-2(7B)(Touvron                       tool to get the abstract syntax tree of each code file,
+                    et al., 2023b), Sheared-LLaMA (1.3B) (Xia et al.,              and then get all defined function and class names
+                    2023), TinyLlama (1.1B) (Zhang et al., 2024), and              in it as the ground-truth output symbols. Details
+                    Vicuna (7B) (Chiang et al., 2023). This model                  of these code projects are shown in Table 3. We
+                    choice is driven by their widespread use and popu-             show the number of files we extracted from each
+                    larity, as well as the constraints of our computing            project as well as the average length of these code
+                    capabilities. Details are provided in Table 2.                 files. We also show the average number of symbols
+                    4.2   Baselines                                                and their location statistics in the table.
+                                                                                      In Figure 3 we show an illustration of our pro-
+                    Considering training on long context sequences                 posed new task. We replace the input_code part
+                    is resource-intensive and time-consuming, we fo-               with each code file, and use the task prompt to
+                    cus on those popular length extrapolation methods              guide models to extract and output all defined func-
+                       1https://github.com/bojone/rerope/                          tion and class names in input code. We also show
+                    blob/main/samples_15k.jsonl                                    an example output in the figure.
+                                                                              13619
+                                   Github Repo              File Nums   File Length  Avg. Symbols    Min. Symbol Loc   Max. SymbolLoc
+                                   ddbourgin/numpy-ml           2          14055          15               927              10845
+                                   gradio-app/gradio            1          12938          11               272              12265
+                                   huggingface/accelerate       4         12814.5         11.5             379              12500
+                                   huggingface/diffusers        4        13324.75         16.2             276               8347
+                                   huggingface/optimum          1          13491          11               580              12868
+                                   huggingface/peft             1          15457          11               514               8525
+                                   huggingface/transformers     18        12919.4         12.7             239              14514
+                                   langchain-ai/langchain/      2          14195          11.5             285              10790
+                                   numpy/numpy                  6         11158.8         14               100              12026
+                                   tensorflow/tensorflow        17        13191.7         13.4             285              14920
+                                   Total                        56       12976.89        13.17             100              14920
+                     Table 3: Statistics of Code Symbol Understanding task. We show the number of files we extracted from each project
+                     as well as the average length of these code files. We also show the average number of symbols and their location
+                     statistics in the table.
+                               def add_func(a,b):           Input_code                 range for those long source codes. Specifically, for
+                                    return a + b                                       ultra-long code sequences (length over 8192), Hi-
+                                         …                                             RoPEachieves the best results in all metrics and
+                               # Task: Extract all defined function                    under all settings. This fully demonstrates the ad-
+                               names and class names from the                          vantagesofourHiRoPEinmodelinglongsequence
+                               above code snippet.              Task                   codes. Our method also shows generalization abil-
+                               extracted_entities =            prompt                  ities. The four models evaluated have differences
+                                                 An example output:                    in model parameters, pre-training data, and pre-
+                                                 [add_func, …,]                        training length, yet our method has shown very
+                                                                                       good results on all these models.
+                     Figure 3: Illustration of Code Symbol Understanding                   It is worth noting that our method does not im-
+                     task. We use the task prompt to guide models to extract           pair the model’s performance on shorter code. We
+                     and output all defined function and class names in input          noted that some popular length extension meth-
+                     code.                                                             ods, such as NTK, can impair the performance on
+                                                                                       short code. Thanks to our window mechanism, our
+                     5 ResultsandAnalyses                                              method stays on par with the baseline model on
+                                                                                       shorter datasets (length 0-2048) and even surpasses
+                     5.1    LongCodeLanguageModeling                                   the baseline on some metrics. HiRoPE demon-
+                     Language modeling is the most fundamental and                     strates consistently excellent language modeling
+                     the least requirement for a LLM. We evaluate Hi-                  capabilities in various code length scenarios.
+                     RoPE’slanguage modeling ability on CodeParrot-                    5.2    LongTextLanguageModeling
+                     valid dataset. We divide the original dataset into
+                     different length intervals. The experiment results                In addition to testing the ability of language mod-
+                     are shown in Table 4. A smaller loss and a smaller                eling on long code, we also evaluate its effects on
+                     ppl indicate a stronger language modeling capacity                long natural language texts. We set every 128 to-
+                     of the corresponding model. Conversely, a larger                  kens as a high-level segment. We use the ReRoPE-
+                     acc suggests a stronger capability of the respective              eval dataset, and results are shown in Table 5. In
+                     modelincodecompletiononthegivendataset. The                       addition to calculating metrics on all tokens (refer
+                     origin indicates that we directly use the original                to "all_..." in the table), we also record metrics on
+                     setting of the model to evaluate.                                 the last 2048 tokens of each data (refer to "last_...").
+                        Experiments show that original LLMs perform                        Wefind that our HiRoPE can also achieve sig-
+                     badly on the long code language modeling task.                    nificant improvement. HiRoPE achieves the best
+                     Even when the length slightly exceeds the pre-                    results on almost all metrics. Another interesting
+                     training length, the ppl of all models exceed 45,                 observation is that, given sufficient context, the
+                     demonstrating their essential lack of modeling and                model can utilize this contextual information to
+                     understanding capabilities for longer codes. When                 perform better when generating later tokens. That
+                     weapply length extrapolation methods, all meth-                   is to say, the metrics of "last_..." should be better
+                     ods can reduce the loss and ppl into an acceptable                than those of "all_...". However, we observe that
+                                                                                 13620
+                                                             Dataset Length:          0-2048                 2048-4096                  4096-8192                   8192-16384
+                                            Para. Lpretrain                   loss ↓   ppl ↓   acc ↑   loss ↓   ppl ↓   acc ↑   loss ↓    ppl ↓     acc ↑   loss ↓     ppl ↓     acc ↑
+                                                             origin           0.8579 2.3583 0.8065 0.9820 2.6698 0.7551          nan       nan       nan     nan       nan        nan
+                                                             NTK              1.1107 3.0365 0.7472 1.0469 2.8488 0.7414 0.9858           2.6800    0.7729 1.0181      2.7678     0.7630
+                           LLaMA-2           7B      4096    ReRoPE           0.8593 2.3615 0.8054 0.7278 2.0705 0.8121 0.6633           1.9411    0.8411 0.7187      2.0518     0.8243
+                                                             Self-Extend      0.8588 2.3604 0.8055 0.7209 2.0562 0.8147 0.6519           1.9192    0.8441 0.6983      2.0103     0.8290
+                                                             HiRoPE           0.8586 2.3598 0.8060 0.7185 2.0514 0.8153 0.6482           1.9121    0.8452 0.6821      1.9780     0.8332
+                                                             origin           1.2874 3.6235 0.7341 1.3103 3.7074 0.7019 3.8381           46.4375   0.4866 5.6958     297.6160    0.3211
+                                                             NTK              1.6242 5.0744 0.6607 1.5047 4.5029 0.6619 1.3708           3.9383    0.7015 1.3657      3.9183     0.6964
+                           ShearedLLaMA 1.3B         4096    ReRoPE           1.2897 3.6316 0.7332 1.0497 2.8567 0.7560 0.9699           2.6376    0.7846 1.0044      2.7303     0.7716
+                                                             Self-Extend      1.2892 3.6300 0.7337 1.0428 2.8371 0.7586 0.9568           2.6034    0.7874 0.9804      2.6656     0.7768
+                                                             HiRoPE           1.2888 3.6285 0.7338 1.0382 2.8242 0.7600 0.9514           2.5894    0.7885 0.9660      2.6273     0.7811
+                                                             origin           1.0788 2.9410 0.7594 4.1732 64.9235 0.4506 6.6603 780.8009 0.2630 7.9938 2962.5881                 0.1682
+                                                             NTK              1.1837 3.2664 0.7405 1.0952 2.9899 0.7256 0.9719           2.6430    0.7733 1.0021      2.7240     0.7626
+                           TinyLlama        1.1B     2048    ReRoPE           0.9703 2.6388 0.7877 0.8251 2.2821 0.7905 0.7685           2.1565    0.8210 0.8275      2.2877     0.8040
+                                                             Self-Extend      0.9698 2.6375 0.7856 0.8123 2.2530 0.7931 0.7577           2.1333    0.8235 0.8119      2.2521     0.8073
+                                                             HiRoPE           0.9743 2.6493 0.7881 0.8268 2.2861 0.7981 0.7683           2.1562    0.8208 0.8040      2.2345     0.8094
+                                                             origin           1.1787 3.2502 0.7551 4.6046 99.9449 0.4473 7.7207 2254.4730 0.2597 9.9449 20846.3927 0.1601
+                                                             NTK              1.3417 3.8255 0.7150 1.2587 3.5208 0.7068 1.1809           3.2573    0.7344 1.1912      3.2911     0.7285
+                           Vicuna            7B      2048    ReRoPE           1.0716 2.9201 0.7800 0.8760 2.4012 0.7912 0.8138           2.2566    0.8182 0.8580      2.3585     0.8023
+                                                             Self-Extend      1.0710 2.9183 0.7802 0.8735 2.3953 0.7891 0.7988           2.2228    0.8220 0.8351      2.3049     0.8066
+                                                             HiRoPE           1.0707 2.9174 0.7799 0.8724 2.3926 0.7903 0.8002           2.2261    0.8213 0.8314      2.2965     0.8080
+                         Table 4: Language Modeling Ability on CodeParrot-valid dataset. “nan” indicates that the model performs
+                         significantly poor on the given setting.
+                                                    last loss ↓ last ppl ↓ last acc ↑ all loss ↓ all ppl ↓ all acc ↑                                             LongCode
+                                         origin      9.3083   >1000   0.0194   7.3486  >1000 0.1466                                   CodeSymbol                Completion
+                                         NTK         2.1338   8.4468  0.5553   2.2745 9.7234    0.53                                  Understanding             (Edit Sim ↑)
+                          TinyLlama      ReRoPE      1.8448   6.327   0.6008    1.903  6.7062 0.5867                                    (Recall ↑)        LCC             RepoBench
+                                         Self-Extend 1.7904   5.9916  0.6089   1.8749 6.5201 0.5908                                                 0-4k 4k-8k >8k 0-4k 4k-8k >8k
+                                         HiRoPE      1.7829   5.9474  0.6102   1.8717 6.4991 0.5913                           origin     0.0012     54.5   4.36  4.08  8.29  6.79  6.59
+                                         origin      8.5027   >1000   0.0412   5.5237  250.5   0.274         LLaMA-2         ReRoPE      0.0837     65.83 67.43 63.22 52.82 47.85 45.38
+                                         NTK         2.3596  10.5863  0.5159   2.4056 11.0853 0.5059                         HiRoPE      0.0911     66.61 69.93 65.38 52.20 53.30 51.24
+                          ShearedLLaMAReRoPE         1.7952   6.0205   0.605   1.8514 6.3687 0.5932
+                                         Self-Extend 1.7662   5.8486  0.6105   1.8348  6.264   0.5966                         origin     0.0067     27.17 3.33   2.52  4.39  2.94  2.35
+                                         HiRoPE      1.7622   5.8252  0.6113   1.8332 6.2536 0.5963          ShearedLLaMA ReRoPE         0.0743     35.56 36.1 36.91 34.03 37.37 33.44
+                                                                                                                             HiRoPE      0.0809     46.13 51.67 46.33 40.17 39.98 39.52
+                         Table 5: Language Modeling Ability on ReRoPE-eval                                                    origin     0.0067     17.29 5.45   6.28  7.91  7.53  7.07
+                                                                                                             TinyLLaMA       ReRoPE      0.1214     49.22 57.20 53.11 37.72 40.50 39.38
+                         dataset. In addition to calculating metrics on all tokens                                           HiRoPE      0.1415     35.17 42.83 49.92 42.48 43.53 39.82
+                         (refer to "all_..."), we also record metrics on the last                                             origin     0.0067     18.47 2.56   2.76  3.67  2.49  2.32
+                                                                                                             Vicuna          ReRoPE      0.0636     57.95 59.73 58.52 42.78 43.65 45.23
+                         2048 tokens of each data (refer to "last_..." ).                                                    HiRoPE      0.0721     63.42 62.01 64.42 37.10 42.30 45.93
+                                                                                                            Table 6: Performance on Code Symbol Understanding
+                         for the original model, the situation is contrary to                               and Long Code Completion.
+                         this. We attribute this to the fact that the original
+                         model’s ability to model long sequence languages                                   thetic evaluation (gkamradt, 2023), but our code
+                         is so poor that it can’t utilize that distant contextual                           symbol understanding task is more realistic and
+                         information at all. Our HiRoPE can significantly                                   code-related. Task examples are shown in Figure 3.
+                         improve the model’s ability to handle long codes                                   Weuserecall as the evaluation metric.
+                         and textual data, without requiring any training,                                      Our experiments in Table 6 have proven that
+                         reflecting its practical value.                                                    this seemingly simple task is extremely difficult for
+                         5.3      CodeSymbolUnderstanding                                                   LLMs. Wealsoevaluate this task using GPT-3.5-
+                                                                                                            16k (GPT-3.5, 2023) and find that its result is only
+                         To evaluate the effect of the method in real long-                                 0.72. All these LLMs are not ideal in this more
+                         code scenarios, we have designed an evaluation                                     realistic code symbol understanding task. Our Hi-
+                         task for real code projects: Code Symbol Under-                                    RoPEhasbeenimprovedfromtheperspectiveof
+                         standing. Given a long code context, the model is                                  positional encoding, enabling the model to per-
+                         required to output all the function names and class                                ceive structural hierarchy changes in the code, thus
+                         names defined in it. These pre-defined functions                                   achieving relatively good results. Compared to the
+                         and classes are reused frequently in actual code de-                               original models, our HiRoPE can achieve almost a
+                         velopment. For code models, understanding which                                    hundredfold improvement on average across four
+                         functionsandclassesaredefinedinthecodeproject                                      models. We release our dataset in hopes of pro-
+                         is a basic capability requirement. This task is in-                                moting further development in this code-related
+                         spired by the popular "Needle in a Haystack" syn-                                  field.
+                                                                                                     13621
+                                                                               and [4k-8k]. For shorter code data, we observe
+                                                                               a decreasing trend in ppl as the window size in-
+                                                                               creases. This validates that the window mechanism
+                                                                               can allow the model to retain its original computa-
+                                                                               tional mechanisms and better handle short-distance
+                                                                               dependencies. For longer code data, ppl behaves
+                                                                               anomalously when the window size is very small.
+                                                                               This also indicates that window mechanisms play a
+                                                                               key role in modeling long-distance dependencies.
+                                                                                  Wechangethehigh-level segment split strategy.
+                   Figure 4: Ablation Studies including the settings of the    In addition to dividing the hierarchy at the func-
+                   dimension split, the window mechanism, and the high-        level, we also try to split at the code statement
+                   level segment split strategy.                               level as well as implementing a strategy of split-
+                                                                               ting continuous n-tokens as a high-level segment
+                   5.4   LongCodeCompletion                                    (n = 128, 512, 1024). Experiments show that divid-
+                                                                               ing at the function level achieves the best results.
+                   Wefurther perform the evaluation using two real-            Thesemantics within a function are relatively simi-
+                   world long code completion benchmarks: LCC                  lar, while the semantics between functions usually
+                   and RepoBench. Given a long code context, the               vary greatly. It is necessary to divide long code
+                   model is required to generate the complete next             sequences into levels according to functions and
+                   line of code. We follow the experiment settings             classes.
+                   in Longbench-E (Bai et al., 2023) and use edit
+                   similarity as metrics. Results are shown in Table 6.        6 Discussion
+                      OurHiRoPEalsoachievesstable improvements                 6.1    Mitigating Out-of-Domain Issues in Long
+                   on this long code-related task. The input code con-                Contexts
+                   text is filled with various predefined functions and
+                   classes. Our method can effectively sense these             Existing work (Liu et al., 2023b) shows that LLMs
+                   contents, handle these complex dependencies, and            fail on input out of the pretraining context win-
+                   successfully use those functions that are defined           dowbecause of the Out-Of-Distribution (O.O.D)
+                   far away during generation. Under two dataset sce-          issues. We take the inspiration to explain it from
+                   narios, our method consistently outperforms other           a cyclical perspective. In RoPE, each dimension
+                   baseline settings. The results reflect the practicality     is composed of trigonometric functions, and its pe-
+                                                                                                                 2π                  2j
+                   and generalization ability of our method.                   riod can be denoted as T =            =2π∗10000d.
+                                                                                                           j     θj
+                   5.5   Ablation Study                                        Onlythose dimensions that have been completely
+                                                                               trained within the pre-training length can be con-
+                   In our experiments, ❶ we set the split dimension            sidered as a reliable part for extrapolation, others
+                   half of the total ds = 0.5 ∗ dtotal and ❶ choose a          wouldencounter O.O.D issues when dealing with
+                   window length ❷ Lwindow = 512. ❸ Our hierar-                problems of extrapolation. We can then get those
+                   chical position includes both the token and func-           reliable dimensions by calculating T < L                .
+                                                                                                                        j      pretrain
+                   tion/class levels of the source code. We further            The calculated dim split is 0.70 and 0.63 for the
+                   carry out extensive ablation studies including these        four models in our experiments (Table 7). We are
+                   settings and results are shown in Figure 4.                 surprised to find that it is similar to the ratio we
+                      Wechoosedifferent dimension splitting ratios to          obtained in the ablation study in Figure 4. Our
+                   observe the performance of LLaMA-2 and TinyL-               HiRoPE uses those high dimensions to represent
+                   LaMA in terms of ppl on CodeParrot [4k-8k].                 higher-level position index information, and prop-
+                   Whenthesplit ratio is 1, the HiRoPE degenerates             erly applies them to smaller input numbers, thus
+                   into the original model. Specifically, both models          mitigating O.O.D issues in long code contexts.
+                   showsignificant fluctuations in ppl between ratios             Thetraditional RoPE uses a number m as the po-
+                   of [0.6,0.7]. We will explore the reason in Section         sition index to represent position information. Due
+                   6.1.                                                        to the O.O.D problem in high dimensions, its reli-
+                      We change the window length to observe the               able range is {m ∈ [0,L             ]}. In our HiRoPE,
+                                                                                                          pretrain
+                   performance of LLaMA-2 on CodeParrot [0-2k]                 we use a two-layer hierarchy as (m ,m ) and
+                                                                                                                           1    2
+                                                                          13622
+                                                                            maydecreasequitedrastically. Recent studies have
+                                                                            explored ways to expand the context length. Po-
+                                                                            sition Interpolation (Chen et al., 2023b) linearly
+                                                                            down-scales the input position indices to match the
+                                                                            original context window size of LLMs with several
+                                                                            training steps. Similar studies (Chen et al., 2023a;
+                                                                            Peng et al., 2023; Chen et al., 2023c; Guo et al.,
+                  Figure 5: Performance of Short-ShearedLLaMA on            2023) also require fine-tuning. However, these
+                  CodeParrot dataset. The training length is set to 128.    methods need additional tuning in longer contexts
+                  Theresults suggest our method has the potential to ex-    or face a disastrous collapse after the extrapolation
+                  trapolate code models at an exponential length.           bound. There are also some approaches without
+                                                                            training. Some studies use window attention to clip
+                  the reliable range is {m     ∈ [0,L          ], m   ∈     the long sequences such as (Xiao et al., 2023; Han
+                                             1         pretrain     2       et al., 2023; Ding et al., 2023)). However, these
+                  [0,L         ]}. It proves that under ideal circum-
+                       pretrain                                             methods rely on local information and may not ef-
+                  stances, HiRoPE can effectively extrapolate to the        fectively expand the context window, struggling
+                  length of Lh in an exponential ratio, where h is the
+                  hierarchy layer. We attempt to explore the upper          with long dependencies in code. Recently, some
+                  limit of our HiRoPE’s extrapolation performance           methods have explored modifying the relative dis-
+                  in the experiment in the next Section 6.2.                tance to extend the extrapolation length (bloc97,
+                                                                            2023; Su, 2023; Jin et al., 2024) and focus on the
+                  6.2   UpperLimitofHiRoPE’sPerformance                     natural language text. We pursue the research line
+                  Due to computational resource constraints, we             of training-free methods and propose considering
+                  made the following modifications based on Sec-            the structural information of the code when model-
+                  tion 5.1: ❶ Firstly, in order to obtain a base            ing the position. Our work is inspired by the hierar-
+                  model of suitable length, we designed a training          chical embedding in our former work (Zhang et al.,
+                  strategy to obtain a shorter context length LLM,          2023). We notice hierarchical positions are used in
+                  namedShortLLM:Weusethepositioninterpola-                  some concurrent work (He et al., 2024; Lu et al.,
+                  tion (Chen et al., 2023b) method reversely to re-         2024) in NLP and CV domains. We expand the
+                  duce the input length of some mainstream models           traditional RoPE method into a hierarchical format
+                  to L      =128atasmallertraining cost. Specifi-           and prove the effectiveness of our HiRoPE through
+                       short                                                theoretical derivations and practical experiments.
+                  cally, given a position index m in the original RoPE,        .
+                  we use the new index α          ∗ m to replace it as
+                                             short
+                  shown in Table 8. We fine-tune short models for           8 Conclusion
+                  1000 steps. ❷ We resample the CodeParrot-valid
+                  dataset, further refining it into smaller distance        WeproposeHiRoPE,atraining-free solution to the
+                  ranges, each range containing up to 50 test samples.      context length limitation in LLMs for long code
+                  Theresults are shown in Figure 5 and 6.                   modeling. We integrate the hierarchical structure
+                     Our trained ShortLLM successfully demon-               of source code into position encoding of LLMs.
+                  strates the expected performance: the performance         Experiments demonstrate that HiRoPE achieves
+                  drastically decreases after surpassing the training       stable improvements on diverse code-related tasks.
+                  length Lshort = 128. We then apply our Hi-                Ourworknotonlyaddresses a critical limitation in
+                  RoPEaswellasthebaselineReRoPE.OurHiRoPE                   LLMapplications but also opens new avenues for
+                  demonstrates a more stable trend on long code se-         long structured data modeling research.
+                                                               2
+                  quences, even at the position close to L          . It
+                                                               short        9 Acknowledgments
+                  suggests our method has the potential to extrapo-
+                  late code models at an exponential length.                This research is supported by the National Key
+                  7 RelatedWork                                             R&DProgramunderGrantNo. 2023YFB4503801,
+                                                                            the National Natural Science Foundation of China
+                  Existing large language models are originally             under Grant No. 62072007, 62192733, 61832009,
+                  trained with fixed context sizes. When dealing            62192730, and the Major Program (JD) of Hubei
+                  with longer sequences, the model’s performance            Province (No.2023BAA024).
+                                                                       13623
+                 Limitations                                              ous length extrapolation for large language models.
+                                                                         CoRR,abs/2310.16450.
+                 There are several limitations to our work that we
+                 aim to address:                                       ShouyuanChen,ShermanWong,LiangjianChen,and
+                   Firstly, constrained by computational resources,      Yuandong Tian. 2023b. Extending context window
+                 wechoosemodelsbelow7Bforexperiments. The                 of large language models via positional interpolation.
+                                                                         CoRR,abs/2306.15595.
+                 fourmodelsevaluatedhavedifferencesinmodelpa-          Yuhan Chen, Ang Lv, Ting-En Lin, Changyu Chen,
+                 rameters, pre-training data, and pre-training length,   Yuchuan Wu, Fei Huang, Yongbin Li, and Rui Yan.
+                 yet our method has shown very good results on all        2023c. Fortify the shortest stave in attention: En-
+                 these models. We will attempt to conduct experi-         hancing context awareness of large language models
+                 ments on models with larger parameters and more          for effective tool use. CoRR, abs/2312.04455.
+                 complex structures to promote the development of      Wei-Lin Chiang, Zhuohan Li, Zi Lin, Ying Sheng,
+                 the LLMcommunity.                                        ZhanghaoWu,HaoZhang,LianminZheng,Siyuan
+                   Next, our discussion on the upper limit of the         Zhuang, Yonghao Zhuang, Joseph E Gonzalez, et al.
+                 HiRoPE’sperformance tends to lean towards theo-          2023. Vicuna: An open-source chatbot impressing
+                 retical derivation. We have designed a set of Short-     gpt-4 with 90%* chatgpt quality. See https://vicuna.
+                                                                          lmsys. org (accessed 14 April 2023).
+                 LLMexperimentstoproveourconclusions. It sug-          CodeParrot. 2022. https://huggingface.co/codeparrot.
+                 gests our method has the potential to extrapolate
+                 code models at an exponential length, so for the      Common Crawl. 2023. Common crawl. https://
+                 LLaMA-2modelwith L                =4096, we can          commoncrawl.org/.
+                                          pretrain
+                                                         2
+                 theoretically extrapolate its length to L       ≈
+                                                         pretrain      Jiayu Ding, Shuming Ma, Li Dong, Xingxing Zhang,
+                 16,000,000. We are not clear whether some set-           Shaohan Huang, Wenhui Wang, Nanning Zheng, and
+                 tings will implicitly affect the performance of the      Furu Wei. 2023. Longnet: Scaling transformers to 1,
+                 model. We will continue to explore the robust-           000, 000, 000 tokens. CoRR, abs/2307.02486.
+                 ness of this experimental idea and try to explore     gkamradt. 2023. Needle in a haystack - pressure testing
+                 the maximumperformanceofourmethodonreal                  llms.    https://github.com/gkamradt/
+                 LLMs.                                                    LLMTest_NeedleInAHaystack/tree/
+                                                                          main.
+                 References                                            GPT-3.5. 2023.    https://platform.openai.
+                                                                          com/docs/models/gpt-3-5.
+                 Miltiadis Allamanis, Marc Brockschmidt, and Mah-      Daya Guo, Canwen Xu, Nan Duan, Jian Yin, and Ju-
+                   moud Khademi. 2018. Learning to represent pro-         lian J. McAuley. 2023. Longcoder: A long-range pre-
+                   grams with graphs. In 6th International Conference     trained language model for code completion. In In-
+                   on Learning Representations, ICLR 2018, Vancouver,     ternational Conference on Machine Learning, ICML
+                   BC, Canada, April 30 - May 3, 2018, Conference        2023, 23-29 July 2023, Honolulu, Hawaii, USA,
+                   Track Proceedings.                                     pages 12098–12107.
+                 Yushi Bai, Xin Lv, Jiajie Zhang, Hongchang Lyu,       Chi Han, Qifan Wang, Wenhan Xiong, Yu Chen, Heng
+                   Jiankai Tang, Zhidian Huang, Zhengxiao Du, Xiao       Ji, and Sinong Wang. 2023. Lm-infinite: Simple
+                   Liu, Aohan Zeng, Lei Hou, Yuxiao Dong, Jie Tang,       on-the-fly length generalization for large language
+                   and Juanzi Li. 2023. Longbench: A bilingual, mul-      models. CoRR, abs/2308.16137.
+                   titask benchmark for long context understanding.
+                   CoRR,abs/2308.14508.                                Zhenyu He, Guhao Feng, Shengjie Luo, Kai Yang,
+                                                                          DiHe,Jingjing Xu, Zhi Zhang, Hongxia Yang, and
+                 bloc97.  2023.       Ntk-aware   scaled  rope   al-      Liwei Wang. 2024. Two stones hit one bird: Bilevel
+                   lows llama models to have extended (8k+)               positional encoding for better length extrapolation.
+                   context   size  without   any   fine-tuning  and      CoRR,abs/2401.16421.
+                   minimal    perplexity degradation.       https:
+                   //www.reddit.com/r/LocalLLaMA/                      Hongye Jin, Xiaotian Han, Jingfeng Yang, Zhimeng
+                   comments/14lz7j5/ntkaware_scaled_                     Jiang, Zirui Liu, Chia-Yuan Chang, Huiyuan Chen,
+                   rope_allows_llama_models_to_have/.                     and Xia Hu. 2024.    LLM maybe longlm: Self-
+                                                                          extend LLM context window without tuning. CoRR,
+                 Max Brunsfeld, Andrew Hlynskyi, Amaan Qureshi,           abs/2401.01325.
+                   Patrick Thomson, Josh Vera, and et al. 2024. tree-
+                   sitter/tree-sitter: v0.21.0-pre-release-1.          Tianyang Liu, Canwen Xu, and Julian J. McAuley.
+                                                                          2023a.   Repobench: Benchmarking repository-
+                 Guanzheng Chen, Xin Li, Zaiqiao Meng, Shangsong          level code auto-completion systems.      CoRR,
+                   Liang, and Lidong Bing. 2023a. CLEX: continu-          abs/2306.03091.
+                                                                  13624
+                 Xiaoran Liu, Hang Yan, Shuo Zhang, Chenxin An,          Kechi Zhang, Zhuo Li, Zhi Jin, and Ge Li. 2023. Im-
+                    Xipeng Qiu, and Dahua Lin. 2023b. Scaling laws of       plant global and local hierarchy information to se-
+                    rope-based extrapolation. CoRR, abs/2310.05209.         quence based code representation models. In 31st
+                                                                            IEEE/ACM International Conference on Program
+                 ZeyuLu,ZidongWang,DiHuang,ChengyueWu,Xihui                 Comprehension, ICPC 2023, Melbourne, Australia,
+                    Liu, Wanli Ouyang, and Lei Bai. 2024. Fit: Flexi-       May15-16,2023,pages157–168.
+                    ble vision transformer for diffusion model. CoRR,
+                    abs/2402.12376.                                      Peiyuan Zhang, Guangtao Zeng, Tianduo Wang, and
+                                                                            Wei Lu. 2024. Tinyllama: An open-source small
+                 Arka Pal, Deep Karkhanis, Manley Roberts, Samuel           language model. CoRR, abs/2401.02385.
+                    Dooley, Arvind Sundararajan, and Siddartha Naidu.
+                    2023. Giraffe: Adventures in expanding context
+                    lengths in llms. CoRR, abs/2308.10882.
+                 BowenPeng, Jeffrey Quesnelle, Honglu Fan, and En-
+                    rico Shippole. 2023. Yarn: Efficient context win-
+                    dow extension of large language models. CoRR,
+                    abs/2309.00071.
+                 Baptiste Rozière, Jonas Gehring, Fabian Gloeckle, Sten
+                    Sootla, Itai Gat, Xiaoqing Ellen Tan, Yossi Adi,
+                    Jingyu Liu, Tal Remez, Jérémy Rapin, et al. 2023.
+                    Codellama: Openfoundationmodelsforcode. arXiv
+                    preprint arXiv:2308.12950.
+                 Jianlin Su. 2023. Rectified rotary position embeddings.
+                    https://github.com/bojone/rerope.
+                 Jianlin Su, Murtadha H. M. Ahmed, Yu Lu, Shengfeng
+                    Pan, Wen Bo, and Yunfeng Liu. 2024. Roformer: En-
+                    hanced transformer with rotary position embedding.
+                    Neurocomputing, 568:127063.
+                 HugoTouvron,Thibaut Lavril, Gautier Izacard, Xavier
+                    Martinet, Marie-Anne Lachaux, Timothée Lacroix,
+                    Baptiste Rozière, Naman Goyal, Eric Hambro, Faisal
+                    Azhar, Aurélien Rodriguez, Armand Joulin, Edouard
+                    Grave, and Guillaume Lample. 2023a. Llama: Open
+                    and efficient foundation language models. CoRR,
+                    abs/2302.13971.
+                 Hugo Touvron, Louis Martin, Kevin Stone, Peter Al-
+                    bert, Amjad Almahairi, and et al. 2023b. Llama 2:
+                    Openfoundation and fine-tuned chat models. CoRR,
+                    abs/2307.09288.
+                 MengzhouXia,TianyuGao,ZhiyuanZeng,andDanqi
+                    Chen. 2023. Sheared llama: Accelerating language
+                    model pre-training via structured pruning. CoRR,
+                    abs/2310.06694.
+                 Guangxuan Xiao, Yuandong Tian, Beidi Chen, Song
+                    Han, and Mike Lewis. 2023.       Efficient stream-
+                    ing language models with attention sinks. CoRR,
+                    abs/2309.17453.
+                 WenhanXiong,JingyuLiu,IgorMolybog,HejiaZhang,
+                    Prajjwal Bhargava, Rui Hou, Louis Martin, Rashi
+                    Rungta, Karthik Abinav Sankararaman, Barlas Oguz,
+                    MadianKhabsa,HanFang,YasharMehdad,Sharan
+                    Narang, Kshitiz Malik, Angela Fan, Shruti Bhosale,
+                    Sergey Edunov, Mike Lewis, Sinong Wang, and Hao
+                    Ma.2023. Effective long-context scaling of founda-
+                    tion models. CoRR, abs/2309.16039.
+                                                                    13625
+                       A DetailsofShortLLMexperiments
+                       A.1      Theoretical calculation for O.O.D issues
+                       According to the analysis in Section 6.1, we can
+                       calculate the reliable dimensions for each model
+                       as:
+                                                                L
+                                         Split% = log             pretrain                (6)
+                                                         10000      2π
+                         The theoretical calculation results are shown in
+                                           Lpretrain    RoPEDim         Split %   Split Dim
+                         LLaMA-2              4096         128           0.70       90.05
+                         ShearedLLaMA         4096         128           0.70       90.05
+                         TinyLLaMA            2048         64            0.63       40.21
+                         Vicuna               2048         128           0.63       80.42
+                       Table 7: Theoretical calculation of the reliable extrapo-
+                       lation dimension.
+                       Table 7.
+                       A.2      ShortLLMTraining
+                       In order to obtain the ShortLLM of suitable length,
+                       we use the position interpolation (Chen et al.,
+                       2023b) method reversely. Given a position index                                                   Para.    L                 L         α
+                       min the original RoPE, we use the new index                                                                  pretrain         short      short
+                       α         ∗mtoreplace it as shown in Table 8. We                              LLaMA-2              7B         4096            128         32
+                         short                                                                       ShearedLLaMA        1.3B        4096            128         32
+                       sample the CodeParrot-train dataset and filter the                            TinyLLaMA           1.1B        2048            128         16
+                       data length less than L                  .  We set the global                 Vicuna               7B         2048            128         16
+                                                         short
+                       batch size to 64 and fine-tune the models for 1000                          Table 8: Model Statistics for ShortLLM experiments.
+                       steps.
+                       A.3      ShortLLMPerformances
+                       After training, we apply our HiRoPE to these Short-
+                       LLMmodels. Figure 6 shows the experiment re-
+                       sults of the ShortLLM. We can observe that for all
+                       models, Our HiRoPE can maintain good stability
+                       as the length of the input code increases. Even if
+                       the baseline ReRoPE method gradually becomes
+                       unstable under some experimental settings (such
+                       as on Short-TinyLLaMA), our method can resist
+                       these performance declines.
+                                                                                            13626
+            Figure 6: Performance of ShortLLMs on CodeParrot dataset. The training length is set to 128.
+                             13627

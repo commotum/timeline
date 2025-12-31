@@ -1,0 +1,814 @@
+                         Under review as a conference paper at ICLR 2026
+                 000     ARITHMETIC-BENCH:                         EVALUATING MULTI-STEP
+                 001
+                 002     REASONING IN LLMS WITH BASIC ARITHMETIC
+                 003
+                 004
+                 005      Anonymousauthors
+                 006      Paper under double-blind review
+                 007
+                 008
+                 009                                           ABSTRACT
+                 010
+                 011             Wepropose Arithmetic-Bench, a benchmark designed to evaluate the multi-step
+                 012             reasoning ability of large language models (LLMs) through basic arithmetic op-
+                 013             erations. The benchmark covers fundamental mathematical operations such as
+                 014             addition, subtraction, multiplication, and division, while also incorporating sub-
+                 015             tasks like copying, reversing, counting, and base conversion. Experimental results
+                 016             showthattheaccuracyofcurrentLLMsdropssharplywhenperformingarithmetic
+                 017             operations involving more than 10 digits, implying a failure of generalization in
+                 018             multi-step reasoning. We further analyze the root causes of these failures. While
+                                 LLMscan achieve a certain degree of arithmetic generalization through training
+                 019             onlimited-lengthsequences,theyfailtogeneralizetoarbitrarylengths. Thisisdue
+                 020             to the inherent complexity of arithmetic tasks: achieving true arithmetic general-
+                 021             ization cannot rely on memorization alone but requires the acquisition of genuine
+                 022             reasoning mechanisms. Compared to other math benchmarks, Arithmetic-Bench
+                 023             provides a simple and fair framework. Because the tasks are purely synthetic, they
+                 024             are easy to generate and largely free from human biases. We believe that arith-
+                 025             metic tasks are both fundamental and necessary for advancing reasoning models,
+                 026             and Arithmetic-Bench offers a principled way to evaluate them.
+                 027
+                 028     1   INTRODUCTION
+                 029
+                 030     The rapid development of large language models (LLMs) has led to significant progress in natural
+                 031     language understanding and generation. However, despite their strong performance on existing
+                 032     reasoning benchmarks such as AIME Veeraboina (2023), GSM8K Cobbe et al. (2021), and MATH
+                 033     Hendrycks et al. (2021), these models often struggle with basic arithmetic tasks. This inconsistency
+                 034     raises critical questions about the nature of reasoning in LLMs: do they truly possess multi-step
+                 035     reasoning capabilities, or are they merely performing pattern matching based on training data?
+                 036
+                 037     1.1  DISADVANTAGES OF MATH BENCHMARKS
+                 038     Therearealotofexisting math-related datasets and benchmarks. However, in practical applications
+                 039     involving reasoning models, we have observed several limitations in these math benchmarks.
+                 040
+                 041     Hard to Collect. Although a large number of math problems are available online, their difficulty
+                 042     levels and coverage are difficult to control precisely, often resulting in datasets with uneven qual-
+                 043     ity and distribution. Manually creating problems is costly and labor-intensive, while the reliability
+                 044     of model-generated problems remains uncertain. In addition, manually collected problems are in-
+                 045     evitably subject to human biases.
+                 046     Hard to Decontaminate (Easy to Cheat). Given the vast amount of data on the internet, it is
+                 047     almost inevitable that identical or highly similar problems already exist. Furthermore, it is difficult
+                 048     to prevent individuals or organizations from intentionally training models on benchmark data to
+                 049     inflate performance.
+                 050     Hard to Evaluate. Evaluation poses significant challenges. For open-ended problems, such as
+                 051     proofs, relying on models for evaluation is unreliable and vulnerable to hacking. For problems with
+                 052     definitive answers, such as computational tasks, formatting problems necessitate complex pattern-
+                 053     matching methods to verify correctness, which are error-prone and cause fluctuations in evaluation
+                         results. This makes it difficult to determine whether a model’s reasoning ability has truly improved.
+                                                                    1
+                         Under review as a conference paper at ICLR 2026
+                 054     HardtoScale. Constructing a smooth difficulty progression is highly challenging. Some problems
+                 055     are difficult due to reliance on obscure knowledge, while others require multi-step reasoning. Con-
+                 056     sequently, certain problems primarily test memory rather than reasoning. Since these two types of
+                 057     difficulty differ in nature, they cannot be directly compared or quantified.
+                 058
+                 059     1.2  ADVANTAGES OF ARITHMETIC BENCHMARKS
+                 060
+                 061     In contrast to complex mathematical operations, arithmetic operations serve as a natural testbed for
+                 062     reasoning because they are deterministic, require structured multi-step execution, and have clear
+                 063     correctness criteria.
+                 064     Easy to Collect. Generating arithmetic expressions is very straightforward, and results obtained
+                 065     through a calculator are guaranteed to be correct, ensuring the quality of the problems. More impor-
+                 066     tantly, these problems are purely synthetic, which greatly reduces human bias.
+                 067     EasytoDecontaminate(HardtoCheat). Thanksto the nature of large numbers, no special filter-
+                 068     ing is required. Memorizing answers provides no advantage in large-number arithmetic: even if one
+                 069     memorizes all two-digit multiplications, they would cover only 1% of three-digit multiplications.
+                 070     Moreover, brute-force memorization inevitably leads to forgetting.
+                 071
+                 072     Easy to Evaluate. There is no ambiguity: evaluation can be performed directly with a simple
+                 073     check (e.g., a in b), without additional prompts, since all mainstream models already know basic
+                 074     arithmetic and the numbers do not suffer from formatting issues.
+                 075     Easy to Scale. Arithmetic tasks can be scaled to arbitrary digit lengths and varying levels of com-
+                 076     plexity, which creates a continuous difficulty curve. This makes it possible to evaluate a model’s
+                 077     true reasoning ability, going beyond mere memorization.
+                 078
+                 079     1.3  MEMORIZATION VS GENERALIZATION
+                 080
+                 081     Wefurther raise the following two key questions and address them using Arithmetic-Bench.
+                 082     How can we verify whether the improvements of existing LLMs on reasoning benchmarks
+                 083     maycomefrommemorizingtheanswers?
+                 084
+                 085     It is possible to train a model on a finite math benchmark dataset and then achieve very high scores
+                 086     onthat benchmark. However, even if we train on a multiplication benchmark dataset, the model still
+                 087     cannot achieve high scores on the multiplication benchmark, because the multiplication benchmark
+                 088     is randomly generated from a space that far exceeds the model’s capacity limit.
+                 089     Howcanweconstructtasksthatcannotbesolvedbymemorizingtheanswers?
+                 090     The information required to fully memorize long multiplication numbers is infinite, whereas the
+                 091     information needed to memorize the rules of multiplication is finite. The space of multiplication is
+                 092     so large that, unlike Olympiad math problems which are finite, it cannot be completely memorized;
+                 093     only by understanding the rules of multiplication can true generalization be achieved.
+                 094
+                 095     1.4  PROXY METRIC
+                 096
+                 097     Inthefieldofimagegeneration,textrenderingseemslikeaminorskill,buttheNanoBananaGoogle
+                 098     (2025) team treated it as an important metric. Text is highly structured, and even small stroke errors
+                 099     are obvious, making it a strict test of precision. Mastering text forces the model to control structure
+                 100     anddetail at the pixel level, which then improves general quality. By using text rendering as a proxy
+                 101     metric, the team showed how optimizing for a highly demanding, low-tolerance subtask can push
+                 102     models to develop transferable skills that enhance broader performance.
+                 103     Arithmetic-Bench is also this type of task, requiring models to have stable and precise reasoning
+                 104     abilities, which are necessary for solving truly complex problems, such as Fermat’s Last Theorem.
+                 105     TheformalproofofFermat’sLastTheoremcontainstensofthousandsoflinesofLeancodeBuzzard
+                 106     &contributors (2025); de Moura & Ullrich (2021), and even without considering the details of each
+                 107     step, it still represents an extremely long chain of reasoning. Therefore, we believe that Arithmetic-
+                         Benchis suitable as a proxy metric for mathematical reasoning.
+                                                                    2
+                         Under review as a conference paper at ICLR 2026
+                 108     Whether a model truly has reasoning ability is a rather vague question, but if it can handle large-
+                 109     numberarithmetic well, it can then be considered to possess a certain level of reasoning ability.
+                 110     Thecontributions of this paper are as follows:
+                 111
+                 112           • We introduce Arithmetic-Bench, a benchmark consisting of basic arithmetic tasks de-
+                 113             signed to evaluate models’ multi-step reasoning and computational skills.
+                 114
+                 115           • Weprovideatheoreticalanalysis of the connection between arithmetic tasks and reasoning
+                 116             ability, and empirically demonstrate their correlation.
+                 117           • We benchmark multiple mainstream models, showing that current models perform poorly
+                 118             onthese tasks, underscoring the need to improve multi-step reasoning capabilities.
+                 119
+                 120     2   RELATED WORK
+                 121
+                 122     2.1  MATHBENCHMARK
+                 123
+                 124     AIME Veeraboina (2023) (American Invitational Mathematics Examination) consists of
+                 125     competition-level math problems, covering advanced algebra, number theory, combinatorics, and
+                 126     geometry. It includes 15 problems per year before 2000 and 30 problems per year thereafter.
+                 127     MATHHendrycks et al. (2021) contains high-school level math problems spanning algebra, cal-
+                 128     culus, number theory, and more, totaling 12,500 problems. Large language models (LLMs) still
+                 129     struggle on some of these problems, particularly those requiring multi-step reasoning, achieving
+                 130     only moderate accuracy.
+                 131     CMATHWeietal.(2023)isadatasetofChineseelementaryschoolmathwordproblems,compris-
+                 132     ing 1.7k problems with detailed annotations sourced from real workbooks and exams.
+                 133
+                 134     GSM8KCobbeetal.(2021)(GradeSchoolMath8K)isasetof8,000elementary-levelmathprob-
+                 135     lems. Current LLMs can perform well on this benchmark, achieving over 97% accuracy through
+                 136     prompt engineering Zhong et al. (2024).
+                 137     GSM-Symbolic Mirzadeh et al. (2024) is a variant of GSM8K in which numbers are replaced with
+                 138     randomvalues. The resulting performance drop indicates that models may rely on memorized num-
+                 139     bers and patterns.
+                 140     These benchmarks cover a broad spectrum from elementary arithmetic to advanced competition-
+                 141     level mathematics.
+                 142
+                 143     2.2  ARITHMETIC BENCHMARK
+                 144
+                 145     Benchmarks focusing specifically on arithmetic, such as Math401 Yuan et al. (2023) and the arith-
+                 146     metic subset of BIG-Bench Srivastava et al. (2023), evaluate basic operations but have two key
+                 147     limitations: (i) potential memorization due to fixed datasets, and (ii) limited length generalization,
+                 148     since most problems involve numbers with fewer than ten digits. To address these issues, some ap-
+                 149     proachesusesyntheticmathgamesKurticetal.(2024),thoughtheseoftenrequirecomplexrulesand
+                 150     careful prompt design. In contrast, Arithmetic-Bench provides a simpler framework for evaluating
+                 151     arithmetic reasoning with controlled difficulty and sequence length.
+                 152     2.3  ARITHMETIC REASONING BASED ON DEEP LEARNING
+                 153
+                 154     Early works, including Neural GPU Łukasz Kaiser & Sutskever (2016) and Neural Turing Machine
+                 155     Graves et al. (2014), improved algorithm execution by designing specialized architectures such as
+                 156     recursive convolutional networks and memory modules. More recent methods, such as Goat Liu
+                 157     &Low(2023) and MathGLM Yang et al. (2023), train LLMs on carefully constructed arithmetic
+                 158     datasets, while other approaches, like Scratchpad Nye et al. (2021), leverage techniques such as
+                 159     chain-of-thought (CoT) reasoning Wei et al. (2022) and curriculum learning Bengio et al. (2009).
+                 160     These methods enhance arithmetic performance for numbers within certain digit lengths, but they
+                 161     generally fail to generalize to longer sequences, highlighting the challenge of length extrapolation
+                         in arithmetic reasoning.
+                                                                    3
+                            Under review as a conference paper at ICLR 2026
+                   162      3   ARITHMETIC-BENCH
+                   163
+                   164      3.1   CAPACITY
+                   165
+                   166      Mathematical reasoning is based on axioms and deductive rules. Here, axioms provide fundamental
+                   167      assumptions, and deductive rules specify how to derive new facts from existing ones. A proposition
+                   168      is considered correct if it can be derived from the axioms. The key difference between reasoning and
+                   169      commonsenseliesinthenumberofinference steps: common sense typically requires only a single
+                   170      step, whereas reasoning involves multiple iterative steps. Following Zhou (2025), reasoning models
+                   171      are characterized by producing intermediate reasoning tokens before generating the final output.
+                   172      Fromthese observations, we propose the following definitions:
+                   173
+                   174      Definition 1.  Reasoningistheiterative application of operations on finite information, where each
+                   175      operation transforms known information into new information.
+                   176
+                   177      Definition 2.  Arithmetic is a special case of reasoning, where the operations are derived from a
+                   178      finite lookup table of number operations.
+                   179      Clearly, arithmetic over natural numbers satisfies Definition 1 and is therefore a form of reasoning.
+                   180      Ataskwithfinite information can be fully learned by memorizing all cases, provided the model has
+                   181      sufficient capacity. Here, capacity refers to the total amount of information that a model can store
+                   182      or represent in its parameters. More concretely, if a model has N parameters and each parameter
+                   183      can store approximately c bits of information independently, then the model capacity is roughly
+                   184      C = N · c bits. When the information content of a task exceeds the model’s capacity, the task
+                   185      becomes unlearnable due to inevitable forgetting. This is formalized by the following principle:
+                   186
+                   187      Theorem1. Acontainerwithcapacityacannotholdinformation exceeding a.
+                   188      For example, a model with 400 parameters can store the 9 × 9 multiplication table; a model with
+                   189      20,000 parameters can fully memorize the first 10,000 digits of π. In contrast, a model with 10,000
+                   190      parameters can memorize only about 70% of these digits, regardless of training duration. This is
+                   191      coincidence with the fact that current language models can and only can store 2 bits of knowledge
+                   192      per parameter Allen-Zhu & Li (2024).
+                   193
+                   194      Next, we relate arithmetic performance to general reasoning ability.
+                   195      Theorem2. Ifamodelcannotlearnanarithmeticproblem,itcannotlearnareasoningproblemof
+                   196      equivalent complexity.
+                   197
+                   198      Proof. Any reasoning task can be encoded as an equivalent arithmetic problem by mapping basic
+                   199      operations to numbers. If a model can solve this arithmetic problem, it can solve the corresponding
+                   200      reasoning task. By Theorem 1, if the model cannot solve the arithmetic problem, it lacks sufficient
+                   201      capacity to represent the necessary information, and therefore cannot learn any reasoning problem
+                   202      of equal or greater complexity.
+                   203      Computational stability can be analyzed similarly. Suppose each operation introduces a small error
+                   204      ϵ, and the task can tolerate an expected error δ. Then, only a limited number of operations can be
+                   205      performed before the accumulated error exceeds δ, defining the model’s computational capacity.
+                   206      Amodel can reliably complete a reasoning task only if both its information capacity and compu-
+                   207      tational capacity are sufficient. Notably, increasing the number of digits in arithmetic primarily
+                   208      challenges computational capacity rather than information capacity. Therefore, benchmarks like
+                   209      Arithmetic-Bench can probe reasoning ability beyond the limits of information storage by evaluat-
+                   210      ing tasks that require extensive computation.
+                   211
+                   212      3.2   ERROR ACCUMULATION
+                   213
+                   214      Assuming the model has sufficient information capacity and fully understands the reasoning rules,
+                   215      errors may still occur due to probabilistic predictions. To mitigate accumulated errors during itera-
+                            tive reasoning, verification strategies can be employed. Let the probability of making a mistake in a
+                                                                             4
+                    Under review as a conference paper at ICLR 2026
+              216   single computation be p, assuming independent computations. Without verification, the probability
+              217   of submitting an incorrect result is
+              218
+                                                P           =p.
+              219                                error, no verification
+              220   If one additional independent verification is performed, an undetected error occurs only if the first
+              221   computation is wrong, the verification is also wrong, and the two errors coincide exactly. Let q
+              222   denote the conditional probability that two independent errors yield the same incorrect result (0 <
+              223   q < 1). Then, the probability of an undetected error under verification is
+              224
+                                                P          =p2q.
+              225                                error, verification
+              226   Since 0 < p < 1 and 0 < q < 1, it follows that
+              227
+              228                       P         =p2q <p=P             .
+                                         error, verification error, no verification
+              229   Therefore, verification reduces the probability of undetected errors.
+              230
+              231   For instance, if p = 0.1 and q = 0.1, the error probability without verification is 10%, while
+              232   with verification it decreases to 0.1%, representing a reduction by two orders of magnitude. This
+              233   illustrates that, for reasoning tasks, implementing verification can be more effective than merely
+              234   increasing the number of reasoning steps or output tokens.
+              235   3.3 DESIGN
+              236
+              237   Arithmetic-Bench is a dynamic benchmark that generates arithmetic problems of varying lengths
+              238   and complexities. It includes binary and unary operations as shown in Table 1 and Table 2:
+              239
+              240   Each problem is randomly generated to ensure that tasks cannot be memorized, and all require
+              241   multi-step iterative operations. The benchmark only requires the model to have basic mathematical
+              242   knowledge, without relying on any advanced theorems to eliminate the influence of memorized
+              243   knowledge on problem difficulty. Prompts are kept as simple as possible to minimize the influence
+              244   of prompt- or instruction-following abilities on the results. Evaluation is performed directly using
+              245   ‘a in b‘, which is simple and accurate. Different models may format their outputs differently; for
+                    example, DeepSeek outputs answers in ‘\boxed{}‘ and GPT prefers bold answers using ‘**‘,
+              246   but ‘a in b‘ can match any similar format. If a model produces the correct intermediate result
+              247   during the process, it indicates that the model’s reasoning can reach the final answer. Since the
+              248   probability of guessing large-number results correctly in the middle of the process is extremely
+              249   low, this does not compromise fairness. Some models, such as DeepSeek, may output answers
+              250   separated by symbols like ‘”,//!”.‘ We remove all such symbols from the results before matching the
+              251   answers. The steps for decimal addition and multiplication are basically the same as for integers,
+              252   differing onlyinthedecimalpointshift. Therefore,onlyintegeroperationsareconsidered. Toensure
+              253   comparable computational complexity between division and multiplication and to avoid results that
+              254   are too small, we perform division of 2n-digit numbers by n-digit numbers. Modular operations
+              255   (mod) and division steps are essentially the same, so only division is considered. Exponentiation
+              256   (pow) is too computationally expensive and is therefore not considered. We primarily evaluate the
+                    model’s arithmetic performance from the following two dimensions:
+              257
+              258   Accuracy
+              259   Full-match accuracy is used, without considering digit-wise accuracy, since in large-number opera-
+              260   tions models often produce outputs with incorrect digit lengths, making alignment with the correct
+              261   answer difficult.
+              262   LengthGeneralization Curve
+              263   This curve illustrates the relationship between model accuracy and the number of digits in the in-
+              264   put. It provides insight into how well the model can generalize to longer sequences, indicating its
+              265   computational capacity.
+              266
+              267   3.4 PROMPT
+              268
+              269   Thepromptsfor different tasks are shown in Table 3. They are designed to be as simple as possible
+                    to enhance readability for both humans and models.
+                                                        5
+                         Under review as a conference paper at ICLR 2026
+                 270                             Table 1: Main tasks: standard arithmetic tasks.
+                 271
+                 272       Task                        Description
+                 273       Add, Sub, Mul, Div          Integer addition, subtraction, multiplication, and division of 2
+                 274                                   numbers, where both operands are n-digit integers. These tasks
+                 275                                   evaluate the model’s ability to perform standard arithmetic oper-
+                 276                                   ations and its accuracy and consistency across multiple digits.
+                 277       Add 1, Sub 1, Mul 1, Div 1  Integer addition, subtraction, multiplication, and division of 2
+                 278                                   numbers, where one operand is an n-digit integer and the other
+                 279                                   is a single-digit integer. Since n × n multiplication can be de-
+                 280                                   composed into multiple n × 1 multiplications, this task is used
+                                                       for evaluation.
+                 281
+                 282                        Table 2: Sub tasks: basic operations related to arithmetic.
+                 283
+                 284        Task         Description
+                 285        Copy         In multi-step reasoning, the model often needs to repeat operands multiple
+                 286                     times. This task evaluates the model’s ability to correctly copy values within a
+                 287                     reasoning chain.
+                 288        Rev, Space   Data representation significantly affects performance Lee et al. (2023). For
+                 289                     instance, columnar (vertical) arithmetic is written from right to left, which can
+                 290                     hinder next-token prediction. Reversal and splitting operations, such as little-
+                 291                     endian storage or separating numbers into individual characters, are evaluated
+                                         to test the model’s adaptability to different representations.
+                 292        Count, Len   Models sometimes produce outputs of incorrect length. These tasks test the
+                 293                     model’scountingability. Since the answers are small numbers, parentheses are
+                 294                     used to prevent models from accidentally guessing the correct answer during
+                 295                     generation.
+                 296        Box          Some operations, like count and len, require formatted output. This task
+                 297                     evaluates the model’s ability to correctly insert parentheses as a formatting
+                 298                     symbols.
+                 299        B2D,D2B      Neural GPU Łukasz Kaiser & Sutskever (2016) has shown better performance
+                 300                     in binary than decimal. These tasks evaluate the model’s ability to convert
+                 301                     between binary and decimal representations.
+                 302
+                 303     3.5   GENERATION
+                 304
+                 305     The generation of Arithmetic-Bench is very straightforward: two numbers are randomly generated
+                 306     and then concatenated using prompt templates for different tasks. The pseudocode is as follows.
+                 307
+                 308     Algorithm 1 Generate Arithmetic Dataset (gen 2)
+                 309      1: procedure GEN 2(fun, n, d)
+                 310      2:    for digits ← 1 to d do
+                 311      3:        for i ← 1 to n do
+                 312      4:           if fun = div then
+                 313                                      2·digits−1  2·digits
+                          5:               a ∼ Uniform(10          , 10      −1)
+                                                          digits−1  digits
+                 314      6:               b ∼ Uniform(10        , 10     −1)
+                 315      7:           else
+                                                          digits−1  digits
+                 316      8:               a ∼ Uniform(10        , 10     −1)
+                                                          digits−1  digits
+                 317      9:               b ∼ Uniform(10        , 10     −1)
+                 318     10:           endif
+                 319     11:           c ←fun(a,b)
+                 320     12:           Output sample (digits,a,b,c)
+                 321     13:        endfor
+                         14:    endfor
+                 322     15: end procedure
+                 323
+                                                                      6
+                        Under review as a conference paper at ICLR 2026
+                324                                   Table 3: Arithmetic Prompts
+                325
+                326      Task    Prompt
+                327      Add     a+b=?
+                328      Sub     a−b=?
+                329      Mul     a∗b=?
+                330      Div     Perform integer division: a/b =?
+                331      Copy    Copythefollowing number: a
+                332      Rev     Reverse the following number: a
+                333      Box     Put the following number in parentheses only: a, example: (number)
+                         Space   Insert a space between every digit in the following number: a
+                334      Len     Howmanydigitsareinthefollowingnumber: a,putanswerinparenthesesonly,exam-
+                335              ple: (number)
+                336      Count   Howmany0areinthefollowing number: a, put answer in parentheses only, example:
+                337              (number)
+                338      B2d     Convert the following binary number to decimal: a
+                339      D2b     Convert the following decimal number to binary: a
+                340
+                341
+                342     4   EXPERIMENTAL RESULTS
+                343
+                344     4.1  SETUP
+                345
+                346     Wecomparedseveralstate-of-the-art models:
+                347     LLaMAseries Dubey et al. (2024), Qwen series Yang et al. (2024; 2025); Team (2025), DeepSeek
+                348     series Guo et al. (2025), GPT series OpenAI (2023); Hurst et al. (2024)
+                349     Both open-source and closed-source models were used to ensure a comprehensive evaluation.
+                350
+                351     All tasks were tested with problems randomly generated for each digit length from 1 to 100. For
+                352     QwenandLLaMA,n=10problemsweregeneratedperdigitlength. ForDeepSeekandGPT,due
+                353     to resource limitations and slower inference speed, n = 1 problem per digit length was used.
+                354
+                355                    Table 4: Model performance on Arithmetic-Bench (Main tasks)
+                356
+                357      Model                           add    sub   mul    div   add 1 sub 1 mul 1 div 1
+                358      Llama-3-8B-Instruct            11.7% 10.0% 1.9%     1.8%  93.4% 93.5% 20.3% 18.4%
+                359      Llama-3-70B-Instruct           20.5% 16.3% 2.2%     2.2%  93.4% 91.9% 27.2% 26.4%
+                360      Qwen2.5-0.5B-Instruct          8.1%   7.3%   1.6%   1.4%  23.1% 19.1% 17.0% 18.1%
+                361      Qwen2.5-1.5B-Instruct          12.6% 11.6% 2.0%     1.7%  69.4% 67.8% 27.3% 21.5%
+                362      Qwen2.5-3B-Instruct            11.7% 14.1% 1.9%     1.7%  77.6% 71.1% 30.7% 31.5%
+                363      Qwen2.5-7B-Instruct            25.7% 20.3% 2.2%     2.9%  89.2% 86.5% 45.2% 45.2%
+                364      Qwen2.5-14B-Instruct           28.9% 32.3% 2.3%     3.2%  98.0% 97.7% 66.2% 77.9%
+                365      Qwen2.5-32B-Instruct           50.2% 31.3% 2.5%     4.2%  96.9% 97.5% 79.1% 79.0%
+                366      Qwen2.5-72B-Instruct           31.5% 30.8% 2.5%     4.3%  98.0% 96.9% 51.5% 48.5%
+                367      DeepSeek-R1-Distill-Llama-8B   9.0%   8.0%   3.0%   2.0%  75.0% 65.0% 19.0% 18.0%
+                368      DeepSeek-R1-Distill-Llama-70B  14.0% 14.0% 3.0%     5.0%  93.0% 91.0% 27.0% 25.0%
+                         DeepSeek-R1-Distill-Qwen-1.5B  10.0% 12.0% 4.0%     3.0%  44.0% 64.0% 23.0% 21.0%
+                369      DeepSeek-R1-Distill-Qwen-7B    14.0% 11.0% 4.0%     3.0%  77.0% 77.0% 32.0% 32.0%
+                370      DeepSeek-R1-Distill-Qwen-14B   13.0% 18.0% 4.0%     4.0%  78.0% 77.0% 27.0% 23.0%
+                371      DeepSeek-R1-Distill-Qwen-32B   21.0% 26.0% 4.0%     7.0%  83.0% 75.0% 42.0% 43.0%
+                372      DeepSeek-R1-671B               46.0% 58.0% 10.0% 10.0% 100.0%99.0% 56.0% 69.0%
+                373      QwQ-32B                        26.0% 26.0% 11.0% 10.0% 99.0% 96.0% 41.0% 69.0%
+                374      Qwen3-235B-A22B                41.0% 40.0% 10.0% 11.0% 100.0%100.0%58.0% 78.0%
+                375      gpt-4                          51.0% 38.0% 3.0%     4.0%  100.0%99.0% 61.0% 74.0%
+                376      gpt-4o                         68.0% 84.0% 3.0%     3.0%  100.0%100.0%85.0% 79.0%
+                377      gpt-3.5                        15.0% 21.0% 3.0%     3.0%  97.0% 89.0% 29.0% 48.0%
+                                                                  7
+                         Under review as a conference paper at ICLR 2026
+                 378     4.2  ANALYSIS
+                 379
+                 380     Main results are shown in Table 4. The accuracy of addition and subtraction is comparable, as is
+                 381     that of multiplication and division. Multiplication is significantly more challenging than addition,
+                 382     with accuracy roughly proportional to the maximum number of digits the model can handle. On
+                 383     multiplication tasks, the best models, Deepseek-R1, QwQ and Qwen3, can correctly solve numbers
+                 384     with up to 10 digits.
+                 385     Tasks involving n×1-digit numbers are relatively easier, yet most models still fail to achieve 100%
+                 386     accuracy. Tasks where models perform relatively well include add 1, sub 1, copy, box, and space,
+                 387     with some models reaching perfect accuracy. These tasks share a common feature: they do not
+                 388     require complex reasoning, and the input-output structures are largely similar. For example, in
+                 389     add 1 and sub 1, changes mostly occur in the last digits.
+                 390     Limitations of Reasoning. Reasoning models, such as Deepseek-R1, QwQ and Qwen3, outper-
+                 391     form non-reasoning models on tasks like multiplication and base conversion, but underperform on
+                 392     simpler tasks, such as addition and single-digit multiplication. This phenomenon is consistent with
+                 393     the observations reported in Shojaee et al. (2025): on low-complexity tasks, non-reasoning mod-
+                 394     els outperform reasoning models; on medium-complexity tasks, reasoning models demonstrate an
+                 395     advantage; and on high-complexity tasks, both types of models experience complete failure.
+                 396     Influence of Scaling. Within the same model series, larger models generally perform better on
+                 397     arithmetic tasks. However, Qwen-72B does not outperform Qwen-32B, suggesting that merely in-
+                 398     creasing model size does not necessarily resolve arithmetic challenges.
+                 399     Influence of Distillation. The DeepSeek distilled models perform worse than their corresponding
+                 400     Qwen counterparts on simple arithmetic tasks, like addition and subtraction, and only marginally
+                 401     outperform Qwen on multiplication and counting. This indicates limitations in their reasoning abil-
+                 402     ity, suggesting that the full reasoning capability of a large model may not have been successfully
+                 403     distilled into these smaller models.
+                 404     GPT-4’s average performance falls between Qwen2.5 and Qwen3, indicating that closed-source
+                 405     models do not necessarily demonstrate stronger arithmetic capabilities. Overall, the accuracy of
+                 406     all models remains relatively low, and true generalization in arithmetic has yet to be achieved.
+                 407
+                 408
+                 409     4.3  LENGTH GENERALIZATION
+                 410
+                 411     AsshowninFigure1,accuracydecreasessignificantly as the number of digits increases. For multi-
+                 412     plication, once the number of digits exceeds a certain threshold, models consistently fail to produce
+                 413     correct results. Therefore, the overall accuracy is approximately equal to the maximum number of
+                 414     digits in multiplication that the model can handle.
+                 415     Even the largest and most advanced models, including Qwen3, DeepSeek, and GPT-4, continue to
+                 416     struggle with arithmetic tasks at scale. Specifically, they are unable to reliably solve 10-digit mul-
+                 417     tiplication and often fail at 100-digit addition, despite their strong performance on a wide range
+                 418     of natural language tasks. This indicates that scaling alone does not resolve the fundamental chal-
+                 419     lenges of arithmetic reasoning, and that current architectures still lack robust mechanisms for exact,
+                 420     length-generalizable computation.
+                 421
+                 422     4.4  MEMORIZATION OF FINITE DATASETS
+                 423
+                 424     AsshowninFigure2,trainingonAIMEtestsetcanpushaccuracyto100%. Wealsoobservedsim-
+                 425     ilar phenomena on other finite datasets, demonstrating that finite benchmarks are prone to cheating.
+                 426     Notably, it requires around 100 epochs to memorize well, rather than remembering it after a single
+                 427     pass. Even after reaching 100% accuracy, fluctuations may still occur.
+                 428
+                 429     4.5  CORRELATION BETWEEN REASONING AND ARITHMETIC
+                 430
+                 431     As shown in Figure 5, The model’s performance on mathematical benchmarks such as AIME is
+                         positively correlated with its performance on large-number multiplication. Reasoning models ex-
+                                                                    8
+                                                Under review as a conference paper at ICLR 2026
+                                 432            hibit stronger multiplication ability compared to non-reasoning models, but perform worse than
+                                 433            non-reasoning models on simple tasks such as addition.
+                                 434
+                                 435
+                                 436                1.0                                                                                                                                    qwen2.5 72b
+                                 437                                                                                                                                                       qwen3 235b (no think)
+                                 438                0.5                                                                                                                                    deepseek r1 671b
+                                 439                                                                                                                                                       gpt4o
+                                 440                0.0
+                                                                              5                          10                          15                         20                          25                          30
+                                 441
+                                 442            Figure 1: Length Generalization Curve of Multiplication, x axis is length from 1 to 30, y axis is
+                                 443            accuracy.
+                                 444
+                                 445
+                                 446
+                                 447                       1.0
+                                 448                                                                                               Table 5: Comparison of performance on Multipli-
+                                 449                       0.8                                                                     cation and AIME 2024
+                                 450                                                                                                 Model                                MulAcc(%)              AIMEAcc(%)
+                                 451                       0.6                                                                       Qwen2.572b                                   2                      13.5
+                                 452                                                                                                 Qwen3235b(nothink)                           4                      40.1
+                                                                                                                                     Qwen3235b(think)                            10                      85.7
+                                 453                       0.4                                                                       QwQ                                         11                      79.5
+                                                               0          20         40         60         80         100            Deepseek r1 671b                            10                      79.8
+                                 454                                                                                                 gpt4o                                        3                      11.1
+                                 455                Figure 2: Results of training on AIME 2024,
+                                 456                x axis is epoch, y asix is accuracy.
+                                 457
+                                 458
+                                 459            4.6       USE OF EXTERNAL TOOL
+                                 460
+                                 461            While it is certainly possible to solve these problems using a calculator Schick et al. (2023)—and,
+                                 462            in fact, the web version of ChatGPT often does so, Arithmetic-Bench is fundamentally different.
+                                 463            It is designed to use arithmetic as a proxy for abstract reasoning, providing a controlled setting to
+                                 464            evaluate a model’s ability to perform multi-step reasoning rather than relying on external tools.
+                                 465            Ontheother hand, the results of Arithmetic-Bench can be interpreted in two possible ways:
+                                 466
+                                 467                      1. In principle, the model’s probabilistic predictions are capable of stable multi-step reason-
+                                 468                           ing, but current models have not realized this ability.
+                                 469                      2. The model’s probabilistic predictions cannot guarantee stable multi-step reasoning. If this
+                                 470                           is the case, it indicates that using external tools for verification is necessary.
+                                 471
+                                 472            4.7       REPRODUCIBILITY
+                                 473
+                                 474            Theresultsfromtwoindependentlyrandomlygeneratedsetsofproblemsshowlittledifference,with
+                                 475            average fluctuations below 1%. We will make our code publicly available to ensure reproducibility.
+                                 476
+                                 477            5       CONCLUSION
+                                 478
+                                 479            Arithmetic-Bench provides a rigorous, dynamic, and scalable evaluation of LLMs’ multi-step rea-
+                                 480            soning abilities. Our theoretical analysis shows that the inability to generalize in arithmetic implies
+                                 481            broader limitations in general reasoning. Empirical results demonstrate that even state-of-the-art
+                                 482            models still struggle with large-number multiplication, highlighting the necessity of improving rea-
+                                 483            soning mechanisms. We believe that arithmetic-based tasks form the foundation for advancing rea-
+                                 484            soning in LLMs. Future work should focus on improving data representation, training strategies,
+                                 485            verifying, and memory mechanisms. Only by addressing these limitations can LLMs truly perform
+                                                multi-step reasoning tasks and move beyond shallow inference based on pattern matching.
+                                                                                                                                     9
+                             Under review as a conference paper at ICLR 2026
+                    486      REFERENCES
+                    487
+                    488      Zeyuan Allen-Zhu and Yuanzhi Li. Physics of language models: Part 3.3, knowledge capacity
+                    489        scaling laws. arXiv preprint arXiv:2404.05405, 2024.
+                    490                        ´ ˆ
+                    491      Yoshua Bengio, Jerome Louradour, Ronan Collobert, and Jason Weston. Curriculum learning. In
+                    492        Proceedingsofthe26thInternationalConferenceonMachineLearning(ICML),pp.41–48,2009.
+                    493      Kevin Buzzard and contributors. Ongoing lean formalisation of the proof of fermat’s last theo-
+                    494        rem. https://github.com/ImperialCollegeLondon/FLT, 2025. Funded by EP-
+                    495        SRCgrantEP/Y022904/1until September 2029.
+                    496      Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser,
+                    497        Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, Christopher Hesse, and John
+                    498        Schulman. Training verifiers to solve math word problems. arXiv preprint arXiv:2110.14168,
+                    499        2021.
+                    500
+                    501      Leonardo de Moura and Sebastian Ullrich. The lean 4 theorem prover and programming language.
+                    502        In Proceedings of the 28th International Conference on Automated Deduction (CADE-28), pp.
+                    503        378–388. Springer, 2021. doi: 10.1007/978-3-030-79876-5 37. URL https://doi.org/
+                    504        10.1007/978-3-030-79876-5_37.
+                    505      Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, Ahmad Al-Dahle, Aiesha
+                    506        Letman,AkhilMathur,AlanSchelten,AmyYang,AngelaFan,etal. Thellama3herdofmodels.
+                    507        arXiv e-prints, pp. arXiv–2407, 2024.
+                    508
+                    509      Google. Nano banana (gemini 2.5 flash image) model. Google AI / Gemini Developer API, 2025.
+                    510        URL https://developers.google.com/. Image generation / editing model, publicly
+                    511        documented.
+                    512      Alex Graves, Greg Wayne, and Ivo Danihelka.              Neural turing machines.        arXiv preprint
+                    513        arXiv:1410.5401, 2014.
+                    514
+                    515      Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Ruoyu Zhang, Runxin Xu, Qihao Zhu,
+                    516        Shirong Ma, Peiyi Wang, Xiao Bi, et al. Deepseek-r1: Incentivizing reasoning capability in llms
+                    517        via reinforcement learning. arXiv preprint arXiv:2501.12948, 2025.
+                    518      Dan Hendrycks, Collin Burns, Steven Basart, Andy Zou, Mantas Mazeika, Dawn Song, and Jacob
+                    519        Steinhardt. Measuring mathematical problem solving with the math dataset. In International
+                    520        Conference on Learning Representations (ICLR), 2021.
+                    521
+                    522      AaronHurst,AdamLerer,AdamPGoucher,AdamPerelman,AdityaRamesh,AidanClark,AJOs-
+                    523        trow, Akila Welihinda, Alan Hayes, Alec Radford, et al. Gpt-4o system card. arXiv preprint
+                    524        arXiv:2410.21276, 2024.
+                    525      Eldar Kurtic, Amir Moeini, and Dan Alistarh. Mathador-lm: A dynamic benchmark for mathemati-
+                    526        cal reasoning on large language models. arXiv preprint arXiv:2406.12572, 2024.
+                    527
+                    528      Nayoung Lee, Kartik Sreenivasan, Jason D Lee, Kangwook Lee, and Dimitris Papailiopoulos.
+                    529        Teaching arithmetic to small transformers. arXiv preprint arXiv:2307.03381, 2023.
+                    530
+                    531      Tiedong Liu and Bryan Kian Hsiang Low. Goat: Fine-tuned llama outperforms gpt-4 on arithmetic
+                    532        tasks. arXiv preprint arXiv:2305.14201, 2023.
+                    533      Iman Mirzadeh, Keivan Alizadeh, Hooman Shahrokhi, Oncel Tuzel, Samy Bengio, and Mehrdad
+                    534        Farajtabar.  Gsm-symbolic: Understanding the limitations of mathematical reasoning in large
+                    535        language models. arXiv preprint arXiv:2410.05229, 2024.
+                    536
+                    537      MaxwellI.Nye,AndersJohanAndreassen,GuyGur-Ari,HenrykMichalewski,JacobAustin,David
+                    538        Bieber, David Dohan, Aitor Lewkowycz, Maarten Bosma, Charles Sutton, and Augustus Odena.
+                    539        Show your work: Scratchpads for intermediate computation with language models. In Interna-
+                               tional Conference on Learning Representations (ICLR), 2021.
+                                                                               10
+                         Under review as a conference paper at ICLR 2026
+                 540     OpenAI. Gpt-4technicalreport. arXivpreprintarXiv:2303.08774,2023. URLhttps://arxiv.
+                 541        org/abs/2303.08774.
+                 542
+                 543     LongOuyang,Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wainwright, Pamela Mishkin, Chong
+                 544        Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et al. Training language models to fol-
+                 545        low instructions with human feedback. Advances in neural information processing systems, 35:
+                 546        27730–27744, 2022.
+                 547     TimoSchick,JaneDwivedi-Yu,RobertoDessi,RobertaRaileanu,MariaLomeli,LukeZettlemoyer,
+                 548        Nicola Cancedda, and Thomas Scialom. Toolformer: Language models can teach themselves to
+                 549        use tools. arXiv preprint arXiv:2302.04761, 2023. URL https://arxiv.org/abs/2302.
+                 550        04761.
+                 551     Parshin Shojaee, Iman Mirzadeh, Keivan Alizadeh, Maxwell Horton, Samy Bengio, and Mehrdad
+                 552        Farajtabar. The illusion of thinking: Understanding the strengths and limitations of reasoning
+                 553        models via the lens of problem complexity. arXiv preprint arXiv:2506.06941, 2025.
+                 554
+                 555     Aarohi Srivastava, Abhinav Rastogi, Abhishek Rao, et al. Beyond the imitation game: Quantify-
+                 556        ing and extrapolating the capabilities of language models. Transactions on Machine Learning
+                 557        Research, 2023. URL https://openreview.net/forum?id=uyTL5Bvosj.
+                 558     Qwen Team. Qwq-32b: Embracing the power of reinforcement learning, March 2025. URL
+                 559        https://qwenlm.github.io/blog/qwq-32b/.
+                 560
+                 561     Hemish Veeraboina. Aime problem set 1983-2024, 2023. URL https://www.kaggle.com/
+                 562        datasets/hemishveeraboina/aime-problem-set-1983-2024.
+                 563     Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Brian Ichter, Fei Xia, Ed Chi, Quoc
+                 564        Le, and Denny Zhou. Chain-of-thought prompting elicits reasoning in large language models.
+                 565        arXiv preprint arXiv:2201.11903, 2022.
+                 566     Tianwen Wei, Jian Luan, Wei Liu, Shuang Dong, and Bin Wang. Cmath: Can your language model
+                 567        pass chinese elementary school math test? arXiv preprint arXiv:2306.16636, 2023.
+                 568
+                 569     An Yang, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chengyuan Li,
+                 570        DayihengLiu,FeiHuang,HaoranWei,HuanLin,JianYang,JianhongTu,JianweiZhang,Jianxin
+                 571        Yang, Jiaxi Yang, Jingren Zhou, Junyang Lin, Kai Dang, Keming Lu, Keqin Bao, Kexin Yang,
+                 572        LeYu,MeiLi,MingfengXue,PeiZhang,QinZhu,RuiMen,RunjiLin,TianhaoLi,TianyiTang,
+                 573        Tingyu Xia, Xingzhang Ren, Xuancheng Ren, Yang Fan, Yang Su, Yichang Zhang, Yu Wan,
+                 574        Yuqiong Liu, Zeyu Cui, Zhenru Zhang, and Zihan Qiu. Qwen2.5 technical report. arXiv preprint
+                 575        arXiv:2412.15115, 2024.
+                 576     An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu,
+                 577        Chang Gao, Chengen Huang, Chenxu Lv, et al.      Qwen3 technical report.   arXiv preprint
+                 578        arXiv:2505.09388, 2025.
+                 579     ZhenYang,MingDing,QingsongLv,ZhihuanJiang,ZehaiHe,YuyiGuo,JinfengBai,andJieTang.
+                 580        Gpt can solve mathematical problems without a calculator. arXiv preprint arXiv:2309.03241,
+                 581        2023.
+                 582
+                 583     Zheng Yuan, Hongyi Yuan, Chuanqi Tan, Wei Wang, and Songfang Huang. How well do large
+                 584        language models perform in arithmetic tasks?, 2023.
+                 585     Qihuang Zhong, Kang Wang, Ziyang Xu, Juhua Liu, Liang Ding, and Bo Du. Achieving¿ 97% on
+                 586        gsm8k: Deeply understanding the problems makes llms better solvers for math word problems.
+                 587        arXiv preprint arXiv:2404.14963, 2024.
+                 588
+                 589     Denny Zhou. Llm reasoning (stanford cs-25 lecture).   Lecture notes, available at https://
+                 590        dennyzhou.github.io/LLM-Reasoning-Stanford-CS-25.pdf, 2025. Accessed:
+                 591        2025-09-22.
+                 592     Łukasz Kaiser and Ilya Sutskever. Neural gpus learn algorithms. In International Conference on
+                 593        Learning Representations (ICLR), 2016.
+                                                                      11
+                            Under review as a conference paper at ICLR 2026
+                   594      A APPENDIX
+                   595
+                   596      A.1    IMPLEMENTATION DETAILS
+                   597
+                   598      We conducted experiments using 1–2 machines equipped with 8×A100 GPUs and deployed our
+                   599      models based on vLLM. The number of GPUs required varies depending on the model size. To
+                   600      improve efficiency, we employ parallel inference acceleration for smaller models. Each model was
+                   601      evaluated using the officially recommended decoding parameters. Ablation studies show that the
+                   602      decoding parameters have little effect on the results.
+                   603      For reasoning models, context length has a significant impact: if the maximum length is insufficient
+                   604      to generate the complete output, performance will decrease a lot. Therefore, it is ultimately set to
+                   605      16,384. For non-reasoning models, since their responses are naturally short. A maximum length of
+                   606      2,048 or 4,096 is sufficient.
+                   607
+                   608      A.2    PROOF
+                   609
+                   610      Proof of Theorem 1
+                   611
+                   612      Theorem1. Acontainerwithcapacityacannotholdinformation larger than a.
+                   613      Proof. Suppose a container with capacity a can hold information of size a , where a < a . Then
+                   614                                                  1                               0          1    0
+                            there exists a container with capacity a  <a that can hold the a -capacity container. Repeating
+                   615                                              2     1                     1
+                            this operation, we can construct a decreasing sequence of capacities a  <··· < a <a <a .
+                   616                                                                            n            2    1     0
+                   617      Since capacities are non-negative, by the monotone bounded sequence theorem, this sequence must
+                   618      have a limit.
+                   619      Case 1: The limit is 0. Then an empty container could hold information of any size, which is
+                   620      obviously a contradiction.
+                   621      Case 2: The limit is greater than 0. Then for each capacity a, there exists a corresponding lower
+                   622      bound b < a such that a container of capacity b can hold the container of capacity a. Similarly, for
+                   623      b, there exists a lower bound c < b such that c can hold b, and thus c can hold a. This contradicts
+                   624      the assumption that b is the lower bound of the sequence of capacities.
+                   625
+                   626      Therefore, the proposition is proved.
+                   627
+                   628      A.3    SUB TASKS
+                   629
+                   630      In addition to standard arithmetic operations, we also evaluated several sub-tasks as a complement
+                   631      to the main tasks. As shown in Table 6. The positive correlation between subtask performance and
+                   632      the main task indicates that proficiency on subtasks reflects or contributes to overall performance on
+                   633      the main task.
+                   634      Mostmodelsstrugglewithsub-tasks such as reversing and counting. Small models (0.5B and 1.5B)
+                   635      exhibit clear flaws in instruction-following, showing low accuracy on tasks like copy, box, and
+                   636      space.
+                   637
+                   638      A.4    EXPERIMENTS OF MEMORIZATION
+                   639
+                   640      We constructed a dataset using the first 10,000 digits of π, where the input is the index (the n-th
+                   641      digit) and the output is the corresponding digit represented as a one-hot vector. Models with varying
+                   642      parameter sizes were trained to memorize the π data up to their capacity limit, defined as the point
+                   643      where the accuracy converges. The learning rate was optimized via grid search to maximize the
+                   644      converged accuracy. We conducted dozens of experiments, and the result of one representative run
+                   645      is shown in Figure 3. The curves from the other experiments exhibit similar shapes.
+                   646      For different model, we calculated the ratio of the information content of the correctly memorized
+                   647      digits to the total number of model parameters. Our experiments show that this ratio is quite stable,
+                            regardless of model size or the number of digits, and is approximately 2.2 bits per parameter.
+                                                                             12
+                       Under review as a conference paper at ICLR 2026
+                648
+                649
+                650
+                651                    Table 6: Model performance on Arithmetic-Bench (Sub tasks)
+                652
+                653     Model                          copy   rev   box   space  length count  b2d   d2b
+                654     Llama-3-8B-Instruct            100.0%3.7%   99.8% 30.2% 8.6%   14.4% 5.5%    1.9%
+                655     Llama-3-70B-Instruct           100.0%7.1%   99.9% 80.7% 11.7% 6.5%    10.1% 3.1%
+                656     Qwen2.5-0.5B-Instruct          69.2% 2.8%   93.1% 20.3% 0.2%   7.8%   5.0%   1.3%
+                657     Qwen2.5-1.5B-Instruct          69.1% 9.3%   99.9% 82.5% 6.7%   6.2%   2.1%   3.1%
+                658     Qwen2.5-3B-Instruct            99.9% 13.4% 99.5% 86.5% 9.6%    4.3%   8.1%   2.2%
+                659     Qwen2.5-7B-Instruct            99.9% 13.4% 99.9% 99.9% 13.0% 24.7% 12.7% 3.5%
+                660     Qwen2.5-14B-Instruct           99.9% 17.1% 100.0%100.0%15.1% 24.7% 12.7% 3.5%
+                661     Qwen2.5-32B-Instruct           100.0%23.9% 100.0%99.9% 16.6% 42.9% 15.4% 4.6%
+                662     Qwen2.5-72B-Instruct           99.9% 14.2% 99.7% 100.0%23.3% 32.6% 15.6% 5.0%
+                663     DeepSeek-R1-Distill-Llama-8B   99.0% 6.6%   94.0% 37.0% 31.0% 47.0% 9.0%     1.0%
+                664     DeepSeek-R1-Distill-Llama-70B  100.0%9.0%   100.0%74.0% 33.0% 35.0% 10.0% 3.0%
+                665     DeepSeek-R1-Distill-Qwen-1.5B  96.0% 10.0% 77.0% 17.0% 34.0% 13.0% 3.0%      2.0%
+                666     DeepSeek-R1-Distill-Qwen-7B    100.0%14.0% 91.0% 93.0% 36.0% 44.0% 20.0% 5.0%
+                667     DeepSeek-R1-Distill-Qwen-14B   100.0%24.0% 100.0%100.0%38.0% 59.0% 11.0% 2.0%
+                668     DeepSeek-R1-Distill-Qwen-32B   100.0%23.0% 100.0%100.0%25.0% 42.0% 13.0% 4.0%
+                669     QwQ-32B                        100.0%70.0% 99.0% 100.0%98.0% 99.0% 31.0% 14.0%
+                        Qwen3-235B-A22B                100.0%78.0% 100.0%100.0%100.0%100.0%59.0% 20.2%
+                670     deepseek r1 671b               100.0%82.0% 100.0%100.0%96.0% 100.0%55.0% 16.0%
+                671     gpt4                           100.0%15.0% 100.0%100.0%54.0% 22.0% 11.0% 3.0%
+                672     gpt4o                          100.0%27.0% 100.0%100.0%68.0% 11.0% 11.0% 4.0%
+                673     gpt3.5                         100.0%20.0% 90.0% 51.0% 17.0% 10.0% 3.0%      2.0%
+                674
+                675
+                676
+                677
+                678
+                679
+                680
+                681        1.0
+                682
+                683
+                684        0.8
+                685
+                686
+                687        0.6
+                688
+                689       Accuracy0.4
+                690
+                691
+                692        0.2
+                693
+                694
+                695        0.0  0            2000         4000          6000          8000         10000
+                696                                              Epoch
+                697
+                698             Figure 3: Memorization of π, different colors represent different learning rates.
+                699
+                700
+                701
+                                                               13
+                     Under review as a conference paper at ICLR 2026
+               702   A.5  EXPERIMENTS OF FORGETTING
+               703
+               704   We constructed datasets using the first 10,000 digits of π and e. The model was first trained to
+               705   memorize the π dataset up to its capacity limit, and then trained on the e dataset. In the input
+               706   vectors, the indices of π digits were placed on the left, while the indices of e digits were placed on
+               707   the right, ensuring that the inputs did not overlap.
+               708   Despite the absence of input conflicts, the model completely forgot the π data after learning e. This
+               709   demonstrates that once a model reaches its capacity limit, adding new information inevitably causes
+               710   it to forget previously memorized information.
+               711
+               712   A.6  USE OF AI ASSISTANTS
+               713
+               714   Toreducethecostofmanualrevisions,weusedChatGPTOuyangetal.(2022)torevisethelanguage
+               715   of the paper. The revisions were made solely to enhance the clarity and readability of the text and
+               716   not for any other purpose.
+               717
+               718
+               719
+               720
+               721
+               722
+               723
+               724
+               725
+               726
+               727
+               728
+               729
+               730
+               731
+               732
+               733
+               734
+               735
+               736
+               737
+               738
+               739
+               740
+               741
+               742
+               743
+               744
+               745
+               746
+               747
+               748
+               749
+               750
+               751
+               752
+               753
+               754
+               755
+                                                           14

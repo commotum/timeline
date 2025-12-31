@@ -1,0 +1,602 @@
+                        MACHINE LEARNING FOR MODULAR MULTIPLICATION
+                                         ∗,1                    ∗,2                  ∗,3                ∗,4
+                           Kristin Lauter   , Cathy Yuanchen Li    , Krystal Maughan   , Rachel Newton    ,
+                                                                             ∗,5
+                                                       and Megha Srivastava
+                         Abstract. Motivatedbycryptographicapplications, we investigate two machine learn-
+                         ing approaches to modular multiplication: namely circular regression and a sequence-to-
+                         sequence transformer model. The limited success of both methods demonstrated in our
+                         results gives evidence for the hardness of tasks involving modular multiplication upon
+                         which cryptosystems are based.
+                                                        1. Introduction
+                   Machinelearningapproachestomodulararithmetichaverecentlyenteredthelimelight,
+                 motivated at least in part by the reliance on modular addition and multiplication of
+                 several cryptographic schemes, including RSA, Learning With Errors (LWE) and DifÏe–
+                 Hellman, to name but a few.
+                   In the SALSA series of papers [15, 7, 8], transformers are used to develop novel ma-
+                 chine learning attacks on LWE-based cryptographic schemes. Such schemes are based on
+                 the following problem, which is assumed to be hard. Given a dimension n, an integer
+                 modulus q, and a secret vector s ∈ Zn, solving the Learning With Errors problem [12]
+                                                            q
+                 entails finding the secret s given a data set consisting of pairs of vectors (a ,b ) where
+                                                                                                         i  i
+                 a ∈ Zn and b ≡ a · s + e (mod q) with e a small ‘error’ or ‘noise’ sampled from a
+                  i      q       i      i        i                  i
+                 narrow centered Gaussian distribution. We call bi a ‘noisy inner product’. In [15, 7, 8],
+                 transformer models are (partially) trained on noisy inner product data and used along
+                 with statistical cryptanalysis techniques to recover the secret s, under certain conditions
+                 on the dimension, modulus and secret size/sparseness.
+                   In dimension n = 1, recovering the secret s is akin to finding a modular inverse for
+                 a . Therefore, it is natural to ask whether the SALSA architecture has in fact learnt
+                  i
+                 modular arithmetic operations such as multiplication and division. However, the latest
+                 paper in the series, SALSA VERDE [8], calls this into question. The authors of that
+                 paper observe that secret recovery is harder when the modulus q is smaller and suggest
+                 that this may be a modular arithmetic issue. When q is large compared to a , s and e ,
+                                                                                                         i          i
+                 computing b does not involve any modular arithmetic (modular multiplication is replaced
+        arXiv:2402.19254v1  [cs.LG]  29 Feb 2024by ordinary multiplication). This reopens the question of whether transformers or other
+                 machine learning techniques can tackle modular multiplication and provides motivation
+                 for our investigations in the present paper.
+                   We experiment with two different machine learning approaches to modular multiplic-
+                 ation. In Section 2 we describe an approach to solving the 1-dimensional Learning With
+                 Errors problem using circular regression. We show that the method, as implemented,
+                 does not consistently give a significant improvement on exhaustive search. Indeed, some
+                   ∗Authors in alphabetical order
+                   1. Meta AI, klauter@meta.com
+                   2. University of Chicago, yuanchen@cs.uchicago.edu
+                   3. University of Vermont, Krystal.Maughan@uvm.edu
+                   4. King’s College London, rachel.newton@kcl.ac.uk
+                   5. Stanford University, megha@cs.stanford.edu
+                                                                   1
+                                   MACHINE LEARNING FOR MODULAR MULTIPLICATION                             2
+               recent theoretical results suggest that in general a large number of iterations are needed
+               in order for methods based on gradient descent to successfully tackle modular multiplic-
+               ation [14]. In Section 3 we explore an alternative approach using a sequence-to-sequence
+               transformer, and show poor generalization performance of our method for several dif-
+               ferent values of a secret s and base representations of numbers, likewise demonstrating
+               the difÏcult nature of this problem, in line with evidence presented in [10, 5]. We end
+               with a discussion of the relevance of modular arithmetic to cryptographic schemes such
+               as DifÏe–Hellman in Section 4.
+               Acknowledgments. We are grateful to Julio Brau and Kolyan Ray for useful discus-
+               sions. Rachel Newton was supported by UKRI Future Leaders Fellowship MR/T041609/1
+               and MR/T041609/2. Megha Srivastava was supported by an IBM PhD Fellowship and
+               the NSF Graduate Research Fellowship Program under Grant No. DGE-1656518. This
+               project began at the WIN6: Women in Numbers 6 workshop in 2023. We are grateful
+               for the hospitality and support of the Banff International Research Station during the
+               workshop and we would especially like to thank Shabnam Akhtari, Alina Bucur, Jennifer
+               Park and Renate Scheidler for organizing WIN6 and making this collaboration possible.
+                             2. Circular regression for modular multiplication
+               2.1. The task. We focus on the 1-dimensional version of LWE. Let p ∈ Z>0 be a prime
+               number and let s ∈ Z/pZ. We will refer to s as the secret. Given a data set consisting
+               of pairs of integers {(a ,b )}      , where b ≡ a s + e (mod p) and the ‘noise’ or ‘er-
+                                        i  i 1≤i≤m           i     i     i
+               ror’ values ei are sampled from a centered discrete Gaussian distribution with standard
+               deviation σ, the task is to find the unknown secret s. This problem was studied in the
+               case of binary secrets in [3], where the authors explored using circular regression to solve
+               Learning With Errors (LWE) in small dimension up to 28.
+               2.2. Transforming to a circular regression problem. Following [3], we rescale to
+               view our integers modulo p as points on the unit circle: define y = 2πb so that the
+                                                                                      i    p  i
+               congruence b ≡ a s+e (mod p) becomes
+                             i    i     i
+                                             y ≡ 2πa s+ 2πe        (mod 2π).
+                                               i   p i       p i
+               As in [3], we assume the target variables y follow a discrete von Mises distribution.
+                                                              i
+               The von Mises distribution is also known as circular normal distribution or Tikhonov
+               distribution and it closely approximates a wrapped normal distribution.
+               Definition 1 (von Mises distribution). The von Mises distribution is a continuous prob-
+               ability distribution on the circle. The von Mises probability density function for the angle
+               θ is
+                                             f(θ | µ,κ) = exp(κcos(θ −µ))
+                                                                2πI0(κ)
+               where the parameters µ and 1/κ are analogous to µ and σ2 (the mean and variance) in
+               the normal distribution:
+                     • µ is a measure of location (the distribution is clustered around µ), and
+                     • κ is a measure of concentration (a reciprocal measure of dispersion, so 1/κ is
+                       analogous to σ2).
+               I0(κ) is a scaling constant chosen so that the distribution is a probability distribution, i.e.
+               it sums to 1. I denotes the modified Bessel function of the first kind of order 0, which
+                               0
+               satisfies                      Z π
+                                                  exp(κcosx)dx = 2πI0(κ).
+                                               −π
+                                     MACHINE LEARNING FOR MODULAR MULTIPLICATION                                 3
+                   Since our samples y correspond to the integers b , they can only take certain discrete
+                                         i                               i
+                values, namely those angles of the form 2πn/p for integers n ∈ [−p+1, p−1]. To build a
+                                                                                           2     2
+                discrete version of the von Mises distribution, take a parameter c and define a modified
+                                                     ˜
+                probability distribution function f (θ | µ,κ) as follows:
+                                       (              c
+                                          c · f(θ | µ,κ)   if θ = 2πn/p for some n ∈ Z∩[−p+1, p−1];
+                         ˜                                                                      2     2
+                        f (θ | µ,κ) =
+                          c               0                otherwise.
+                To make this a probability distribution, we need the distribution to sum to 1; this is
+                achieved by choosing an appropriate value for c. Assume from now on that such a value
+                c has been fixed.
+                                                                                                      ˜
+                   Weconsidereachy asbeingsampledfromadiscretevonMisesdistributionf (θ | µ ,κ)
+                                       i                                                               c      i
+                where µ = 2πa s and κ is the same for each b since it corresponds to the variance σ2 of
+                         i    p  i                                 i
+                the distribution of the errors e .
+                                                  i
+                   The events y are independent so the probability density function for a collection of
+                                 i
+                samples y ,...,y     is
+                           1       m
+                                              m                      m
+                                             Y˜                   mY
+                                                 f (y | µ ,κ) = c       f(y | µ ,κ).
+                                                  c  i   i                  i   i
+                                             i=1                    i=1
+                   Therefore, the likelihood function for the collection of samples, given parameters
+                (µ ,...,µ ;κ) = (2πa s,..., 2πa s;κ) is
+                   1       m         p  1        p  m
+                                                                              m
+                                                                           mY
+                                    L((µ ,...,µ ;κ) | (y ,...,y )) = c           f(y | µ ,κ).
+                                         1       m         1       m                 i   i
+                                                                              i=1
+                   Since c is fixed, maximizing the (log-)likelihood function is equivalent to maximising
+                               m                         m                   
+                              Xlogf(y |µ,κ)=κXcos y −2πas −mlog(2πI (κ)).
+                                          i   i                    i    p i                   0
+                               i=1                      i=1             
+                                                  P
+                   Thus, we seek to maximize         m cos y − 2πa s over all choices of s. Equivalently,
+                                                     i=1       i    p  i             
+                                                               P
+                we minimise the circular regression loss −        m cos y − 2πa s . In pursuit of this goal,
+                                                                  i=1       i    p  i
+                we will treat s as if it were a continuous real variable, use gradient descent to find a
+                                                     Pm              2π   
+                real value of s that minimizes −           cos y −      a s , and our final output will be the
+                                                       i=1        i   p  i
+                integer closest to this real value of s.
+                   Differentiating −Pm cosy − 2πa s with respect to s gives the gradient
+                                         i=1       i    p  i
+                                                        m                    
+                                                 −2πXa sin y −2πas .
+                                                    p       i       i    p i
+                                                       i=1
+                So we start with an initial guess for s, call it s0, and at each time step t we define
+                                                             m                      
+                                          s    =s +η2πXa sin y −2πas ,
+                                           t+1     t     p        i       i   p i t
+                                                             i=1
+                where η ∈ R       is the learning rate. The theoretical minimum of the circular regression
+                       P >0                  
+                loss −    m cos y − 2πa s is −m. We choose a tolerance ϵ ∈ R               and halt our process
+                          i=1       i    p  i                                           >0
+                once we have                     m                   
+                                             −Xcos y −2πas ≤−m+ϵ.
+                                                           i    p i t
+                                                i=1
+                Our guess for s is then the unique integer in the interval (s − 1,s + 1].
+                                                                                  t   2   t   2
+                                                          MACHINE LEARNING FOR MODULAR MULTIPLICATION                                                                                4
+                          2.3. Analysis of the algorithm. First, we visualize the circular regression loss. As
+                          shown in Figure 2.1, the loss reaches the lowest value −m at s, and oscillates with
+                          decreasing magnitude as the prediction deviates from s. The loss is periodic, hence we
+                          only show one interval of length p for simplicity. The minimum within an interval of
+                          length p is the global minimum. For various values of the prime p and secret s, the loss
+                          exhibits a shape similar to the plot in Figure 2.1(empirically, we observed the loss for
+                          p = 23,41,71,113,251,367,967,1471). It is highly non-convex, making the search for
+                          optima with gradient descent quite challenging.
+                                      Figure 2.1. Circular regression loss for p = 41, s = 3, plotted using the
+                                      data set {(a ,b = a s (mod p)) | 0 ≤ a < p,a ∈ Z}, which does not
+                                                            i    i         i                                     i             i
+                                      include errors in b , and has size m = p.
+                                                                      i
+                              Since the loss consists of a deep valley at s but is much closer to 0 everywhere else, we
+                          observe that it is reasonable to relax the condition for halting the process. For example,
+                          instead of using a tolerance ϵ, we can check the closest integer to the prediction st when
+                          −Pm cosy −2πas≤−m.
+                                  i=1             i       p    i  t            2
+                              For gradient descent to be successful, ideally the direction of the gradient should point
+                          toward the closest optimum, and the magnitude of the gradient should be smaller when
+                          the prediction is closer to an optimum. Then, as we optimise the prediction using the
+                          gradient, we would rapidly approach an optimum and stay close once we reach proximity
+                          of an optimum. An example of the circular regression gradient is shown in Figure 2.2. It
+                          oscillates with higher magnitude around s, which means the magnitude of the gradient
+                          displays the opposite behaviour to what we would want in an ideal gradient for gradient
+                          descent. However, the direction of the gradient is good, at least when the predictions are
+                          at integer points. When the predictions are at integer points, the gradient at these points
+                          (marked with red dots on the plot) always has the sign that points to the closest correct
+                          answer.
+                              Since we would like a function with the same sign as the gradient and a magnitude
+                          with better behaviour, we are led to consider a version of gradient descent in which we
+                          replace the gradient by its reciprocal. We denote the reciprocal of the gradient by grad_r.
+                          It has the same sign as the gradient and its magnitude has nicer properties, see Figure
+                          2.3 as an example, where grad_r has opposite signs on different sides separated by s
+                          and has smaller magnitudes when the prediction is closer to s. Grad_r may explode at
+                            MACHINE LEARNING FOR MODULAR MULTIPLICATION                5
+                  Figure 2.2. Circular regression gradient for p = 41, s = 3, data set
+                  {(a ,b = a s (mod p)) | 0 ≤ a < p,a ∈ Z}. The red dots mark the
+                     i i    i                 i      i
+                  gradient values when the predictions are at integer points.
+                  Figure 2.3. Reciprocal of the circular regression gradient for p = 41,
+                  s = 3, data set {(a ,b = a s (mod p)) | 0 ≤ a < p,a ∈ Z}, when the
+                                   i  i   i                 i     i
+                  predictions are at integer points.
+            various points where the predictions are not integers, where the original gradient is 0.
+            The gradient is also 0 when the prediction is precisely s.
+              Note that in practice, we would use a small subset of {(a ,a s (mod p)) | 0 ≤ a <
+                                                                 i i                 i
+            p,a ∈ Z} of size k to compute the gradient for efÏciency reasons, and the b will have
+               i                                                               i
+            errors, which makes the gradient less accurate. Therefore, the grad_r computed in our
+            implementation does not always have the sign that points to the closest correct answer,
+            nor always having smaller magnitude when the prediction is closer to s.
+            2.4. Experiment setup. We build the data set with vectors a being integers from 1
+            to p − 1, and b = as + e (mod p), where e has standard deviation σ = 3. For each
+                            MACHINE LEARNING FOR MODULAR MULTIPLICATION               6
+            prime number p, we run 20 integer values of s, randomly chosen from 1 to p−1 without
+            replacement.
+              Forregression, we calculate the gradient on batches (with batch size k) of data randomly
+            chosen from the whole data set, and adjust it by scaling with 1. Essentially, that means
+                                                                 k
+            instead of taking the summation, we are taking the mean, so that the batch size does not
+            directly affect how much s is updated each step. Starting with a random integer s as
+                                   t                                               0
+            the initial guess, we update the prediction with the reciprocal of the adjusted gradient,
+            scaled by the learning rate η, as follows:
+                                                                  !
+                                               k                −1
+                             s   =s +η 2π1Xa sin y −2πas              .
+                              t+1   t     p k     i     i   p i t
+                                              i=1
+              Although we could use the circular regression loss (Section 2.3) to evaluate whether
+            our prediction is likely to be correct, in our implementation we instead verify whether st
+            matches s by rounding s to the nearest integer and checking the magnitude of as − b
+                                 t                                                 t
+            (mod p), since it is quite cheap and more reliable. A run terminates if st matches s,
+            or if the number of steps reaches p. The run is successful at step t if it terminates at
+            step t and the prediction st, rounded to the nearest integer, matches s. Henceforth, we
+            will refer to this whole process, starting with a random integer s0 and terminating with
+            an output st ∈ Z, as circular regression. Our implementation and code to reproduce
+            visualizations in Section 2.3 and results in Section 2.5 are available at: https://github.
+            com/meghabyte/mod-math/circ_reg.ipynb.
+            2.5. Empirical results. To choose the parameters, we ran experiments with various
+            learning rates η and batch sizes k and counted the number of successes. While η = 1
+            had more successful trials when k ∈ {256,512}, the performance varied less with p when
+            η = 2, which is desirable (see Table 1). Hence, for the following experiments, we use
+            η = 2. And we set the batch size to k = 256 because it has similar performance with
+            k = 512, but smaller batch size costs less compute.
+                 η               0.5                 1                  2
+                 p        251   1471  11197  251   1471  11197   251   1471  11197
+                 k = 64   6/20  0/20  0/20  16/20 12/20   4/20  15/20 17/20 11/20
+                 k = 128 14/20  4/20  0/20  15/20 19/20   6/20  14/20  8/20  11/20
+                 k = 256 18/20 11/20  4/20  19/20 17/20 15/20 16/20 13/20 14/20
+                 k = 512 17/20 15/20 11/20 20/20 15/20 18/20 14/20 14/20 15/20
+                  Table1. Numberofsuccessesin20trialsforlearningrateη = 0.5,1,2and
+                  batch size k = 64,128,256,512, ran for p of different sizes and s randomly
+                  selected from 1 to p − 1 (see Section 2.4). We upper-bound the batch size
+                  with the size of the data set, i.e., for p = 251 and k = 256,512, each batch
+                  is the entire data set.
+              Table 2 shows the number of steps for successful trials, with batch size k = 256. As p
+            increases, the success rate remains roughly the same, but the number of steps increases.
+            Unfortunately, with batch size k = 256, the number of steps needed for circular regression
+            to succeed does not consistently give a significant improvement on exhaustive search.
+            Possible directions for future work could include scaling η with p, and learning rate
+            decay.
+                                     MACHINE LEARNING FOR MODULAR MULTIPLICATION                                 7
+                      p         log2 p  success number of steps
+                      251       8       16/20     1, 1, 1, 1, 2, 11, 24, 28, 37, 44, 62, 109, 118, 171,
+                                                  195, 210
+                      1471      11      13/20     121, 199, 213, 234, 306, 324, 371, 488, 507, 699,
+                                                  724, 810, 859
+                      11197     14      14/20     1912, 2294, 2647, 2747, 2799, 3006, 4450, 5349,
+                                                  6277, 7368, 7431, 8104, 8903, 10520
+                      20663     15      15/20     1234, 2759, 3006, 4070, 4288, 4572, 5120, 6117,
+                                                  6517, 9584, 10445, 10846, 11348, 14325, 15542
+                      42899     16      15/20     290, 583, 785, 1098, 3998, 10225, 17005, 18076,
+                                                  19859, 20241, 21553, 22170, 25864, 34798, 35316
+                      115301 17         12/20     10575, 11436, 12805, 15045, 43322, 51372,
+                                                  58295, 69038, 80187, 86451, 104638, 115134
+                      222553 18         14/20     2952, 3048, 3271, 3847, 11959, 17058, 24574, 38624,
+                                                  62084, 73294, 103107, 138868, 160838, 172156
+                        Table 2. Number of steps for successful trials. For each value of p, we
+                        run circular regression on 20 random values of s, with η = 2 and k = 256.
+                                   3. Transformers for Modular Multiplication
+                   Wenowmove on to an alternative machine learning-based approach to modular mul-
+                tiplication, namely the use of transformers, which are a class of deep learning models
+                designed for “sequence-to-sequence” tasks: transforming one sequence of elements (e.g.
+                words) to another.
+                3.1. The task. We consider the noiseless version of the task described in Section 2.1 –
+                namely, given a data set consisting of m pairs of integers {(a ,b )}            , where b ≡ a s
+                                                                                    i  i  1≤i≤m           i     i
+                (mod p), the task is to find the unknown secret s. Knowledge of s together with the
+                ability to perform multiplication modulo p would allow one to take some a as an input
+                                                                                                   j
+                and generate a valid sample (a ,b ) where b ≡ a s (mod p). Moreover, being able to
+                                                   j  j           j     j
+                reliably predict b given a would imply knowledge of s (take a = 1).
+                                   j         j                                        j
+                   We train a model M on the dataset {(a ,b )}                , and determine successful task
+                                                                  i  i  1≤i≤m
+                performance as the model M’s ability to generalize to a held-out test set of n unknown
+                samples {(a ,b )}         not seen during training. Truly learning the secret s and modular
+                             j  j  1≤j≤n
+                multiplication would imply perfect accuracy on a held-out test set – as we demonstrate, we
+                are currently unable to observe this for modular multiplication, suggesting the difÏculty
+                of the task.
+                   Recent works have demonstrated success in training transformers, powerful encoder-
+                decoder deep neural networks that are behind some of the best-performing language
+                models (e.g. GPT-3), for modular addition [4, 9]. These works have demonstrated a
+                surprising phenomenon called grokking [11], where training a model for a large number of
+                steps (with 0 training loss) leads to a surprising “jump” in generalization capabilities. We
+                therefore consider the transformer architecture as the model class for M, and specifically
+                frame our task as a sequence-to-sequence task: we represent the integer a as an input
+                                                                                                   i
+                sequence of t tokens xi,1...xi,t in a given base B, and train a transformer-based M to
+                output b represented as an output sequence of t tokens y ...y              in the same base B.
+                          i                                                        i,1  i,t
+                For example, if we use base 10 then the tokens are the usual digits of an integer written
+                in its decimal representation. We note that in the previously mentioned works, models
+                trained to perform modular addition output a single token, and therefore the size of the
+                transformer’s vocabulary |V|, or number of possible tokens, is equivalent to the modulus
+                     MACHINE LEARNING FOR MODULAR MULTIPLICATION  8
+          p. This is different from our setting, where M outputs a sequence of tokens. In our case,
+          |V| is equivalent to the base B, and therefore B influences the overall sequence length
+          that M needs to generate. Furthermore, the value of the modulus p dictates the total
+          number of input/outputs we can train and evaluate on, so smaller values are more likely
+          to lead to memorization. Indeed, this is what we observe – see Section 3.3.
+          3.2. Representation and model. Following[15],wetrainasequence-to-sequencetrans-
+          former, varying the number of encoder-decoder layers, but with a fixed model dimension
+          of 512 and 8 attention heads. The vocabulary size is equivalent to the base (|V| = B) as
+          described above. Positional encoding is used to describe the relative positions of tokens
+          in a sequence. Since the order of the digits is of the utmost importance when representing
+          a number, this should be accounted for in our model. We experiment with two kinds of
+          positional encodings: fixed sinusoidal, as is standard in language models such as GPT-2,
+          and randomly initialized encodings that are learned over the course of the task, and view
+          optimal representation of position for arithmetic tasks with transformers as an interesting
+          direction for future work. We optimize our model by minimizing the KL-divergence [6]
+              Figure 3.1. Training curve for modular multiplication task with p = 251,
+              s = 3, and base B = 7 showsthatoptimizingsequence-to-sequenceaccuracy
+              also helps improve arithmetic accuracy, as both test loss and arithmetic
+              difference between generated outputs yˆ and true values y decrease during
+                                       i           i
+              training.
+          between the predicted distribution across all tokens in the vocabulary and the ground
+          truth for each token in the output sequence yi,1...yi,t. We also experiment with a weighted
+          loss objective that places a higher penalty on divergence in the most significant bits (e.g.
+          y ) than in the least significant bits (e.g. y ). We specifically use the weight 1.25 for
+          i,1                         i,t
+          the first 1/3 most significant bits, 1 for the middle 1/3 significant bits, and 0.75 for the
+          1/3 least significant bits. Finally, we implement early-stopping by ending training either
+          after 5000 (the maximum) number of epochs, or when the loss on a held-out valid set has
+          monotonically increased for 5 epochs. Our model implementation and code are publicly
+          available at: https://github.com/meghabyte/mod-math.
+          3.3. Memorization. We generally observe that for a small prime p and a small secret
+          s, the task of memorization results in a high (≈ 100%) model accuracy. This is not
+          entirely surprising as a smaller prime means there are fewer possible inputs and outputs,
+          and therefore there is less to learn. On the other hand, when the prime p is large and
+          the secret s is small, modular multiplication often coincides with ordinary multiplication.
+                            MACHINE LEARNING FOR MODULAR MULTIPLICATION               9
+            Previous work shows that transformers are capable of learning ordinary multiplication,
+            see e.g. [1, 13] and the references therein. In our experiments we do not observe increased
+            memorization accuracy when the secret is small compared to the prime, but time con-
+            straints mean we have not run experiments with very large primes, so this could be a
+            direction for further investigation. Moreover, memorization may well improve with in-
+            creased training time. In the case of p = 83, memorization accuracy was 100% using our
+            current model for base 8, 9 and 11. For p = 97, memorization accuracy is 100% in base 9,
+            94.12% for base 8, and varying memorization accuracy for base 11. This accuracy quickly
+            decreases for larger primes p. We evaluated primes p from 83 to 293 for a secret s, where
+            3 ≤ s ≤ 293 and found that accuracy decreased from 100% to ≈ 40 −60% as shown for
+            a selection of primes in Figures 3.2 through 3.7. We evaluated bases B ∈ {8,9,11} for
+            5000 epochs with Beam = 6 (see Section 3.4 below for an explanation of beam search).
+            Wenote that not all bases are equal: in Figure 3.3 we see that for bases 8 and 9, memor-
+            ization is stable and high across all secrets, but for base 11 we start to see mixed results.
+            This shows that base representation matters when training the model, and this would
+            then influence the model’s ability to generalize, cf. [15, Section 5.5].
+                  Figure 3.2. Train accuracy for p = 83, 3 ≤ s ≤ 83, and B ∈ {8,9,11},
+                  after training for 5000 epochs with learning rate 0.007.
+                  Figure 3.3. Train accuracy for p = 97, 3 ≤ s ≤ 97, and B ∈ {8,9,11},
+                  after training for 5000 epochs with learning rate 0.007.
+            3.4. Evaluation. In order to evaluate our model’s ability to generalize, and therefore
+            successfully learn a given secret s, we must first consider the decoding method. We
+                                MACHINE LEARNING FOR MODULAR MULTIPLICATION                      10
+                     Figure 3.4. Train accuracy for p = 101, 3 ≤ s ≤ 101, and B ∈ {8,9,11},
+                     after training for 5000 epochs with learning rate 0.007.
+                     Figure 3.5. Train accuracy for p = 179, 3 ≤ s ≤ 179, and B ∈ {8,9,11},
+                     after training for 5000 epochs with learning rate 0.007.
+                     Figure 3.6. Train accuracy for p = 211, 3 ≤ s ≤ 211, and B ∈ {8,9,11},
+                     after training for 5000 epochs with learning rate 0.007.
+              experiment with two such methods: greedy decoding, where the most likely token yˆ   is
+                                                                                               i,t
+              selected conditioned on the input xi and previously generated tokens, and beam search,
+              where k possible candidates are retained at each step, and the output sequence yˆ with the
+              highest likelihood is selected. We then compare the predicted output sequence yˆ with
+                                                                                             i
+              the true output of modular multiplication for each instance of our test data, y .
+                                                                                         i
+                                                   MACHINE LEARNING FOR MODULAR MULTIPLICATION                                                              11
+                                 Figure 3.7. Train accuracy for p = 293, 3 ≤ s ≤ 293, and B ∈ {8,9,11},
+                                 after training for 5000 epochs with learning rate 0.007.
+                          Weevaluate model outputs in two ways: accuracy and arithmetic difference. Consider
+                      the task instance p = 251, s = 3, and base B = 7. For an input x = 426, the output
+                      of modular multiplication would be y = 266 in base B = 7. Perfect accuracy from
+                      our model would require M, under a given decoding method, to generate the sequence
+                      yˆ   = 2,yˆ = 6,yˆ = 6. Unfortunately, we largely observe 0% accuracy on the test set
+                        1           2           3
+                      (inputs not observed during training) across different choices of prime modulus, base
+                      and secret, and therefore choose to also measure the arithmetic difference (in base 10)
+                      between the predicted output yˆ and ground truth y . A predicted output sequence of
+                                                                        i                                i
+                      yˆ   = 2,yˆ = 6,yˆ = 3 would be considered closer in arithmetic difference than yˆ =
+                        1            2           3                                                                                                       1
+                      3,yˆ = 6,yˆ = 6, even though the overall sequence “loss” is equivalent (due to a mismatch
+                           2           3
+                      in one token). A model that can perform modular multiplication under a certain error
+                      range in the least significant bits could still be useful for cryptographic attacks. It is
+                      not immediately intuitive that optimizing for the sequence-based loss (generating correct
+                      tokens) helps decrease the arithmetic difference. However, in Figure 3.1 we show that
+                      this generally holds true over a large scale, where both test loss and arithmetic difference
+                      decrease as we train M.
+                              (p, s, B)            Std.       Unweighted Loss Sinusoidal Enc. Beam = 3 Beam = 5
+                             (97, 11, 9)           36.5               44.475                      24.613                34.975             34.975
+                             (101, 3, 7)          37.45               36.775                      32.213                36.138             36.138
+                            (109, 29, 8)         27.288               33.913                      35.425                26.963             26.963
+                            (179, 29, 8)          68.88               75.725                       83.7                 57.075             57.075
+                                 Table 3. Average test arithmetic difference (lower is better) for differ-
+                                 ent ablations of our transformer modelling approach applied to 3 settings
+                                 (p,s,B) of modular multiplication. Std refers to training a 2-layer trans-
+                                 former with our weighted loss, random positional encodings, and greedy
+                                 decoding, with early-stopping implemented up until 5000 epochs.
+                      3.5. Generalization results. Wegenerallyobservethatbeamsearchoutperformsgreedy
+                      decoding for all three instances of (p,s,B), that increasing beam size beyond 3 makes no
+                      difference in performance, that sinusoidal position encoding only improves performance
+                      over random positional encoding for smaller values of the p modulus, and that weighting
+                      the loss generally leads to stronger generalization, see Table 3.
+                          Given the low test accuracy (see Section 3.4), a natural question to ask is whether this
+                      can be improved by having larger models. However, as shown in Figure 3.8, increasing
+                                                  MACHINE LEARNING FOR MODULAR MULTIPLICATION                                                            12
+                                 Figure 3.8.             Performance vs. number of encoder-decoder layers of the
+                                 model. Legend = (p,s,B). Lower average test arithmetic difference means
+                                 better performance.
+                                  B=7 B=8 B=9 B=10 B=11
+                        p = 83                                                                                                                        28.46
+                        p = 97                                                                                                                        31.16     Average 
+                        p = 101                                                                                                                       34.17   Arithmetic 
+                                                                                                                                                               Distance
+                        p = 179                                                                                                                       58.43
+                        p = 211                                                                                                                       65.57
+                                         s = 3                   s = 11                 s = 29                s = 53                   s = 71
+                                 Figure 3.9. Smaller values of p result in lower average arithmetic differ-
+                                 ence (error) on held out test examples for our transformers-based approach.
+                                 Meanwhile, different values of s and the encoding base B do not show a
+                                 strong effect on generalization performance. Heatmap colors represent av-
+                                 erage arithmetic difference with lighter colors meaning smaller values.
+                      the number of layers only improves performance for smaller modulus p, suggesting that
+                      expressiveness of the model is not a sufÏcient reason for low generalization performance.
+                         Finally, in Figure 3.9 we show generalization results (average arithmetic distance on
+                      held-out test examples) for 5 different values of p, 5 different values of s, and 5 different
+                      values of B, in order to explore the effects of prime, secret, and base. All results are
+                      from training models identically, with early-stopping, as described earlier. As expected,
+                      smaller values of p result in lower arithmetic difference between the secret s and the
+                      generated output, as the space of possible differences is smaller (once normalized by the
+                      largest possible difference, which is the value of p, all differences lie between 0.3 − 0.33).
+                      Meanwhile, we observe no trend in performance related to the base B or the secret s,
+                      though it is possible that some trend emerges at higher values of p.
+                                             MACHINE LEARNING FOR MODULAR MULTIPLICATION                                                   13
+                                                                      4. Discussion
+                       One motivation for studying whether modular multiplication is easily tackled by ma-
+                    chine learning algorithms, and whether models can learn the representation of a fixed
+                    unknown factor (the secret s) in multiplication, comes from cryptography. In partic-
+                    ular, learning modular multiplication can potentially yield solutions to more advanced
+                    problems. For example, consider the problem of recovering a secret s from a data set
+                                                                           a s
+                    {(a ,y )}            where a ∈ Z and y ≡ g i (mod p) for a public choice of primitive root
+                        i   i   1≤i≤m               i               i
+                    g modulo the prime p. This is related to a DifÏe–Hellman scheme, where Alice picks a
+                    randomnumberaandsendsga (mod p)toBob, Bobpicksarandomnumbersandsends
+                    gs (mod p) to Alice, and they both compute y ≡ gas (mod p) as the shared secret. Note
+                    that Alice does not have access to Bob’s random number s. However, Alice has control of
+                    a and access to the values of y to build a data set for training to predict y from a. (Note
+                    that this assumes that the secret s belonging to Bob remains fixed, while Alice’s a is
+                    changing, cf. semi-static or ephemeral/static DifÏe–Hellman encryption schemes such as
+                    ElGamal [2].) If an algorithm learns to predict y ≡ gais (mod p) from a , it has implicit
+                                                                                       i                               i
+                    knowledge of s and one can potentially extract s.
+                                                  a s       b
+                       In order to have (g ) ≡ g (mod p), we only need a · s ≡ b (mod (p − 1)), which is
+                    a modular multiplication problem. Hence, a gradient-based algorithm can try to predict
+                    pred = a · s (mod (p − 1)). However, in the problem described above, the data set has
+                    gb (mod p) accessible but b unknown. In fact, solving for b from y = gb (mod p) is itself
+                    a famous hard problem known as the discrete logarithm problem.
+                       Therefore, the loss function would need to involve a comparison with y = gb (mod p).
+                    For example, one might try using gpred (mod p)−y as the loss function. But this function
+                    involves modular arithmetic and raising g to the power of pred. Both of these features
+                    are challenging for current gradient-based methods, for the following reasons:
+                         (1) the reduction modulo p function is not differentiable;
+                         (2) pred is an integer of the same scale as p so for large p, gpred is a huge number,
+                              and the usual ways of handling this (e.g., binary exponentiation) involve modular
+                              arithmetic as part of the calculation, which is not differentiable as remarked above.
+                       To circumvent issue (1), one could replace reduction modulo p by a smooth function
+                    thatgivesacloseapproximationtoreductionmodulop. Forissue(2), writingthenumbers
+                    in some base B (see Section 3.1) could be helpful, illustrated in Example 2 below.
+                    Example 2. Suppose we would like to train a transformer to predict pred = a · s
+                                                                                                                            a s
+                    (mod (p − 1)) from a. The data set consists of pairs (a,y), where y ≡ (g ) (mod p).
+                    The transformer could be set up to output a sequence that writes pred in base B. Let
+                    us denote that sequence as [y ,...,y ,y ], so pred = y · Bk + ... + y · B + y , where
+                                                              k       1    0                     k                   1            0
+                    0 ≤ y < B for all i. Let g = gBi (mod p). All the g are just constants < p. Let mod
+                            i                           i                                    i                                              p
+                    denote a smooth function approximating reduction modulo p. A possible loss function to
+                    be minimized could be
+                                                       gpred     (mod p)−y ≈mod (gpred)−y
+                                                                                           p
+                    With pred written in base B, this is                                                        !
+                                                                                     k
+                                                    P                                 Y
+                                                       k   y ·Bi                            y          y     y
+                                         mod g i=0 i              −y=mod                  g i · ... · g 1 · g 0    −y
+                                               p                                 p          i          1
+                                                                                    i=0                 !
+                                                                                       k
+                                                                        ≈mod Ymod(gyi) −y
+                                                                                 p              p   i
+                                                                                      i=0
+                            MACHINE LEARNING FOR MODULAR MULTIPLICATION              14
+            If we choose B to be relatively small, which means all the y are relatively small, then the
+                                                              i
+             y                                               y
+            g i should be reasonable to compute. The terms mod (g i) are in the interval (0,p), so
+             i                                            p  i
+            their product is memory efÏcient to compute too. Furthermore, the result is differentiable,
+            and therefore may be amenable to gradient-based methods.
+              In addition to modular arithmetic remaining hard to learn for machine learning al-
+            gorithms, the discreteness and the scale of the numbers used in cryptographic applic-
+            ations also bring engineering challenges. Example 2 above illustrates one possible way
+            forward to mitigate the difÏculties with an algorithmic approach.
+                                            References
+             [1] François Charton. Linear algebra with transformers. Transactions on Machine Learning Research,
+                2835–8856 (2022).
+             [2] Taher ElGamal. A Public-Key Cryptosystem and a Signature Scheme Based on Discrete Logarithms.
+                IEEE Transactions on Information Theory 31(4), (1985), 469–472. (conference version appeared in
+                CRYPTO’84, pp. 10–18).
+             [3] Evrard Garcelon, Mohamed Malhou, Matteo Pirotta, Cathy Yuanchen Li, François Charton and
+                Kristin Lauter. Solving Learning with Errors with Circular Regression. Preprint, Meta AI Papers,
+                October 2022.
+             [4] Andrey Gromov. Grokking modular arithmetic. Preprint (2023). Available at https://arxiv.org/
+                abs/2301.02679
+             [5] Samy Jelassi, Stéphane d’Ascoli, Carles Domingo-Enrich, Yuhuai Wu, Yuanzhi Li and François
+                Charton. Length Generalization in Arithmetic Transformers. Preprint (2023). Available at https:
+                //arxiv.org/abs/2306.15400
+             [6] Solomon Kullback and Richard A. Leibler. On information and sufÏciency. Annals of Mathematical
+                Statistics. 22 (1) (1951), 79–86.
+             [7] Cathy Yuanchen Li, Jana Sotáková, Emily Wenger, Mohamed Malhou, Evrard Garcelon, François
+                Charton and Kristin Lauter. SALSA PICANTE: a machine learning attack on LWE with binary
+                secrets. Proceedings of the ACM Conference on Computer and Communications Security (CCS),
+                November 2023.
+             [8] CathyYuanchenLi,EmilyWenger,ZeyuanAllen-Zhu,FrançoisChartonandKristinLauter.SALSA
+                VERDE - A machine learning attack on LWE with small sparse secrets. Proceedings of the 37th
+                Conference on Neural Information Processing Systems (NeurIPS), November 2023.
+             [9] Neel Nanda, Lawrence Chan, Tom Lieberum, Jess Smith and Jacob Steinhardt. Progress measures
+                for grokking via mechanistic interpretability. The Eleventh International Conference on Learning
+                Representations, 2023.
+            [10] Theodoros Palamas. Investigating the Ability of Neural Networks to Learn Simple Modular Arith-
+                metic. MSc Thesis, Edinburgh, 2017. Available at https://project-archive.inf.ed.ac.uk/msc/
+                20172390/msc_proj.pdf
+            [11] Alethea Power, Yuri Burda, Harri Edwards, Igor Babuschkin and Vedant Misra. Grokking: Gener-
+                alization beyond overfitting on small algorithmic datasets. 1st Mathematical Reasoning in General
+                Artificial Intelligence Workshop, ICLR 2021.
+            [12] Oded Regev. On lattices, learning with errors, random linear codes, and cryptography. Proceedings
+                of the thirty-seventh annual ACM symposium on Theory of computing (Baltimore, MD, USA: ACM,
+                2005), 84–93.
+            [13] Ruoqi Shen, Sébastien Bubeck, Ronen Eldan, Yin Tat Lee, Yuanzhi Li and Yi Zhang. Positional
+                Description Matters for Transformers Arithmetic. Preprint (2023), available at https://arxiv.
+                org/abs/2311.14737
+            [14] Rustem Takhanov, Maxat Tezekbayev, Artur Pak, Arman Bolatov and Zhenisbek Assylbekov.
+                Gradient Descent Fails To Learn High-frequency Functions and Modular Arithmetic. Preprint
+                (2023), available at https://arxiv.org/abs/2310.12660
+            [15] Emily Wenger, Mingjie Chen, François Charton and Kristin Lauter. SALSA: Attacking Lattice
+                Cryptography with Transformers. Proceedings of the 36th Conference on Neural Information Pro-
+                cessing Systems (NeurIPS), November 2022.

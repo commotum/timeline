@@ -1,0 +1,765 @@
+                Received: 29 March 2024    Revised: 28 November 2024      Accepted: 17 December 2024                                              IET Computer Vision
+                DOI: 10.1049/cvi2.12338 -                               -                                                                      -
+                ORIGINALRESEARCH
+                LLFormer4D: LiDAR‐based lane detection method by temporal
+                feature fusion and sparse transformer
+                            1                                2                                1                                1                          3
+                Jun Hu           | Chaolu Feng                    | Haoxiang Jie                   | Zuotao Ning                   | Xinyi Zuo                 |
+                             1,4                                5
+                Wei Liu             | Xiangyu Wei
+                1
+                Neusoft Reach Automotive Technology (Shenyang) Co., Ltd., Shenyang, China
+                2
+                Key Laboratory of Intelligent Computing in Medical Image, Ministry of Education, Shenyang, China
+                3
+                Shenyang Institute of Automation, Chinese Academy of Sciences, Shenyang, China
+                4
+                School of Computer Science and Engineering, Northeastern University, Shenyang, China
+                5
+                Horizon Robotics, Shanghai, China
+                Correspondence
+                                                                     Abstract
+                Haoxiang Jie.
+                                                                     Lane detection is a fundamental problem in autonomous driving, which provides vehicles
+                Email: jie.hx@reachauto.com
+                                                                     with essential road information. Despite the attention from scholars and engineers, lane
+                                                                     detection based on LiDAR meets challenges such as unsatisfactory detection accuracy and
+                Funding information
+                                                                     significant computation overhead. In this paper, the authors propose LLFormer4D to
+                Development and Application of Vehicle Cloud
+                Collaboration Self‐Evolution Platform for Advanced   overcome these technical challenges by leveraging the strengths of both Convolutional
+                Automatic Driving, Grant/Award Number:
+                                                                     Neural Network and Transformer networks. Specifically, the Temporal Feature Fusion
+                2022JH1/10400030; Intelligent Control Theories
+                                                                     module is introduced to enhance accuracy and robustness by integrating features from
+                and Key Technologies of Heterogeneous Unmanned       multi‐frame point clouds. In addition, a sparse Transformer decoder based on Lane Key‐
+                Electric Commercial Vehicles Formation, Grant/
+                Award Number: U22A2043                               point Query is designed, which introduces key‐point supervision for each lane line to
+                                                                     streamline the post‐processing. The authors conduct experiments and evaluate the pro-
+                                                                     posed method on the K‐Lane and nuScenes map datasets respectively. The results
+                                                                     demonstrate the effectiveness of the presented method, achieving second place with an
+                                                                     F1 score of 82.39 and a processing speed of 16.03 Frames Per Seconds on the K‐Lane
+                                                                     dataset. Furthermore, this algorithm attains the best mAP of 70.66 for lane detection
+                                                                     on the nuScenes map dataset.
+                                                                     KEYWORDS
+                                                                     automobiles, edge detection, intelligent transportation systems, laser ranging, learning (artificial intelligence)
+                     |
+                1        INTRODUCTION                                                                  detection [3, 4] or segmentation [5, 6] based on Convolutional
+                                                                                                       Neural Network (CNN) networks, followed by fitting the lane
+                Lane detection, as a major task of intelligent driving systems,                        line curve during post‐processing. Another architecture in-
+                provides necessary road information for Advanced Driving                               volves end‐to‐end output of lane line parameters from sensors
+                Assistance System functions such as Lane Departure Warning,                            input data [7, 8].
+                Lane Keeping Assist, Auto Lane Change, and Traffic Jam                                      Previously, due to the limitations of hardware devices and
+                Assist. In terms of the overall process, the existing lane line                        datasets, scholarly research on lane detection mainly focused
+                detection algorithms can be classified into the following two                          on using the single modality of the camera. Moreover, in the
+                categories. One architecture involves obtaining a discrete set of                      early stages of research, the investigation of 2D lane detection
+                lane line points through traditional methods [1, 2] or via                             [9] based on cameras dominated the industry [10–12]. These
+                This is an open access article under the terms of the Creative Commons Attribution‐NonCommercial‐NoDerivs License, which permits use and distribution in any medium, provided the
+                original work is properly cited, the use is non‐commercial and no modifications or adaptations are made.
+                ©2024 The Author(s). IET Computer Vision published by John Wiley & Sons Ltd on behalf of The Institution of Engineering and Technology.
+                IET Comput. Vis. 2025;e12338.                                                                                          wileyonlinelibrary.com/journal/cvi2       1 of 12
+                https://doi.org/10.1049/cvi2.12338                                                                                                                          -
+                                                                                                                                                                                                                 17519640, 2025, 1, Downloaded from https://ietresearch.onlinelibrary.wiley.com/doi/10.1049/cvi2.12338, Wiley Online Library on [30/12/2025]. See the Terms and Conditions (https://onlinelibrary.wiley.com/terms-and-conditions) on Wiley Online Library for rules of use; OA articles are governed by the applicable Creative Commons License
+                 2 of 12     -                                                                                                                                                             HUETAL.
+                 methods typically employ 2D CNN networks [13] to infer                                       [8] is the first approach to use the CNN þ DETR‐Trans-
+                 lanes in the front view (FV). Following this, through operations                             former structure for LiDAR‐based lane detection, which
+                 like Inverse Perspective Mapping (IPM), the results in FV are                                directly     outputs       lane     parameters        through Lane Query.
+                 converted into the bird’s‐eye‐view (BEV) for subsequent                                      Although this strategy shows a fine real‐time performance, the
+                 planning and control modules [14]. With the advancement of                                   lane curve deduced based on Lane Query experiences an
+                 image BEV perception technology, 3D image lane line detec-                                   under‐fitting due to the laser point cloud at longer distances.
+                 tion has gradually garnered the attention of scholars, leading to                                  In addition, we further summarise and analyse the char-
+                 the emergence of various representative algorithms [15–17].                                  acteristics of the above‐mentioned lane line detection task.
+                      However, the above‐mentioned camera‐based lane detec-                                   Firstly, lane lines are usually smooth, continuous, and narrow
+                 tion methods still suffer from several disadvantages. The per-                               curves. Secondly, lane lines typically traverse the entire field of
+                 formance of the lane line detection network is greatly affected                              view (FOV) of the utilised sensor, with the lane line itself being
+                 by external lighting conditions. The depth information of the                                relatively sparse compared to the input image or point cloud.
+                 lane cannot be accurately obtained by the camera. Additionally,                              Thirdly, paired lane lines often exhibit parallelism and have
+                 extra distortion and errors are introduced when the detected                                 significant lateral spacing. Lastly, lane detection algorithms
+                 lane is converted from the FV perspective to the BEV                                         must be optimised for computational efficiency to meet the
+                 perspective, affecting subsequent functions.                                                 real‐time requirements of industrial applications (greater than
+                      Benefiting from the development of LiDAR hardware,                                      10 Frames Per Seconds (FPS)).
+                 there has been a remarkable improvement over the LiDAR                                             Based on sufficiently analysing the characteristics of the
+                 resolution and point cloud intensity information [18]. As                                    lane detection task and the existing methods, this manuscript
+                 shown in Figure 1, we can visually identify the lane points (as                              presents a LiDAR lane detection approach based on spatio‐
+                 indicated by the green points in the ground wave line) in the                                temporal Transformer, called LLFormer4D. LLFormer4D
+                 LiDAR intensity point cloud map. Lidar, as a range sensing                                   generally follows the network structure of CNN þ DETR‐
+                 sensor, provides higher three‐dimensional measurement accu-                                  Transformer from the previous work, LLFormer. Additionally,
+                 racy and tolerates noises from lighting variation. Therefore, the                            after extracting the BEV feature map via the CNN network, we
+                 LiDAR lane detection scheme has the advantages of higher                                     introduce multi‐frame laser point cloud information through
+                 accuracy and better environmental adaptability, gradually                                    the designed Multi‐Frame Feature Fusion (MFFF) module to
+                 attracting the attention of researchers.                                                     compensate for the data sparsity from using a single‐frame
+                      Asarepresentative method of LiDAR‐based lane detection                                  laser point cloud, aiming to improve the accuracy, continuity,
+                 algorithms, LLDN‐GFC [19] is the first one to employ a Deep                                  and stability of the lane detection performance. Lastly, through
+                 Neural Network for 3D lane detection. However, to capture                                    the Lane Key‐point Query (LKQ), LLFormer4D gains the
+                 the global characteristics of the lane, this method utilises the                             supervision and regression of lane key points and ultimately
+                 Multi‐layer Perception (MLP)‐Mixer structure, which results in                               achieves high‐precision referencing of lane parameters through
+                 considerable computational overhead. In addition, LLFormer                                   the forward neural network.
+                 FIGURE1 Illustrationoflanedividerinhigh‐resolutionLiDARpointcloud.This figure showsan image of a specific frame in a high‐speed scenario and its
+                 corresponding 128‐line LiDAR point cloud. Also, it illustrates the correspondence of Lane 1 and Lane 2 in both the image and the point cloud. The point cloud
+                 in the right image is coloured based on LiDAR point cloud intensity information, demonstrating that the 128‐line LiDAR has a high point cloud density, resulting
+                 in better detection performance. Notably, the point cloud of the lane is clearly distinguishable from other point clouds in terms of intensity, enabling neural
+                 networks to identify lane lines based on point cloud information.
+                                                                                                                                                                                   17519640, 2025, 1, Downloaded from https://ietresearch.onlinelibrary.wiley.com/doi/10.1049/cvi2.12338, Wiley Online Library on [30/12/2025]. See the Terms and Conditions (https://onlinelibrary.wiley.com/terms-and-conditions) on Wiley Online Library for rules of use; OA articles are governed by the applicable Creative Commons License
+              HUETAL.                                                                                                                                         -    3 of 12
+                   In brief, our contributions are as follow:
+                                                                                              detection network, which may benefit better global feature
+                                                                                              extraction of the lane curve via the attention structure.
+                    • The proposed MFFF module compensates for the
+                    sparsity of the laser point cloud by fusing multi‐frame
+                    point cloud features, thereby improving the algorithm’s                   2.2     |   Camera‐based 3D lane detection
+                    performance in lane detection.
+                                                                                              The 2D lane detected under the front view image lacks depth
+                    • The design of the instantiated LKQ effectively alleviates
+                    the under‐fitting problem present in the vanilla LLFormer                 information, and it is usually necessary to use IPM and other
+                    algorithm, which directly supervises the lane curve pa-                   operations to convert it into the vehicle body coordinate sys-
+                    rameters with Lane Query. This significantly enhances the                 tem for subsequent planning and control modules. However,
+                    algorithm’s accuracy in curved scenes.                                    this conversion process often introduces significant errors and
+                    • The proposed algorithm achieves an optimal balance                      distortions. Recently, some scholars have tried to draw on
+                    among real‐time performance, robustness, and accuracy.                    vision BEV perception technology [29, 30] to directly extract
+                    Specifically, LLFormer4D achieves a total F1 Score of                     lane line features in 3D space based on 2D front view images.
+                    82.39 with a running frequency of 16.03 FPS on the K‐                     For example, 3D‐LaneNet þ [31] divides the BEV features
+                    Lane [20] dataset, and attains the best average precision                 into non‐overlapping cells and detects lanes by regressing the
+                    (AP) score of 70.66 with a running frequency of 4.56 FPS                  lateral offset distance relative to the cell centre, line angle and
+                    on the nuScenes [21] dataset. The low‐computation‐cost                    height offset. BEV‐LaneDet [17] proposes the Spatial Trans-
+                    version (LLFormer4D‐tiny) achieves a total F1 Score of                    formation Pyramid to transform FV feature maps into BEV
+                    74.78 with a running frequency of 27.6 FPS on the K‐                      features and perform lane detection in BEV space. PersFormer
+                    Lane dataset, and an AP score of 64.37 with a frequency                   [15] and CurveFormer [32] use the Transformer network to
+                    of 10.42 FPS on the nuScenes dataset.                                     learn the BEV feature from the front view images and further
+                                                                                              perform 3D lane detection.
+                   |
+              2        RELATEDWORKS
+                                                                                              2.3     |   LiDAR‐based 3D lane detection
+              2.1     |   Camera‐based 2D lane detection
+                                                                                              In early LiDAR‐based lane detection studies, scholars often
+              In this paper, camera‐based 2D lane detection methods are                       judge potential lane points based on given intensity thresholds.
+              categorised into five technical routes: row‐wise detection‐based                Then, the final lane curve is obtained by combining clustering
+              methods,anchor‐basedmethods,segmentation‐basedmethods,                          operations, noise removal and polynomial fitting [33, 34].
+              parametric prediction methods, and attention‐based methods.                     These methods rely on manually set thresholds, and the rule‐
+                   Row‐wise detection methods [6, 22] detect key points row                   based     post‐processing      process     is   time‐consuming,       and
+              by row in 2D FV images and then fit lane curves through post‐                   cannot meet the complex scenarios encountered by intelligent
+              processing. These methods can make good use of shape prior                      driving.
+              information, predicting the lane location by key points for each                     In recent years, some scholars have attempted to perform
+              row. However, the row‐wise formulation has a main problem                       LiDAR‐based lane detection by using deep learning networks
+              of instance‐level discrimination. Furthermore, anchor‐based                     [35, 36]. In this work [37], a CNN backbone is utilised to detect
+              methods [23, 24], to adapt to the lane detection task, borrow                   the ego lane lines in the highways based on LiDAR. D. Paek
+              the idea of anchor frames from the field of object detection                    et al. publish the first LiDAR lane dataset (K‐Lane) and pro-
+              and improve the anchor itself. For example, CurveLane [25]                      pose the LLDN‐GFC algorithm [19] and RLLD‐LCR algo-
+              and PointLaneNet [12] utilise vertical lines as anchors. How-                   rithm [38]. H. Jie et al. describe the LLFormer algorithm [8],
+              ever, these methods require predefined anchors, resulting in a                  which uses voxel feature encoding to extract features from 3D
+              low degree of freedom in formulating the lane shape. Addi-                      LiDAR point clouds. It then employs the Lane Query‐based
+              tionally,   segmentation‐based methods are widely used in                       Transformer encoder to realise the inference of lane curve
+              the industry [5, 25, 26]. Still, these methods require a                        parameters.
+              post‐clustering strategy to distinguish each lane instance after
+              segmenting the foreground data, which can be very time‐
+                                                                                                   |
+                                                                                              3        THEPROPOSEDMETHOD
+              consuming in some complex scenarios. Moreover, some re-
+              searchers try to predict the lane curve parameters end‐to‐end
+                                                                                                      |
+                                                                                              3.1
+              [7, 27]. For example, LSTR [7] uses the CNN þTransformer                                    Overview of the proposed network
+              structure to learn the curve parameters of lanes through Object
+              Query. These methods do not require a complex post‐                             The overall structure of the proposed LLFormer4D is shown
+                                                                                              in Figure 2. In the kth frame, the raw LiDAR point clouds are
+              processing process, but the given cubic polynomial prior
+              assumption can lead to under‐fitting in some scenarios,                         processed by the Feature Extractor and Encoder Module to
+              resulting in low detection accuracy. Finally, In these methods                  obtain a multi‐scale BEV feature map F . Then, the multi‐scale
+                                                                                                                                             k
+              [10, 28], the attention operation is introduced into the lane                   features F − 2, F − 1 and F are aligned in the temporal
+                                                                                                          k          k              k
+                                                                                                                                                                                                                 17519640, 2025, 1, Downloaded from https://ietresearch.onlinelibrary.wiley.com/doi/10.1049/cvi2.12338, Wiley Online Library on [30/12/2025]. See the Terms and Conditions (https://onlinelibrary.wiley.com/terms-and-conditions) on Wiley Online Library for rules of use; OA articles are governed by the applicable Creative Commons License
+                 4 of 12     -                                                                                                                                                             HUETAL.
+                 FIGURE2 Overviewoftheproposed method. The LiDAR point cloud PC of frame K is processed by the Pointcloud Feature Extractor and Encoder
+                                                                                                             k
+                 Module to obtain the multi‐scale feature map F . Subsequently, it, along with the historical frame feature maps F              and F     , as well as the ego‐motion information
+                                                                     k                                                                      k−1       k−2
+                 obtained from the CAN‐bus, is input into the TFF module to output a fused feature map. Next, the fused feature map is sent to the LKQ‐based Transformer
+                 decoder module, where it undergoes linear mapping to obtain K and V, and interacts with the LKQ (based on cross‐attention). Finally, the algorithm utilises the
+                 learnt LKQ to classify and regress the lane key points. LKQ, Lane Key‐point Query; TFF, Temporal Feature Fusion.
+                 dimension by the proposed Temporal Feature Fusion (TFF)                                      T0 �DimensionðH ∗W ∗DCÞ,                           thereby       mitigating        the
+                 module based on ego‐motion information, which outputs the                                       k
+                                                                                                              computational overhead associated with 3D convolution. On
+                                         fusion
+                 fusion feature F              .  Furthermore, the multi‐scale features                       the other hand, PFE, derived from PointPillars [41], follows a
+                                         k
+                                                                                                              similar overall process to VFE. However, PFE divides the
+                   fusion
+                 F         are fed into the LKQ based Transformer Decoder
+                   k
+                 Module to realise instance‐by‐instance lane key‐point detec-                                 original 3D point cloud into pillars along the X and Y axes and
+                                                                                                              then extracts the 3D feature tensor using an MLP network and
+                 tion. Each LKQ corresponds to one lane instance and the
+                                                                                                              pooling operations. Consequently, the subsequent backbone for
+                 classification results and position information of each lane key
+                 point can be calculated by the learnt LKQ through the Feed‐                                  PFEistypically a 2D CNN network.
+                                                                                                                    Following the VFE/PFE, we employ the Bidirectional
+                 Forward Neural Network (FNN) and network head. Finally,                                      Feature Pyramid Network operation [42] to acquire multi‐
+                 the lane curve parameters are fitted from the lane key points                                scale feature map F               through cross‐scale connections and
+                                                                                                                                            k
+                 through the FNN.
+                                                                                                              weighted feature fusion. Specifically, in LLFormer4D, we
+                                                                                                              leverage three feature maps with down‐sampling sizes of 2,
+                                                                                                                                 � i                 �
+                                                                                                              where F ¼ F ;i20;1;2 .
+                                                                                                                          k
+                                                                                                                                     k
+                 3.2      |   Point‐cloud feature extractor and
+                 Encoder Module
+                                                                                                                       |
+                                                                                                              3.3           Temporal Feature Fusion module
+                 In this module, we initially extract BEV feature F                         from the
+                                                                                       KE
+                 raw LiDAR point cloud using either the Pillar‐based Feature                                  In the proposed MFFF Module, we aim to combine ego‐
+                 extractor (PFE) or the voxel feature encoder (VFE). Both PFE
+                                                                                                              motion information to align the point cloud features of mul-
+                 and VFE represent classic methods for encoding features in                                   tiple historical frames to the current frame and perform feature
+                 point clouds. VFE, originating from VoxelNet [39], partitions                                fusion. Historical point cloud features capture information
+                 the 3D point cloud into voxels along the length, width, and                                  about the surrounding environment from LiDAR data in
+                 height directions. Subsequently, it employs MLP and maximum                                  previous frames. By integrating these historical features with
+                                                                                                              those from the current frame, challenges such as missed or
+                 pooling        operations         to      derive       the      feature       tensor
+                 T �DimensionðH ∗W ∗D∗CÞ. The features T obtained                                             false lane line detections—caused by occlusions or perspective
+                   k                                                                     k
+                 through VFEforma4Dtensor,withH,W,andDrepresenting                                            distortions—can be effectively mitigated. The effectiveness of
+                 thevoxelnumbersalongtheX,Y,andZaxes,andCdenotingthe                                          this approach has been validated in the ablation study section
+                 feature dimension. Given that 3D CNN operations typically                                    of this paper. The advantages of combining multi‐frame point
+                 follow VFE, we introduce a space‐to‐channel operation [40]                                   cloud feature information through the MFFF module are
+                 post‐VFE to convert T                   into a 3D tensor, denoted as                         summarised as follows:
+                                                     k
+                                                                                                                                                                                               17519640, 2025, 1, Downloaded from https://ietresearch.onlinelibrary.wiley.com/doi/10.1049/cvi2.12338, Wiley Online Library on [30/12/2025]. See the Terms and Conditions (https://onlinelibrary.wiley.com/terms-and-conditions) on Wiley Online Library for rules of use; OA articles are governed by the applicable Creative Commons License
+               HUETAL.                                                                                                                                                  -    5 of 12
+                                                                                                                        k
+                     • It can compensate for the sparsity of point clouds and
+                                                                                                     Pk−1 to Pk is Δk−1 and can be calculated by equation 1, where
+                     improve the detection accuracy of the algorithm.                                 k−1;k   k−1;k    k−1;k
+                                                                                                     δ     ; δ      ; δ       represent the variation in the heading
+                                                                                                      yaw     x        y
+                     • It can reduce the influence of vehicle occlusion on lane                      angle, x‐axis, and y‐axis directions, respectively. According to
+                     line   detection and improve the robustness of the
+                                                                                                     vehicle kinematics, we can obtain the homogeneous trans-
+                     algorithm.
+                                                                                                                                k
+                                                                                                     formations matrix Mk−1 based on the ego‐motion Δk                           by
+                     • It can maintain the continuity and smoothness of lane                                                                                               k−1
+                                                                                                     equation 1, which describes the motion of the vehicle from
+                     detection results across multiple frames.
+                                                                                                     Pk−1 to Pk.
+                    However, point clouds captured at different times are                                               h                         i
+                                                                                                                k          k−1;k    k−1;k   k−1;k         k
+               obtained under distinct vehicle coordinate systems. Therefore,                                 Δ      ¼ δ         ; δ     ; δ        �M
+                                                                                                                k−1        yaw      x       y             k−1
+               before fusion, it is necessary to be uniformly transformed into                                          2      �        �          �        �            3
+                                                                                                                                  k−1;k               k−1;k        k−1;k
+               the current vehicle coordinate system to eliminate the effects                                              cos δ             −sin δ              δ
+                                                                                                                        6         yaw                 yaw          x     7      ð1Þ
+               of vehicle motion on the point cloud features. Directly                                                  6     �         �         �        �             7
+               applying motion transformations to each point in the original                                         ¼6           k−1;k               k−1;k        k−1;k 7
+                                                                                                                        6sin δyaw             cos δyaw           δy      7
+               point cloud to align multiple frames with the current frame,                                             4        0                   0              1    5
+               followed by feature extraction and fusion, would require sub-
+               stantial computational resources, leading to suboptimal real‐
+                                                                                                         Then, we can see the BEV feature map F                    as image, and
+               time performance. To address this, historical point cloud                                                                                      k−1
+                                                                                                                                    k−1
+               features—represented as feature maps in the BEV perspective
+                                                                                                     use the inverse matrix M
+                                                                                                                                         to rotate and translate the feature
+                                                                                                                                    k
+               after voxelisation—can be aligned with the current frame’s                                                                             0
+                                                                                                     map F       to obtain its representation F           in the current frame
+                                                                                                            k−1                                       k−1
+               coordinate system using spatial transformations based on the                          coordinate system Coord ¼ fx ;P ;y g. The above process
+                                                                                                                                     k        k    k   k
+               vehicle’s trajectory within the BEV space. This method re-
+                                                                                                     can be represented by equation 2 and equation 3. Similarly, we
+               quires only a Euclidean transformation of each pixel in the                                       0
+                                                                                                     can get Fk−2 based on equation 4. Furthermore, we concate-
+               feature map, substantially reducing computational demands                                                         0       0
+                                                                                                     nate the features of F          , F    , F and crop the feature map
+               and enhancing real‐time performance compared to processing                                                        k−2     k−1    k
+                                                                                                     based on the field of view (FOV) in the current frame, which is
+               the original point cloud.                                                             expressed by ½⋆�              and the empty parts are zero‐filled.
+                                                                                                                            FOV
+                    The following Figure 3 depicts the detailed process of the
+                                                                                                     Finally, the multi‐frame fusion feature FFusion is obtained by
+                                                                                                                                                          k
+               TFF. Assume that the position of the vehicle at frame k is P ,
+                                                                                             k
+               and the corresponding multi‐scale point cloud feature is                              CNNlayerprocessing, and this process is shown in equation 5.
+               F       � i               �                                                                                 h                               i
+                 k ¼ Fk;i20;1;2 . The ego‐motion of the vehicle from                                                k−1         k−1;k      k−1;k      k−1;k        k−1
+                                                                                                                  Δ ¼ −δ              ; −δ      ; −δ         �M                 ð2Þ
+                                                                                                                                yaw        x          y            k
+                                                                                                                    k
+                                                                                                                          n 0                  o 0
+                                                                                                                F0     ¼ Fi ji¼0;1;2 ;Fi                 ¼Mk−1Fi                ð3Þ
+                                                                                                                  k−1         k−1                    k−1       k     k−1
+                                                                                                                          n 0                  o 0
+                                                                                                                F0     ¼ Fi ji¼0;1;2 ;Fi                 ¼Mk−2Fi                ð4Þ
+                                                                                                                  k−2         k−2                    k−2       k     k−2
+                                                                                                                       fusion     �� 0           0          �     �
+                                                                                                                     F       ¼μ F ⊕F ⊕F                                         ð5Þ
+                                                                                                                                       k−2       k−1       k
+                                                                                                                       k
+                                                                                                                                                             FOV
+                                                                                                     Where μð⋆Þ represents CNN operation.
+                FIGURE3 TemporalFeature Fusion (TFF) process. Due to the
+                sparsity of LiDAR point clouds, we combined the multi‐frame LiDAR
+                                                                                                     3.4     |   LKQ‐based sparse Transformer
+                feature map information to enhance the algorithm’s detection performance
+                                                                                                     Decoder Module
+                and robustness. For the historical feature map F  , we transform it into the
+                                                               k−1
+                current coordinate system using ego‐motion information. First, we calculate
+                                                         k
+                                                                                        k
+                the ego‐vehicle transformation matric Mk−1 based on the ego‐motion Δk−1, as          Previous studies, like LSTR [7] and LLFormer [8], have shown
+                                                                                    k−1
+                                                                                                     that a Transformer decoder based on instantiated Query can
+                per equation 1. Subsequently, the inverse transformation matrix M       is
+                                                                                    k                effectivelyeliminatethetime‐consumingpost‐processingduring
+                computed for the historical feature map using equation 2. The results in the
+                transformed feature map F0    , which compensates for the effects of ego‐
+                                           k−1                                                       lanecurvedetection.ThiskindofsparseQuerytokencanreduce
+                vehicle motion, as described in equation 3. A similar process is applied to the      the number of cross‐attention operations in the Transformer
+                                                                                    0
+                historical feature map F   , yielding the transformed feature map F    , as
+                                        k−2                                         k−2
+                                                                                                     decoder [43, 44], enhancing the efficiency of the algorithm
+                shown in equation 4. After rotation and translation transformations, these
+                                                                                                     compared to directly using a dense Map Query [29]. Neverthe-
+                feature maps were converted into the current frame’s vehicle coordinate
+                                                                                                     less, LLFormerandLSTRbothassumeacubiccurveforthelane
+                system P
+                          . They were then concatenated with the current frame’s feature map
+                         k
+                F and processed through convolution operations to obtain the multi‐scale             and employ Lane Query to directly learn the parameters of the
+                 k
+                                          fusion
+                                                                                                     cubic curve, leading to unsatisfactory accuracy in these
+                temporal fusion feature F
+                                              , as shown in Figure 5.
+                                          k
+                                                                                                                                                                                                                 17519640, 2025, 1, Downloaded from https://ietresearch.onlinelibrary.wiley.com/doi/10.1049/cvi2.12338, Wiley Online Library on [30/12/2025]. See the Terms and Conditions (https://onlinelibrary.wiley.com/terms-and-conditions) on Wiley Online Library for rules of use; OA articles are governed by the applicable Creative Commons License
+                 6 of 12     -                                                                                                                                                             HUETAL.
+                 algorithms. In this paper, we integrate key point concepts from
+                                                                                                              This process is repeated N times to obtain the learnt LKQ as
+                 row‐wisedetection‐basedmethodstoimprovetheLaneQuery‐                                         formulated in equation 7.
+                 based Transformer Decoder layer in LLFormer and introduce                                                                                  �
+                                                                                                                                                     Fusion
+                 the LKQ based Transformer decoder module. The lane refer-                                          DeformaAttn Q;p ;F
+                                                                                                                                                q
+                                                                                                                                      "              k                                    #
+                 ence points are initialised as randomly learnable parameters.
+                                                                                                                             M            K
+                 During the training process, these parameters are continuously                                        ¼XW XA ⋅W0FFusion P þΔp �                                                 ð7Þ
+                                                                                                                                    m                                     q
+                                                                                                                                                mqk                                 mqk
+                                                                                                                                                            m
+                                                                                                                                                                kth
+                 learnt andupdatedtoacquirepriorknowledge.Asdemonstrated                                                   m¼1           k¼1
+                 inEfficientDETR[45],AnchorDETR[46],andDETR3D[43],
+                 the reference points in the Transformer decoder layer can pro-
+                                                                                                              Where Q is regarded as a query with p
+                                                                                                                                                                          as its position, and
+                                                                                                                                                                       q
+                                                                                                                Fusion
+                 vide the initial position of the target and interact with the object                         F          denotes the fused multi‐scale features. W                     represents
+                                                                                                                                                                                    m
+                                                                                                                k                                           0                                  Fusion
+                 query for calculation. The initialisation and interaction can
+                                                                                                              the outputs of different heads,W                  is used to transform F
+                                                                                                                                                            m                                  k
+                 acceleratetheconvergenceoftheTransformerdecoderlayerand
+                                                                                                              to value, and A            represents the attention weights. For Δp                   ,
+                                                                                                                                   mqk                                                          mqk
+                 improve detection performance.
+                                                                                                              it is the positional offset of the sampling set point concerning
+                      Asillustrated in Figure 4, we utilise hLKQ to learn features
+                                                                                                              the reference point.
+                 of lane key points row by row with h representing the assumed
+                 maximum number of lanes. Each LKQ of w∗c dimension                                                 The prediction head of LLFormer4D consists of a classi-
+                                                                                                              fication branch and a point regression branch. The classifica-
+                 represents a lane instance with w denoting the number of key
+                                                                                                              tion branch predicts the instance class score, while the point
+                 points, and c indicating the feature dimension of the key points
+                                                                                                              regression branch predicts the positions of the key points.
+                 to be learnt. In addition, we use lane reference points to
+                 explicitly supervise the position of key points, accelerating the
+                 convergence of the decoder layer. Specifically, the lane refer-
+                                                                                                                       |
+                                                                                                              3.5           Loss function
+                 ence points are transformed into a feature tensor of c
+                 dimension through the MLP layer and subsequently concate-
+                 nated with the LKQ. The result will undergo a self‐attention                                 The loss function comprises two components: classification
+                                                                                                              loss and point loss. The classification loss determines the
+                 operation and output the Q token, as shown in equation 6.
+                                                                                                              confidence level of curve detection results, while the point loss
+                                                                                      !                       calculates the shape and position of the lane curve.
+                                                                                   T
+                                                                              QK                                    We calculate the classification loss using the cross‐entropy
+                              AttentionðQ;K;VÞ¼softmax pfofofofofo                       V         ð6Þ        loss function, with the formula as follows:
+                                                                                  d
+                                                                                    k
+                                                                                                                          L ¼ 1 −½y ⋅logðpÞþð1−yÞ⋅logð1−pÞ�                                      ð8Þ
+                 Where d
+                                denotes the feature dimension of each head in the
+                                                                                                                                            i          i              i                 i
+                                                                                                                            cls
+                             k
+                 multi‐head attention calculation.                                                                                 N
+                      Furthermore, the Q token, the K token obtained from
+                                                                                                                    Pointloss,asshowninequation9,supervisesthelocationof
+                   Fusion
+                 F        , and the V token undergo cross‐attention computation.
+                                                                                                              each predicted point. The ground truth (GT) point that best
+                   k
+                                                                                                              matches the predicted point is identified. The point loss is the
+                                                                                                              Manhattan distance calculated between each pair of assigned
+                                                                                                              points.
+                                                                                                                                                  N
+                                                                                                                                       L ¼XD                        ðp ;g Þ                      ð9Þ
+                                                                                                                                         pts                           i   i
+                                                                                                                                                         Manhattan
+                                                                                                                                                 i¼1
+                                                                                                              TABLE1 Results on K‐Lane dataset.
+                                                                                                                                                     F1 score
+                                                                                                                Method                 Modality      Total    Night Curve Crowed FPS
+                                                                                                                Heuristic [34]         LiDAR         26.40    26.00     27.60     16.70        9.10
+                                                                                                                SCNN[26]               LiDAR         71.60    66.10     64.40     69.70       15.50
+                                                                                                                LLDN‐GFC [19]          LiDAR         82.10    82.00     78.00     75.90        5.70
+                 FIGURE4 LKQ‐basedsparseTransformerdecodernetwork.The2D                                         RLLDN‐LCR [38] LiDAR                 82.74    82.92     76.16     74.32        6.30
+                 Lane reference‐point is encoded to a 256‐dimensional vector via MLP and
+                 concatenated with the LKQ to form the Q query. The multi‐scale Temporal
+                                                                                                                LLFormer [8]           LiDAR         73.70    74.70     59.80     67.50       35.90
+                                         fusion
+                 fusion feature map F          undergoes linear mapping [47] to obtain the K
+                                         k                                                                      LLFormer4D‐tiny        LiDAR         74.78    75.21     64.22     68.69       27.60
+                 query and V query. Q, K, and V are processed through the Transformer
+                 decoder layer to obtain the learnt Query, which is then passed through the
+                 FNNlayer to generate the instantiated lane detection results. LKQ, Lane Key‐                   LLFormer4D             LiDAR         82.39    83.01     72.13     79.03       16.03
+                 point Query; MLP, Multi‐layer Perception.                                                    Note: The best results for each column in the table are indicated in bold font.
+                                                                                                                                                                                                       17519640, 2025, 1, Downloaded from https://ietresearch.onlinelibrary.wiley.com/doi/10.1049/cvi2.12338, Wiley Online Library on [30/12/2025]. See the Terms and Conditions (https://onlinelibrary.wiley.com/terms-and-conditions) on Wiley Online Library for rules of use; OA articles are governed by the applicable Creative Commons License
+                HUETAL.                                                                                                                                                         -    7 of 12
+                4 | EXPERIMENTANDEVALUATION                                                              perceptual range is [0 m, 46.08 m] along the X‐axis [˗11.52 m,
+                                                                                                         11.52 m] along the Y‐axis, and [˗4.0 m, 4.0 m] along the Z‐axis.
+                        |
+                4.1
+                             Datasets                                                                         The nuScenes map dataset contains 1000 scenes with each
+                                                                                                         lasting about 20 s. We chose the lane divider, a map element,
+                We evaluate LLFormer4D using two public LiDAR lane                                       for evaluation. The perceptual range is [˗15.0 m, 15.0 m] along
+                datasets, K‐Lane and nuScenes map. The K‐Lane dataset                                    the X‐axis [˗30.0 m, 30.0 m] along the Y‐axis, and [˗5.0 m,
+                employs an Ouster OS264 LiDAR sensor for data acquisition                                3.0 m] along the Z‐axis.
+                with a maximum distance of 240 m. There are 15,382 frames of
+                data containing LiDAR point clouds of urban roads and
+                                                                                                                  |
+                highways under different conditions and scenarios. The                                   4.2          Evaluation metrics
+                                                                                                         For the K‐Lane dataset, the F1 score serves as a criterion to
+                                                                                                         assess the correctness of detecting lane curve locations. The F1
+                                                                                                         score can be expressed as:
+                                                                                                                                 F ¼                TP                                ð10Þ
+                                                                                                                                   1    TPþ0:5ðFPþFNÞ
+                                                                                                              ForthenuScenesdataset,weusedAPtoevaluatethequality
+                                                                                                         of lane detection. The chamfer distance is utilised to assess the
+                                                                                                         alignmentbetweenthepredictedvalueandtheGT.Wecompute
+                                                                                                         the     APτ      at    multiple      Dchamfer      thresholds       τ 2 T;T ¼
+                                                                                                         f0:5;1:0;1:5g, and the final AP metric is detailed as:
+                                                                                                                                        AP¼Pτ2TAPτ                                    ð11Þ
+                                                                                                                                                     jTj
+                                                                                                                  |
+                                                                                                         4.3          Implementation details
+                                                                                                         The inputs of our model consist of points. The learning rate is
+                                                                                                         set to cosine annealing learning with a minimum learning rate
+                                                                                                                −6
+                                                                                                         of 1e     . The batch size is set to 6, and the AdamWoptimiser is
+                                                                                                         used. We apply the voxel feature extractor and sparse convo-
+                                                                                                         lution to be the backbone. The number of training epochs is
+                                                                                                         TABLE2 Results on nuScenes map val dataset.
+                                                                                                           Method                  Modality     Backbone        Epochs      AP       FPS
+                                                                                                           HDMapNet [48]           Camera       Effi‐B0          30         21.70     0.80
+                                                                                                           HDMapNet                LiDAR        PointPillars     30         24.10     1.00
+                                                                                                           HDMapNet                Camera&      Effi‐B0&         30         29.60     0.50
+                                                                                                                                   LiDAR        PointPillars
+                                                                                                           VectorMapNet [49]       Camera       ResNet50        110         47.30     2.90
+                                                                                                           VectorMapNet            LiDAR        PointPillars    110         37.60    ‐
+                                                                                                           VectorMapNet            Camera&      ResNet50&       110         47.50    ‐
+                                                                                                                                   LiDAR        PointPillars
+                                                                                                           MapTR [50]              Camera       ResNet50         24         51.50    11.20
+                FIGURE5 Lanedetection results based on K‐Lane dataset. We                                  MapTRV2 [51]            Camera&      ResNet50&        24         66.50     5.80
+                                                                                                                                   LiDAR        SECOND
+                selected various scenarios such as straight roads, curves, and narrowing
+                roads for testing and compared our results with the current SOTA
+                                                                                                           LLFormer [8]            LiDAR        VoxelNet         20         53.71     5.90
+                algorithms LLDN‐GFC and RLLDN‐LCR on this dataset. In the figures,                         LLFormer4D‐tiny         LiDAR        PointPillars     20         64.37    10.42
+                the pink curves represent the GT of the lane lines, while the blue curves
+                represent the detection results of our algorithm. GT, ground truth; SOTA,
+                                                                                                           LLFormer4D              LiDAR        VoxelNet         20         70.66     4.56
+                state of the arts.
+                                                                                                                                                                                                                 17519640, 2025, 1, Downloaded from https://ietresearch.onlinelibrary.wiley.com/doi/10.1049/cvi2.12338, Wiley Online Library on [30/12/2025]. See the Terms and Conditions (https://onlinelibrary.wiley.com/terms-and-conditions) on Wiley Online Library for rules of use; OA articles are governed by the applicable Creative Commons License
+                 8 of 12     -                                                                                                                                                             HUETAL.
+                 set to 20. We utilise RTX3090 Ti graphic process unit and                                    methods. To achieve higher detection accuracy, we employ the
+                 PyTorch 1.8.1 to conduct experiments on the machine with an                                  voxel‐based backbone in LLFormer4D. Table 1 presents the
+                 Ubuntu 18.04.                                                                                experimental results, including the overall F1 score and F1
+                                                                                                              scores under representative scenarios (Night, Curve, and
+                                                                                                              Crowded scenarios). Additionally, real‐time performance FPS
+                          |
+                 4.4          Experiment results                                                              is listed in the table.
+                                                                                                                    FromTable1,itisevidentthattheF1ScoreofLLFormer4D
+                 4.4.1      |    Results on the K‐lane dataset                                                reaches the second place on the K‐Lane test set, with a total F1
+                                                                                                              score of 82:39%, just 0:35% below the current state of the arts
+                 We assess the LLFormer4D on the K‐Lane dataset and                                           (SOTA)methodRLLDN‐LCR.Innightandcrowdedscenarios,
+                 compare it with current state‐of‐the‐art lane detection                                      the proposed method achieves the best accuracy with
+                 FIGURE6 LanedetectionresultsonnuScenesvaldataset.Wefurther testedand validated the algorithm on the nuScenes dataset, comparing it with several
+                 representative algorithms in this dataset. In this figure, we selected five scenarios, including straight roads, intersections, and T‐junctions, and provided
+                 corresponding scene images and LiDAR point cloud images, along with the GTof the lane lines. We also displayed the lane detection visualisation results of the
+                 LLFormer algorithm and the MapTR algorithm, which is the current SOTA algorithm in this dataset. GT, ground truth; SOTA, state of the arts.
+                                                                                                                                                             17519640, 2025, 1, Downloaded from https://ietresearch.onlinelibrary.wiley.com/doi/10.1049/cvi2.12338, Wiley Online Library on [30/12/2025]. See the Terms and Conditions (https://onlinelibrary.wiley.com/terms-and-conditions) on Wiley Online Library for rules of use; OA articles are governed by the applicable Creative Commons License
+             HUETAL.                                                                                                                       -   9 of 12
+             corresponding F1 scores of 83:01% and 79:03%. Moreover, the
+                                                                                   clouds. Therefore, it is typical to superimpose 10 consecutive
+             proposed method operates at 16.03FPS, faster than the current
+                                                                                   frames of point clouds and process the combined frame as a
+             SOTAmethod.                                                           whole input. In this context, the real‐time advantage of the
+                 Being less suitable for high real‐time performance re-            PointPillars‐based LLFormer4D‐tiny is evident, which per-
+             quirements, the LLDN‐GFC and RLLDN‐LCR algorithms                     forms an inference time of 10.42FPS in the point cloud pre‐
+             using the Global Feature Correlation module have lower real‐          processing stage.
+             time performance with the FPS of 5.7 and 6.3 respectively.
+                                                                                       Figure 6 provides specific visualisations, including scene
+             Notably, the previous work, LLFormer, achieves the best real‐         pictures obtained by six cameras, GT lane dividers, and lanes
+             time performance on the K‐Lane dataset with an FPS of 35.9.           inferred   by the LLFormer4D. The depicted scenarios
+             Specifically, LLFormer employs the lane query to end‐to‐end           encompass urban, suburbs, and complex intersections,
+             learn the cubic curve parameters of the lane lines through
+                                                                                   demonstrating the performance of lane divider detection in
+             the Transformer layer. However, it faces challenges of under‐         accuracy. Notably, in Scene3, the MapTR algorithm presents
+             fitting in curves and crowded scenarios due to sparse laser
+                                                                                   significant missed detections, which are highlighted by red
+             point clouds from the distance range.
+                                                                                   boxes in Figure 6.
+                 In LLFormer4D, the introduction of lane reference‐point               During the model training process, reference points are
+             and LKQs significantly improves the ability of the algorithm          randomly generated at the initial step. As iterations progress,
+             to supervise key points of lane dividers at each distance range.
+             In addition, the fusion of temporal features enhances the
+             reasoning ability in occluded lane divider scenarios. Although
+             the real‐time performance is lower than that of LLFormer due
+             to the introduction of time‐dimensional features, the running
+             frequency of 16.03 FPS still meets engineering requirements.
+                 Furthermore, to achieve better real‐time performance, we
+             explore the use of the pillar‐based backbone in LLFormer4D,
+             resulting in the LLFormer4D‐tiny algorithm. As shown in
+             Table 1, LLFormer4D‐tiny runs at 27.6 FPS on the K‐Lane
+             dataset,   balancing    accuracy    between    LLFormer      and
+             LLFormer4D.
+                 Finally, Figure 5 provides visualisations, where the pink line
+                                                                                   FIGURE7 Visualisation of reference points during Training. This
+             represents the GT, and the blue line represents the detection
+                                                                                   graph visualises the progression of reference points during training in a
+             results of LLFormer4D. The algorithm demonstrates high                straight‐line driving scenario. In the initial training phase (a), reference
+             inference accuracy in curve scenes (I), lane‐narrowing scenes
+             (II), straight road scenes (III), crowded scenes (IV), multi‐lane     points are randomly generated through a uniform distribution. As training
+                                                                                   progresses, the lane key points detected and output by the network are
+             scenes (V), and lane divider occlusion scenes (VI). However, in       utilised to iteratively update the reference points. By epoch 5 and epoch 10,
+             scenes (II) and scenes (V), the LLDN‐GFC algorithm shows              the reference points begin to approximate the shape of the lane lines, as
+                                                                                   shown in (b) and (c). By epoch 20, the reference points have closely aligned
+             notible missed detections and false positives, as indicated by
+                                                                                   with the ground truth (GT) of the lane points, as illustrated in (d) and (e).
+             the yellow boxes in Figure 5.
+                                                                                   This demonstrates that the incorporation of prior information from
+                                                                                   Reference points effectively accelerates the convergence of the network
+                                                                                   model.
+                     |
+             4.4.2       Results on the nuScenes dataset
+                                                                                   TABLE3 Resultsof ablation experiments on nuScenes val dataset.
+             We further evaluate the LLFormer4D algorithm on the nuS-
+             cenes dataset, a representative dataset for autonomous driving.
+             The comparison includes current state‐of‐the‐art lane detec-           Method                 Backbone      Epochs      AP        FPS
+                                                                                    Single frame with      PointPillars  20          48.31      2.73
+             tion algorithms on different sensor modalities. In Table 2, we
+                                                                                    vanilla transformer
+             present the sensor modality, backbone model, number of
+                                                                                    Single frame with      VoxelNet      20          53.71      1.90
+             trained epochs, AP index, and FPS indicator used by the
+                                                                                    vanilla transformer
+             selected lane detection algorithms.
+                 As observed in Table 2, the LLFormer4D algorithm
+                                                                                    Single frame with      PointPillars  20          59.63     18.40
+                                                                                    LKQinto the model
+             achieves the highest lane detection accuracy in the nuScenes
+             validation dataset, with the overall AP index peaking at
+             70.66. This result is greatly superiorð4:16↑Þ to the SOTA              Single frame with      VoxelNet      20          68.60      7.63
+                                                                                    LKQinto the model
+             algorithm (MapTRV2). The effectiveness of the proposed                 LLFormer4D‐tiny        PointPillars  20          64.37     10.42
+             algorithm is further validated. It is noteworthy that the use
+             of a 32‐beam LiDAR in the nuScenes dataset leads to rela-              LLFormer4D             VoxelNet      20          70.66      4.56
+             tively sparse point clouds. The annotation frequency of the
+                                                                                   Note: The best results for each column in the table are indicated in bold font.
+             dataset is 2Hz, with an annotation keyframe every 10 point            Abbreviation: LKQ, Lane Key‐point Query.
+                                                                                                                                                                                                                 17519640, 2025, 1, Downloaded from https://ietresearch.onlinelibrary.wiley.com/doi/10.1049/cvi2.12338, Wiley Online Library on [30/12/2025]. See the Terms and Conditions (https://onlinelibrary.wiley.com/terms-and-conditions) on Wiley Online Library for rules of use; OA articles are governed by the applicable Creative Commons License
+                 10 of 12     -                                                                                                                                                            HUETAL.
+                 the lane key points detected and output by the network are                                   example. Initially, randomised reference points are progres-
+                 stored and used to update the reference points. Throughout                                   sively updated with lane key points detected in earlier itera-
+                 the training iterations, reference points are combined with                                  tions. These updated reference points provide the network
+                 LKQs, as illustrated in Figure 4. This mechanism enables the                                 with prior knowledge about the lane structure, expediting the
+                 network to leverage prior information from historical detection                              convergence of the LKQ‐based sparse Transformer decoder
+                 results, thereby accelerating convergence.                                                   network. Furthermore, during model inference, reference
+                      Figure 7 depicts the evolution of reference points during                               points are randomly initialised at the beginning of each sce-
+                 the iteration process, using a straight‐driving scenario as an                               nario. As the process unfolds, they are updated using lane key
+                 FIGURE8 Lanedetectionablation experiments results on nuScenes val dataset. We compared the results of the LLFormer4D with those of single‐frame
+                 ablation experiments. When using single frame detection, the detection effect on shorter lane lines will be poor, and there may be cases where lane lines are
+                 missed in the detection results. In addition, the shape detection for distant and shorter lane lines is not accurate enough. LLformer4D provides sufficient
+                 information for the model with the addition of history frames, which can effectively avoid these problems.
+                                                                                                                                                         17519640, 2025, 1, Downloaded from https://ietresearch.onlinelibrary.wiley.com/doi/10.1049/cvi2.12338, Wiley Online Library on [30/12/2025]. See the Terms and Conditions (https://onlinelibrary.wiley.com/terms-and-conditions) on Wiley Online Library for rules of use; OA articles are governed by the applicable Creative Commons License
+            HUETAL.                                                                                                                   -   11 of 12
+            points detected in the previous frame, ensuring consistency
+                                                                                including lane curves, road boundaries and pedestrian cross-
+            and improved predictive performance.                                ings using multi‐modal sensors in future work.
+                                                                                AUTHORCONTRIBUTIONS
+                   |
+            4.5       Ablation study
+                                                                                Jun Hu: Conceptualisation; funding acquisition. Chaolu
+                                                                                Feng: Data curation; investigation. Haoxiang Jie: Formal
+            In this subsection, we conduct ablation studies on the nuS-         analysis; methodology. Zuotao Ning: Visualisation; writing ‐
+            cenes validation dataset to evaluate the effectiveness of the       review & editing. Xinyi Zuo: Data curation. Wei Liu: Funding
+            proposed modules in our method. For each algorithm, the
+                                                                                acquisition; supervision. Xiangyu Wei: Resources; software.
+            results are presented in Table 3, with 20 epochs trained, the
+            accuracy and real‐time performance provided. As shown in            ACKNOWLEDGEMENTS
+            Table 3, using the pillar‐based backbone combined with a            This research is funded by (a) Development and Application of
+            vanilla Transformer decoding layer and employing the single‐        Vehicle Cloud Collaboration Self‐Evolution Platform for
+            frame laser point cloud as input yields an algorithm with a
+                                                                                AdvancedAutomaticDrivingunderGrant2022JH1/10400030,
+            real‐time performance of only 2.73 FPS and an AP of 48.31.          and (b) Intelligent Control Theories and Key Technologies of
+            When the Voxelnet is chosen as the backbone, the AP of the
+                                                                                Heterogeneous Unmanned Electric Commercial Vehicles For-
+            algorithm increases to 53.71, but real‐time performance further     mation under Grant U22A2043.
+            drops to 1.6 FPS.
+                In terms of the LKQ‐based Transformer decoding layer, its
+            introduction fairly improves the accuracy and real‐time perfor-     CONFLICTOFINTERESTSTATEMENT
+                                                                                There is no conflict of interest in this work.
+            mance. Using PointPillar as the backbone coupled with the
+            LKQ‐basedTransformerdecoder,resultsinanimprovedAPof
+            59.63 and a real‐time performance of 18.4 FPS. Similarly, using     DATAAVAILABILITYSTATEMENT
+                                                                                The data that support the findings of this study are openly
+            voxelnet as the backbone, this algorithm achieves an optimised      available in [K‐Lane] at https://github.com/kaist‐avelab/K‐
+            APof 68.6 and a real‐time performance of 7.63 FPS. Further-
+            more, introducing time‐dimensional features through the TFF         Lane, reference number [20]; and [nuScenes] at https://www.
+            module contributes to the development of LLFormer4D‐tiny            nuscenes.org, reference number [21].
+            and LLFormer4D. Compared with the methods with LKQ,
+            LLFormer4D‐tiny and LLFormer4D show corresponding im-               REFERENCES
+                                                                                  1. Dong, Y., et al.: Robust lane detection and tracking for lane departure
+            provementsof4.74and2.06intheAPmetric.Wefurtherpresent                    warning. In: 2012 International Conference on Computational Problem‐
+            the visual comparison results between using a single frame with
+                                                                                     Solving (ICCP), pp. 461–464. IEEE (2012)
+                                                                                  2. Deng, G., Wu, Y.: Double lane line edge detection method based on
+            LKQ input into the model with VoxelNet as the backbone
+            (LLFormer4D‐withoutMFFFmodule)andLLFormer4Dusing                         constraint conditions hough transform. In: 2018 17th International
+                                                                                     Symposium on Distributed Computing and Applications for Business
+            VoxelNetasthebackboneacrossmultiplescenarios,asshownin
+                                                                                     Engineering and Science (DCABES), pp. 107–110. IEEE (2018)
+            Figure8.Itcanbeobservedthat,particularlyinscenarios1and3,
+            theintroductionofmulti‐framefeatureinformationsignificantly           3. Ko, Y., et al.: Key points estimation and point instance segmentation
+                                                                                     approach for lane detection. IEEE Trans. Intell. Transport. Syst. 23(7),
+                                                                                     8949–8958 (2021). https://doi.org/10.1109/tits.2021.3088488
+            enhances the detection capability of the algorithm. However, in       4. Wang, J., et al.: A keypoint‐based global association network for lane
+            comparison to methods with only single frames, those using
+            time‐dimensional feature fusion bring a reduction in the real‐           detection. In: Proceedings of the IEEE/CVF Conference on Computer
+                                                                                     Vision and Pattern Recognition, pp. 1392–1401 (2022)
+            time performance with running frequencies of 10.42 FPS and            5. Neven, D., et al.: Towards end‐to‐end lane detection: an instance seg-
+            4.56 FPS respectively.                                                   mentation approach. In: 2018 IEEE Intelligent Vehicles Symposium
+                                                                                     (IV), pp. 286–291. IEEE (2018)
+                                                                                  6. Qin, Z., Wang, H., Li, X.: Ultra fast structure‐aware deep lane detection.
+                                                                                     In: Computer Vision–ECCV 2020: 16th European Conference, Glasgow,
+                |
+            5       CONCLUSIONS
+                                                                                     UK, August 23–28, 2020, Proceedings, Part XXIV 16, pp. 276–291.
+                                                                                     Springer (2020)
+            In this paper, we introduce LLFormer4D for LiDAR Lane                 7. Liu, R., et al.: End‐to‐end lane shape prediction with transformers. In:
+                                                                                     Proceedings of the IEEE/CVF Winter Conference on Applications of
+            Detection in autonomous driving. In LLFormer4D, the pro-
+                                                                                     Computer Vision, pp. 3694–3702 (2021)
+            posed TFF module can efficiently combine historical frame             8. Jie, H., et al.: Llformer: an efficient and real‐time lidar lane detection
+            features to improve the accuracy and robustness of lane
+                                                                                     method based on transformer. In: Proceedings of the 2023 5th Interna-
+            detection. Additionally, we propose the LKQ Transformer
+                                                                                     tional ConferenceonPatternRecognitionandIntelligentSystems,pp.18–
+                                                                                     23 (2023)
+            decoder enhancing the accuracy for the regression of key
+            points of the lane. Extensive experiments on K‐Lane and               9. Liu, J., et al.: Mh6d: multi‐hypothesis consistency learning for category‐
+                                                                                     level 6‐d object pose estimation. IEEE Transact. Neural Networks
+            nuScenes datasets demonstrate its outstanding performance
+                                                                                     Learn. Syst., 1–14 (2024). https://doi.org/10.1109/tnnls.2024.3360712
+            and potential to boost the accuracy of lane detection.              10.  Tabelini, L., et al.: Keep your eyes on the lane: real‐time attention‐guided
+                We will explore integrating image information based on
+                                                                                     lane detection. In: Proceedings of the IEEE/CVF Conference on
+                                                                                     Computer Vision and Pattern Recognition, pp. 294–302 (2021)
+            LLFormer4D to achieve the detection of road structure,
+                                                                                                                                                                                                                 17519640, 2025, 1, Downloaded from https://ietresearch.onlinelibrary.wiley.com/doi/10.1049/cvi2.12338, Wiley Online Library on [30/12/2025]. See the Terms and Conditions (https://onlinelibrary.wiley.com/terms-and-conditions) on Wiley Online Library for rules of use; OA articles are governed by the applicable Creative Commons License
+                 12 of 12     -                                                                                                                                                            HUETAL.
+                 11.   Wang, Q., et al.: Dynamic data augmentation based on imitating real                    32.    Bai, Y., et al.: Curveformer: 3d lane detection by curve propagation with
+                       scene for lane line detection. Rem. Sens. 15(5), 1212 (2023). https://doi.                    curve queries and attention. In: 2023 IEEE International Conference on
+                       org/10.3390/rs15051212                                                                        Robotics and Automation (ICRA), pp. 7062–7068. IEEE (2023)
+                 12.   Chen, Z., Liu, Q., Lian, C.: Pointlanenet: efficient end‐to‐end cnns for               33.    Lindner, P., et al.: Multi‐channel lidar processing for lane detection and
+                       accurate real‐time lane detection. In: 2019 IEEE Intelligent Vehicles                         estimation. In: 2009 12th International IEEE Conference on Intelligent
+                       Symposium (IV), pp. 2563–2568. IEEE (2019)                                                    Transportation Systems, pp. 1–6. IEEE (2009)
+                 13.   Liu, J., et al.: Robotic continuous grasping system by shape transformer‐              34.    Hernandez, D.C., Hoang, V.‐D., Jo, K.‐H.: Lane surface identification
+                       guided multiobject category‐level 6‐d pose estimation. IEEE Trans. Ind.                       based on reflectance using laser range finder. In: 2014 IEEE/SICE In-
+                       Inf. 19(11), 11171–11181 (2023). https://doi.org/10.1109/tii.2023.                            ternational Symposium on System Integration, pp. 621–625. IEEE
+                       3244348                                                                                       (2014)
+                 14.   Brabandere, B., et al.: End‐to‐end lane detection through differentiable               35.    Liu, J., et al.: Hff6d: hierarchical feature fusion network for robust 6d
+                       least‐squares fitting. Computer Science, 905–913 (2019). https://doi.org/                     object pose tracking. IEEE Trans. Circ. Syst. Video Technol. 32(11),
+                       10.1109/iccvw.2019.00119                                                                      7719–7731 (2022). https://doi.org/10.1109/tcsvt.2022.3181597
+                 15.   Chen, L., et al.: Persformer: 3d lane detection via perspective transformer            36.    Liu, J., et al.: Deep learning‐based object pose estimation: a compre-
+                       and the openlane benchmark. In: European Conference on Computer                               hensive survey. arXiv preprint arXiv:2405.07801. (2024)
+                       Vision, pp. 550–567. Springer (2022)                                                   37.    Martinek, P., et al.: Lidar‐based deep neural network for reference lane
+                 16.   Garnett, N., et al.: 3d‐lanenet: end‐to‐end 3d multiple lane detection. In:                   generation. In: 2020 IEEE Intelligent Vehicles Symposium (IV), pp. 89–
+                       Proceedings of the IEEE/CVF International Conference on Computer                              94. IEEE (2020)
+                       Vision, pp. 2921–2930 (2019)                                                           38.    Paek, D.‐H., Wijaya, K.T., Kong, S.‐H.: Row‐wise lidar lane detection
+                 17.   Wang, R., et al.: Bev‐lanedet: an efficient 3d lane detection based on                        network with lane correlation refinement. In: 2022 IEEE 25th Interna-
+                       virtual camera via key‐points. In: Proceedings of the IEEE/CVF Con-                           tional Conference on Intelligent Transportation Systems (ITSC), pp.
+                       ference on Computer Vision and Pattern Recognition, pp. 1002–1011                             4328–4334. IEEE (2022)
+                       (2023)                                                                                 39.    Zhou, Y., Tuzel, O.: Voxelnet: end‐to‐end learning for point cloud based
+                 18.   Zhong, C., Li, B., Wu, T.: Off‐road drivable area detection: a learning‐                      3d object detection. In: Proceedings of the IEEE Conference on
+                       based approach exploiting lidar reflection texture information. Rem.                          Computer Vision and Pattern Recognition, pp. 4490–4499 (2018)
+                       Sens. 15(1), 27 (2022). https://doi.org/10.3390/rs15010027                             40.    Yan, Y., Mao, Y., Li, B.: Second: sparsely embedded convolutional
+                 19.   Paek, D.‐H., Kong, S.‐H., Wijaya, K.T.: K‐lane: lidar lane dataset and                        detection. Sensors 18(10), 3337 (2018). https://doi.org/10.3390/
+                       benchmark for urban roads and highways. In: Proceedings of the IEEE/                          s18103337
+                       CVF Conference on Computer Vision and Pattern Recognition, pp.                         41.    Lang, A.H., et al.: Pointpillars: fast encoders for object detection from
+                       4450–4459 (2022)                                                                              point clouds. In: Proceedings of the IEEE/CVF Conference on Com-
+                 20.   Paek, D.‐H., Kong, S.‐H., Wijaya, K.T.: K‐lane: lidar lane dataset and                        puter Vision and Pattern Recognition, pp. 12697–12705 (2019)
+                       benchmark for urban roads and highways. In: 2022 IEEE/CVF Con-                         42.    Tan, M., Pang, R., Le, Q.V.: Efficientdet: scalable and efficient object
+                       ference on Computer Vision and Pattern Recognition Workshops                                  detection. In: Proceedings of the IEEE/CVF Conference on Computer
+                       (CVPRW), pp. 4449–4458 (2022)                                                                 Vision and Pattern Recognition, pp. 10781–10790 (2020)
+                 21.   Caesar, H., et al.: nuscenes: a multimodal dataset for autonomous driving.             43.    Wang, Y., et al.: Detr3d: 3d object detection from multi‐view images via
+                       CVPR (2020)                                                                                   3d‐to‐2d queries. In: Conference on Robot Learning, pp. 180–191.
+                 22.   Jayasinghe, O., et al.: Swiftlane: towards fast and efficient lane detection.                 PMLR (2022)
+                       In: 2021 20th IEEE International Conference on Machine Learning and                    44.    Lin, X., et al.: Sparse4d: multi‐view 3d object detection with sparse
+                       Applications (ICMLA), pp. 859–864. IEEE (2021)                                                spatial‐temporal fusion. arXiv preprint arXiv:2211.10581. (2022)
+                 23.   Li, X., et al.: Line‐cnn: end‐to‐end traffic line detection with line proposal         45.    Yao, Z., et al.: Efficient detr: improving end‐to‐end object detector with
+                       unit. IEEE Trans. Intell. Transport. Syst. 21(1), 248–258 (2019). https://                    dense prior. arXiv preprint arXiv:2104.01318. (2021)
+                       doi.org/10.1109/tits.2019.2890870                                                      46.    Wang, Y., et al.: Anchor detr: query design for transformer‐based de-
+                 24.   Liu, L., et al.: Condlanenet: a top‐to‐down lane detection framework                          tector. Proc. AAAI Conf. Artif. Intell. 36(3), 2567–2575 (2022). https://
+                       based on conditional convolution. In: Proceedings of the IEEE/CVF                             doi.org/10.1609/aaai.v36i3.20158
+                       International Conference on Computer Vision, pp. 3773–3782 (2021)                      47.    Paul, S., Chen, P.‐Y.: Vision transformers are robust learners. Proc. AAAI
+                 25.   Xu, H., et al.: Curvelane‐nas: unifying lane‐sensitive architecture search                    Conf. Artif. Intell. 36(2), 2071–2081 (2022). https://doi.org/10.1609/
+                       and adaptive point blending. In: Computer Vision–ECCV 2020: 16th                              aaai.v36i2.20103
+                       European Conference, Glasgow, UK, August 23–28, 2020, Proceedings,                     48.    Li, Q., et al.: Hdmapnet: an online hd map construction and evaluation
+                       Part XV 16, pp. 689–704. Springer (2020)                                                      framework. In: 2022 International Conference on Robotics and Auto-
+                 26.   Pan, X., et al.: Spatial as deep: spatial cnn for traffic scene understanding.                mation (ICRA), pp. 4628–4634. IEEE (2022)
+                       Proc. AAAI Conf. Artif. Intell. 32(1), (2018) https://doi.org/10.1609/                 49.    Liu, Y., et al.: Vectormapnet: end‐to‐end vectorized hd map learning. In:
+                       aaai.v32i1.12301                                                                              International Conference on Machine Learning, pp. 22352–22369.
+                 27.   Tabelini, L., et al.: Polylanenet: lane estimation via deep polynomial                        PMLR (2023)
+                       regression. In: 2020 25th International Conference on Pattern Recogni-                 50.    Liao, B., et al.: Maptr: structured modeling and learning for online vec-
+                       tion (ICPR), pp. 6150–6156. IEEE (2021)                                                       torized hd map construction. arXiv preprint arXiv:2208.14437. (2022)
+                 28.   Han, J., et al.: Laneformer: object‐aware row‐column transformers for                  51.    Liao, B., et al.: Maptrv2: an end‐to‐end framework for online vectorized
+                       lane detection. Proc. AAAI Conf. Artif. Intell. 36(1), 799–807 (2022).                        hd map construction. arXiv preprint arXiv:2308.05736. (2023)
+                       https://doi.org/10.1609/aaai.v36i1.19961
+                 29.   Li, Z., et al.: Bevformer: learning bird’s‐eye‐view representation from
+                       multi‐camera images via spatiotemporal transformers. In: European
+                       Conference on Computer Vision, pp. 1–18. Springer (2022)
+                 30.   Philion, J., Fidler, S.: Lift, splat, shoot: encoding images from arbitrary
+                                                                                                                   Howto cite this article: Hu, J., et al.: LLFormer4D:
+                       camera rigs by implicitly unprojecting to 3d. In: Computer Vision–ECCV                      LiDAR‐based lane detection method by temporal
+                       2020: 16th European Conference, Glasgow, UK, August 23–28, 2020,
+                                                                                                                   feature fusion and sparse transformer. IET Comput.
+                       Proceedings, Part XIV 16, pp. 194–210. Springer (2020)
+                 31.   Efrat, N., et al.: 3d‐lanenetþ: anchor free lane detection using a semi‐                    Vis. e12338 (2025). https://doi.org/10.1049/cvi2.12338
+                       local representation. arXiv preprint arXiv:2011.01535, (2020)

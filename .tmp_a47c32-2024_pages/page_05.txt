@@ -1,0 +1,60 @@
+                         Concretely, this consists of first computing an approxi-                                           pared to the 1-step gradient, our method consumes more
+                    mate fixed point (either via iteration or Broyden’s method)                                             memory and compute because it backpropagates through
+                    without storing any intermediate results for backpropaga-                                               multiple unrolled iterations rather than a single iteration.
+                    tion, and then taking a single additional fixed point step                                              However, it is still drastically more efficient than either im-
+                    while storing intermediate results for backpropagation in the                                           plicit differentiation or using traditional explicit networks,
+                    standard way. During the backward pass, the gradient is                                                 and it significantly outperforms the 1-step gradient in our
+                    only computed for the final step, and so it is referred to as a                                         experiments (Tab. 4).
+                    “1-step gradient” or Jacobian-Free Backpropagation (JFB). 1
+                         Formally, this approximates the gradient of the loss L                                             4. Experiments
+                    with respect to the parameters θ of the implicit layer ffp with                                         4.1. Experimental Setup
+                    fixed point x∗(t) by
+                                                               ∗(t)      (t)                    ∗(t)     (t)              Model The architecture of FPDM is based on the cur-
+                     ∂L            ∂L                 ∂f (x           , x˜    , t)     ∂f (x           , x˜    , t)
+                            =                 I −         fp                               fp                               rent state-of-the-art in generative image modeling, DiT-
+                     ∂θ              ∗(t)                           ∗(t)                           ∂θ
+                                ∂x                             ∂x                                                          XL/2[37], which serves as a strong baseline in our experi-
+                                                      ∗(t)     (t)                                                          ments. Adhering to the architecture in [37], we operate in
+                                   ∂L ∂f (x                , x˜    , t)
+                            ≈                   fp                                                                          latent space using the Variational Autoencoder from [28, 40].
+                                     ∗(t)               ∂θ
+                                ∂x                                                                                          In addition, we have equipped both the baseline DiT and our
+                    The equality above is a consequence of the Implicit Func-                                               FPDMwithtwoadvancesfromtherecentdiffusionliterature:
+                    tion Theorem [42] and the approximation simply drops the                                                (1) training to predict velocity rather than noise [43], and
+                    inverse Jacobian term. This simplification is rigorously justi-                                         (2) modifying the denoising schedule to have zero terminal
+                    fied by Theorem 3.1 in [14] under appropriate assumptions.                                              signal-to-noise ratio [32]. We include these changes to show
+                         Despite the simplicity of the 1-step gradient, we found                                            that our improvements are orthogonal to other improvements
+                    that it performed poorly in large-scale experiments. To im-                                             madeinthediffusion literature.
+                    prove performance without sacrificing efficiency, we use a                                                  Ournetwork consists of three sets of layers: pre-layers,
+                    newstochastic approach to compute approximate gradients.                                                an implicit fixed point layer, and post-layers. All layers
+                         Our approach (Algorithm 1) samples random variables                                                have the same structure and 24M parameters, except the
+                    n ∼ U[0,N] and m ∼ U[1,M] at each training step. Dur-                                                   implicit layer has an additional projection for input injection.
+                    ing the forward pass, we perform n fixed point iterations                                               Through empirical analysis, we find that a single pre/post
+                    without gradient to obtain an approximate solution,2, and                                               layer can achieve strong results (see Sec. 5.4). Consequently,
+                    then we perform m additional iterations with gradient. Dur-                                             the number of parameters in our full network is only 86M,
+                    ing the backward pass, we backpropagate by unrolling only                                               markedly lower than 674M parameters in the standard DiT
+                    through the last m iterations. The constants N and M are                                               XL/2model,whichhas28explicit layers.
+                    hyperparameters that refer to the maximum number of train-
+                    ing iterations without and with gradient, respectively. When                                            Training           We perform experiments on four diverse and
+                    sampling, the number of iterations used at each timestep is                                             populardatasets: Imagenet, CelebA-HQ,LSUNChurch,and
+                    flexible and can be chosen independently of N or M. Com-                                                FFHQ.Allexperimentsareperformedatresolution256. The
+                    Algorithm 1 Stochastic Jacobian-Free Backpropagation                                                    ImageNet experiments are class-conditional, whereas those
+                           Input hidden states x, timestep t                                                                on other datasets are unconditional. For a fair comparison,
+                                                                                                                           wetrain our models and baseline DiT models for the same
+                       1: function FORWARD(x)                                                                               amount of time using the same computational resources. All
+                       2:        x˜ ← PROJ(x)               # input injection                                               models are trained on 8 NVIDIA V100 GPUs; the models
+                       3:        for n iterations drawn uniformly from 0 to N do                                            for the primary experiments on ImageNet are trained for four
+                       4:              x←FORWARDPASSWITHOUTGRAD(x,x,˜ t)                                                    days (equivalent to 400,000 DiT training steps), while those
+                       5:        for m iterations drawn uniformly from 1 to M do                                            for the other datasets and for the ablation experiments are
+                       6:              x←FORWARDPASSWITHGRAD(x,x,˜ t)                                                       trained for one day (equivalent to 100,000 DiT steps). We
+                       7:        BACKPROP(loss,x)                                                                           train using Stochastic JFB with M = N = 12 and provide
+                       8:        return x                                                                                   an analysis of this setup in Sec. 5.5.
+                                                                                                                                TheImageNetexperimentsareclass-conditional,whereas
+                         1Wenotethat this process has been referred to in the literature by many                            those on other datasets are unconditional. For ImageNet,
+                    names, including the 1-step gradient, phantom gradient, inexact gradient,                               following DiT, we train using class dropout of 0.1, but we
+                    and Jacobian-Free backpropagation.                                                                      compute quantitative results without classifier-free guidance.
+                         2By “without gradient”, we mean that these iterations do not store
+                    any intermediate results for backpropagation, and they are not included in                             We train with a total batch size of 512 and learning rate
+                    gradient computation during the backward pass.                                                         1e−4. Weusealinear diffusion noise schedule with β                                          =
+                                                                                                                                                                                                                 start
+                                                                                                                      5

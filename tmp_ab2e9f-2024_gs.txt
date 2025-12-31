@@ -1,0 +1,704 @@
+                                                                    This CVPRpaperisthe Open Access version, provided by the Computer Vision Foundation.
+                                                                                            Except for this watermark, it is identical to the accepted version;
+                                                                                   the final published version of the proceedings is available on IEEE Xplore.
+                       Open3DIS:Open-Vocabulary3DInstanceSegmentationwith2DMaskGuidance
+                                                                                             1∗                                               1,4∗                                                                  4
+                                                                PhucNguyen                                    TuanDucNgo                                         Evangelos Kalogerakis
+                                                                                             2,4                                   1                                          1,3                                            1
+                                                                 ChuangGan                                    AnhTran                            CuongPham                                     KhoiNguyen
+                          1VinAI Research                           2MIT-IBMWatsonAILab                                        3Posts & Telecommunications Inst. of Tech.                                                 4UMassAmherst
+                                                 {v.phucnda, v.anhtt152, v.khoindm}@vinai.io                                                                         {tdngo, kalo}@cs.umass.edu
+                                                                                     ganchuang@csail.mit.edu                                            cuongpv@ptit.edu.vn
+                                                                                              https://open3dis.github.io/
+                                                             3D point cloud                                       RGB images
+                                                                                                                                                        Existing approaches
+                                                                                                                                                       a. OpenMask3D
+                                                                                                                                                                                                 Mask-wise
+                                                                                                                                                                            Class-agnostic
+                                                                                                                                                        3D point cloud                             Feature         3D instance masks
+                                                                                                                                                                            3D Segmenter
+                                                                                                                                                                                                 Extraction
+                                                                                                                                                        RGB-D images
+                                                                                                                                                        b. OVIR-3D
+                                                                                                                                                                                                 Back project
+                                                                                                                                                        3D point cloud                                             3D instance masks
+                                                                                                                                                                                                 to 3D space
+                                                                                                                                                                             Open-vocab
+                                                                                                                                                        RGB-D images
+                                           Find a tissue box
+                                                                                                                                                                            2D Segmenter
+                                               in this room!
+                                            Existing
+                                                                                                                                                        Open3DIS
+                                                                                                Open3DIS
+                                            approaches
+                                                                                                                                                                           Class-agnostic         Pointwise
+                                                                                                                                                        3D point cloud                                              3D instance masks
+                                                                                                                                                                           3D Segmenter       Feature Extraction
+                                                                                                Found
+                                            Not found
+                                                                                                1 instance
+                                                                                                                                                                                                2D-Guided-3D
+                                                                                                                                                                            Open-vocab
+                                                                                                                                                                                              Instance Proposal
+                                                                                                                                                        RGB-D images
+                                                                                                                                                                           2D Segmenter
+                                                                                                                                                                                                   Module
+                       Figure 1. Left: While leading open-vocabulary 3D instance segmentation methods like OpenMask3D [45] and OVIR-3D [33] often
+                       struggle with small or ambiguous instances, particularly those from uncommon classes, Open3DIS excels in segmenting such cases. It
+                       outperforms existing methods by about ∼1.5x in average precision on ScanNet200 [41]. Right: Open3DIS aggregates proposals from
+                       both point cloud-based instance segmenters and 2D image-based networks. Our method incorporates novel components (red and yellow
+                       boxes)thatperformaggregationandmappingof2Dmaskstothepointcloudacrossmultipleframes,aswellas3D-awarefeatureextraction
+                       for effectively comparing object proposals to text queries.
+                                                                   Abstract                                                                   the above limitations. These are then combined with 3D
+                                                                                                                                              class-agnostic instance proposals to include a wide range
+                             We introduce Open3DIS, a novel solution designed to                                                              of objects in the real world. To validate our approach, we
+                       tackle the problem of Open-Vocabulary Instance Segmen-                                                                 conductedexperimentsonthreeprominentdatasets,includ-
+                       tation within 3D scenes. Objects within 3D environments                                                                ing ScanNet200, S3DIS, and Replica, demonstrating signif-
+                       exhibit diverse shapes, scales, and colors, making precise                                                             icant performance gains in segmenting objects with diverse
+                       instance-level identiﬁcation a challenging task. Recent ad-                                                            categories over the state-of-the-art approaches.
+                       vancements in Open-Vocabulary scene understanding have
+                       made signiﬁcant strides in this area by employing class-                                                               1. Introduction
+                       agnostic 3D instance proposal networks for object local-                                                               This paper addresses the challenging problem of open-
+                       ization and learning queryable features for each 3D mask.                                                              vocabulary 3D point cloud instance segmentation (OV-
+                       While these methods produce high-quality instance propos-                                                              3DIS). Given a 3D scene represented by a point cloud, we
+                       als, they struggle with identifying small-scale and geomet-                                                            seek to obtain a set of binary instance masks of any classes
+                       rically ambiguous objects. The key idea of our method is                                                               of interest, which may not exist during the training phase.
+                       a new module that aggregates 2D instance masks across                                                                  This problem arises to overcome the inherent constraints of
+                       frames and maps them to geometrically coherent point
+                       cloud regions as high-quality object proposals addressing                                                                    ∗: Equal contribution
+                                                                                                                                        4018
+             the conventional fully supervised 3D instance segmentation        2. We introduce a novel pointwise feature extraction
+             (3DIS) approaches [14, 15, 36, 42, 44, 47, 61, 64], which            method for open-vocabulary 3D object proposals.
+             are bound by a closed-set framework – restricting recogni-        3. Open3DIS achieves state-of-the-art results on Scan-
+             tion to a predeﬁned set of object classes that are determined        Net200, S3DIS, and Replica datasets, exhibiting com-
+             by the training datasets. This task has a wide range of ap-          parable performance to fully supervised methods.
+             plications in robotics and VR systems. This capability can
+             empower robots or agents to identify and localize objects       2. Related Work
+             of any kind in a 3D environment using textual descriptions
+             that detail names, appearances, functionalities, and more.      Open-Vocabulary 2D scene understanding methods aim
+                There are a few studies addressing the OV-3DIS so far        to recognize both base and novel classes in testing where
+             [7, 8, 33, 45]. Most recently, [45] proposes the use of a pre-  the base classes are seen during training while the novel
+             trained 3DIS model instance proposals network to capture        classes are not. Based on the types of recognition tasks, we
+             the geometrical structure of 3D point cloud scenes and gen-     can categorize them into open-vocabulary object detection
+             erate high-quality instance masks. However, this approach       (OVOD) [24, 32, 38, 48, 60, 63, 67], open-vocabulary se-
+             faces challenges in recognizing rare objects due to their in-   mantic segmentation (OVSS) [6, 28, 29, 51, 53, 70], and
+             complete appearance in the 3D point cloud scene and the         open-vocabulary instance segmentation (OVIS) [13, 21, 46,
+             limited detection capabilities of pre-trained 3D models for     50, 65, 66].  A typical approach for handling the novel
+             suchinfrequentclasses. Anotherapproachinvolvesleverag-          classes is to leverage a pre-trained visual-text embedding
+             ing2Doff-the-shelfopen-vocabularyunderstandingmodels            model, such as CLIP [39] or ALIGN [22] as a joint text-
+             [33, 59] to easily capture novel classes. Nevertheless, trans-  image embedding where base and novel classes co-exist,
+             lating these 2D proposals from images to 3D point cloud         in order to transfer the models’ capabilities on base classes
+             scenes is a challenging task. This is because of the fact that  to novel classes. However, these methods cannot trivially
+             2Dproposalscaptureonlythevisibleportionsof3Dobjects             extend to 3D point clouds because 3D point clouds are un-
+             and may also include irrelevant regions, such as the back-      ordered and imbalanced in density, and the variance in ap-
+             ground. These two approaches are summarized in Fig. 1.          pearance and shape is much larger than that of 2D images.
+                In this work, we introduce Open3DIS, a method for OV-        Fully-Supervised 3D Instance Segmentation (F-3DIS)
+             3DISthat extends the understanding capability beyond pre-       aims to segment 3D point cloud into instances of train-
+             deﬁned concept sets. Given an RGB-D sequence of im-             ing classes. Methods of F-3DIS can be categorized into
+             ages and the corresponding 3D reconstructed point cloud         three main groups: box-based [18, 57, 61], cluster-based
+             scene, Open3DIS addresses the limitations of existing ap-       [4, 9, 23, 47, 49], and dynamic convolution-based [14, 15,
+             proaches. It complements two sources of 3D instance pro-        31, 36, 42, 44, 52] techniques. Box-based methods detect
+             posalsbyemployinga3Dinstancenetworkanda2D-guide-                andsegmenttheforegroundregioninsideeach3Dproposal
+             3D Instance Proposal Module to achieve sufﬁcient 3D ob-         box to get instance masks. Cluster-based methods employ
+             ject binary instance masks. The module (our key contribu-       the predicted object centroid to group points to clusters or
+             tion) extracts geometrically coherent regions from the point    construct a tree or graph structure and subsequently dis-
+             cloudundertheguidanceof2Dpredictedmasksacrossmul-               sect these into subtrees or subgraphs [20, 30]. For the third
+             tiple frames and aggregates them into higher-quality 3D         group, Mask3D [42] and ISBNet [36], proposed using dy-
+             proposals. Later, Pointwise Feature Extraction aggregates       namic convolution whose kernels, representative of differ-
+             CLIP features for each instance in a multi-scale manner         ent object instances, are convoluted with pointwise features
+             across multiple views, constructing instance-aware point        to derive instance masks. In this paper, we use ISBNet as
+             cloud features for open-vocabulary instance segmentation.       a 3D network, yet with necessary adaptations to output 3D
+                To assess the open-vocabulary capability of Open3DIS,        class-agnostic proposals.
+             we conduct experiments on the ScanNet200 [41], S3DIS
+             [1], and Replica [43] datasets. Open3DIS achieves state-of-     Open-Vocabulary3Dsemanticsegmentation(OV-3DSS)
+             the-art results in OV-3DIS, surpassing prior works by a sig-    andobject detection (OV-3DOD) enable the semantic un-
+             niﬁcant margin. Especially, Open3DIS delivers a notewor-        derstanding of 3D scenes in an open-vocabulary manner,
+             thy performance improvement of ∼1.5 times compared to           including affordances, materials, activities, and properties
+             the leading method on the large-scale dataset ScanNet200.       within unseen environments. This capability is highlighted
+                Insummary,thecontributionsofourworkareasfollows:             in recent work [12, 17, 37] for OV-3DSS and [3, 34, 69] for
+               1. We present the “2D-Guided 3D Proposal Module”              OV-3DOD. Nevertheless, these methods cannot precisely
+                  creating precise 3D proposals by clustering cohe-          locate and distinguish 3D objects with 3D instance masks,
+                  sive point cloud regions using aggregated 2D instance      and thus cannot fully describe 3D object shapes.
+                  masks from multi-view RGB-D images.                        Open-Vocabulary 3D instance segmentation (OV-3DIS)
+                                                                          4019
+                                                                                                       ...
+                                     3D Instance                                                                           Pointwise Feature
+                                                                Class-agnostic 3D                                                                            Instance-Aware 
+                                                                                4
+                                                                    proposals                                                                              point cloud features
+                                Segmenter (Sec 3.2)                                                                      Extraction (Sec. 3.3)
+                                                                                                                                                                                    Text queries
+                                                                                                         Augmented
+                                                                                                                                                           Cosine similarity
+                                                                                                                      3
+                                                                                                        3D proposals
+                                   Input
+                                                                                                                                                    Output
+                                                                                                                                                  Cabinet
+                                                                                                2D-Guided-3D Instance
+                                                                                                                                                                     Window
+                                                                                              Proposal Module (Sec 3.1)
+                                                                                                                                                                                  TV
+                                                                                                                                                                                       Trash Can
+                                                                                                                                                                       Table
+                                                                                                                                                    Fridge
+                                                                                                                                                           Counter
+                               3D point cloud   ...                 Superpoints 1                                                                     Door                Chair
+                                                                     2D Instance
+                                                                                                                       ...
+                                                                     Segmenter
+                                                ...
+                               RGB-D images                                                            2D instance masks 2
+                   Figure 2. Overview of Open3DIS. A pre-trained class-agnostic 3D Instance Segmenter proposes initial 3D objects, while a 2D Instance
+                   Segmenter generates masks for video frames. Our 2D-Guided-3D Instance Proposal Module (Sec. 3.1) combines superpoints and 2D
+                   instance masks to enhance 3D proposals, integrating them with the initial 3D proposals. Finally, the Pointwise Feature Extraction module
+                   (Sec. 3.3) correlates instance-aware point cloud CLIP features with text embeddings to generate the ultimate instance masks.
+                   concerns segmenting both seen and unseen classes (during                                         in suboptimal quality of 3D proposals. Nonetheless, the ad-
+                   training) of a 3D point cloud into instances. Methods of                                         vantage of this group over other groups is in their lever-
+                   OV-3DIS can be split into 3 groups: open-vocabulary se-                                          age of 2D pretrained model on large-scale datasets such as
+                   mantic segmentation-based, text description and 3D pro-                                          CLIP[39]orSAM[25]whichcanbescaledtohundredsof
+                   posal contrastive learning based, and 2D open-vocabulary                                         classes as in ScanNet200 [41]. Following the ﬁnal group,
+                   powered approaches. The ﬁrst group includes OpenScene                                            Open3DISgenerateshigh-quality 3D instance proposals by
+                   [37] and Clip3D [16] utilize clustering techniques such as                                       combining 3D masks from a 3DIS network with proposals
+                   DBScan on OV-3DSS results to generate 3D instance pro-                                           produced by grouping geometrically coherent regions (su-
+                   posals. However, their quality relies on clustering accuracy                                     perpoints) with the guidance of 2D instance masks. This
+                   and can lead to unreliable results for unseen classes. On                                        complementstheclass-agnostic3Dinstanceproposalsfrom
+                   the other hand, the second group comprising PLA [8], Re-                                         3D networks. Our method excels at capturing rare objects
+                   gionPLC[58], and Lowis3D [7] focuses on training the 3D                                          while preserving their 3D geometrical structures, achieving
+                   instance proposal network along with a contrastive open-                                         state-of-the-art performance in the OV-3DIS domain.
+                   vocabularybetweenthepredictedproposalsandtheircorre-
+                   sponding text captions. However, when growing the num-                                           3. Method
+                   berofclasses,thesemethodsstruggletohandleandmayde-
+                   grade their ability to distinguish diverse object classes. For                                   Our approach processes a 3D point cloud and an RGB-D
+                   the ﬁnal group, OpenMask3D [45] utilizes a pre-trained                                           sequence, producing a set of 3D binary masks indicating
+                   3DISmodeltogenerateclass-agnostic3Dproposals,which                                               object instances in the scene. We assume known camera
+                   are subsequently classiﬁed based on their CLIP score from                                        parameters for each frame. Our architecture is depicted in
+                   2D mask projections. Similarly, OpenIns3D [19] employs                                           Fig. 2. Similarly to prior work [8, 45, 58], we employ a
+                   a pre-trained 3DIS model and addresses the issue through                                         3DIS network module to extract object proposals directly
+                   its Mask-Snap-Lookup module, utilizing synthetic-scene                                           from the 3D point cloud. This module leverages 3D con-
+                   images across multiple scales. However, challenges arise                                         volution and attention mechanisms, capturing spatial and
+                   for the pre-trained 3DIS model when identifying small or                                         structural relations for robust 3D object instance detection.
+                   uncommon object categories with unique geometric struc-                                          Despite its advantages, sparse point clouds, sampling arti-
+                   tures.      Conversely, OVIR-3D [33], SAM3D [59], SAM-                                           facts, and noise can lead to missed objects, especially for
+                   Pro3D [55], MaskClustering [56] and SAI3D [62] leverage                                          small objects e.g., the tissue box in Fig. 1.
+                   pretrained 2D open-vocabulary models to generate 2D in-                                              Ourapproachintegrates a novel 2D-Guided-3D instance
+                   stance masks, which are then back-projected onto the as-                                         proposalmodule,leveraging2Dinstancesegmentationnet-
+                   sociated 3D point cloud. However, imperfect alignment of                                         works trained on large image datasets to better capture
+                   the 2D segmentation masks with objects leads to the inclu-                                       smallerobjectsinindividualimages. However,resulting2D
+                   sion of background points in foreground objects, resulting                                       masks may only capture parts of actual 3D object instances
+                                                                                                               4020
+                                                                                                                        Augmented
+                                                                                                                                                      Agglomerative
+                                                                                                2D instance masks
+                                  Recall     Recall        Recall         Recall                                                                   C
+                                                    head           com           tail
+                                                                                                                        3D proposals
+                                                                                                                                                          Clustering
+                   Only 3D         61.63       81.92          53.68        12.06
+                   Only 2D         68.61       76.66          74.73        34.68                                                         C
+                                                                                                                                
+                                                                                                                                                           
+                   2Dand3D         73.29       87.48          74.16        34.31
+                   Table 1. Recall rate (%) of 2D, 3D, or combined proposals.
+                                                                                                   
+                                                                                                                                C                C
+                due to occlusions (Fig. 2 - 2 ). To address this, we propose                                            
+                                                                                                                                                               
+                a strategy that constructs 3D object instance proposals by
+                                                                                                   
+                hierarchically aggregating and merging point cloud regions
+                from back-projected 2D masks of the same object. To en-                                                    C                          C
+                hance the robustness and geometric homogeneity, we use
+                “superpoints” [11] during the merging process. This yields                        Per-frame
+                                                                                               Superpoint Merging
+                complete object instances, complementing those extracted
+                                                                                                                              Per-frame 3D object proposals
+                by 3DIS networks. Detailed analysis in Tab. 1 on Scan-
+                net200 dataset [41] exhibits the signiﬁcant enhancement in                    Figure 3. 2D-Guided-3D Instance Proposal Module. We gen-
+                recall rate, especially for rare classes, when integrating 2D                 erate initial 3D proposals using Per-frame Superpoint Merging,
+                and 3D proposals.                                                             followed by hierarchical traversal across the RGB-D sequence to
+                                                                                              mergeregionsetsbetweenframesusingAgglomerativeclustering.
+                   To enable open-vocabulary classiﬁcation, we addition-
+                ally employ a point-wise feature extraction module to con-                       However, 2D masks may include background regions or
+                struct a dense feature map across the 3D point cloud. In the                  parts of nearby objects, making IoU alone insufﬁcient to de-
+                following sections, we explain our modules in more detail,                    termine superpoints belonging to a 3D proposal. To address
+                starting with the 2D-Guided-3D Instance Proposal Module                       this, we leverage the 3D backbone of a 3D proposal net-
+                which constitutes our main contribution.                                      work [36, 42] to extract per-point feature F3D ∈ RN×D3D
+                3.1. 2D-Guided-3D Instance Proposal Module                                    and measure feature similarity among these superpoints qu
+                                                                                              whosefeatures are determined by averaging their point fea-
+                                                                                  N                   3D         1×D3D                                            2D
+                Thismoduletakesasinputa3DpointcloudP = {pn}                           ,
+                                                                                  n=1         tures fu     ∈ R          .  For each 2D instance mask mi ,
+                where N is the number of points, and p ∈ R6 includes
+                                                                  i                           weinitiate a point cloud region ri with the superpoint hav-
+                3D coordinates and RGB color. Additionally, it receives                       ing the largest IoU with the mask. We extend this region
+                                                                          T
+                an RGB-D video sequence V = {(It,Dt,Πt)}                      , where
+                                                                          t=1                 by merging with neighboring superpoints qu that meet the
+                each frame t contains RGB image It, depth map Dt, and                         overlapping condition (τ         ) and also have the highest co-
+                                                                                                                            iou
+                camera matrix Πt (i.e., the product of intrinsic and extrin-                                      max                         3D   3D
+                                                                                              sine similarity s        = max ′         cos(f ′ ,f     ) with those
+                                                                                                                  i              u ∈ri        u    u
+                sic matrices used for projecting 3D points onto the image                     already in the region r above a threshold (smax > τ                   )
+                                                                                                                          i                           i         sim
+                plane). The output comprises K1 binary instance masks                         (we will discuss the effect of all thresholds in our results
+                represented in a K1×N binary matrix M1 (Fig. 2 - 3 ).                         section). Thegrowthcontinuesuntilnootheroverlappingor
+                Superpoints.       In a pre-processing step, we utilize the                   neighboringsuperpointsarefound. Oursuperpointmerging
+                method of [11] to group points into geometrically homoge-                     procedure, compared to using points alone or other merg-
+                neous regions, termed superpoints (Fig. 2 - 1 ). This yields                  ingstrategies (see Tab. 7), produces more well-formed point
+                                                   U               U×N                        cloud regions corresponding to 2D masks per frame.
+                a set of U superpoints {qu}              ∈ {0,1}         , where qu
+                                                   u=1
+                is a binary mask of points. Superpoints enhance processing                    3D object proposal formation. To create 3D object pro-
+                efﬁciency in the later stages of our pipeline and contribute                  posals, one option is to utilize the point cloud regions
+                to well-formed candidate object instances.                                    obtained from the merging procedure across individual
+                Per-frame superpoint merging.               For all input frames,             frames. However, this results in fragmented proposals, cap-
+                we utilize a pretrained 2D instance segmenter, employing                      turing only parts of object instances, as the regions corre-
+                Grounding-DINO [32] and SAM [26]. The network out-                            spond to 2D masks from single views (Fig. 2 - 2 ). To
+                puts a set of 2D masks (Fig. 2 - 2 ). For each 2D mask with                   address this, we merge point cloud regions from different
+                index m (unique across all frames), we calculate the IoU                      frames in a bottom-up manner, creating more complete and
+                ou,m with each superpoint qu when projecting all points of                    coherent 3D object masks. Agglomerative clustering com-
+                quontotheimageplaneofmaskmusingtheknowncamera                                 bines region sets from pairs of frames until no compatible
+                matrix, excluding points outside the camera’s ﬁeld of view,                   pairs remain. The resulting set includes merged and stan-
+                and determining image pixels containing projected points.                     daloneregions,whichcanbematchedwithotherregionsets
+                Asuperpoint is considered to have sufﬁcient overlap with a                    from subsequent frames. In the following paragraphs, we
+                2DmaskiftheIoUishigherthanathresholdo                         >τ .            discuss three crucial design choices in this process: (a) the
+                                                                        u,m       iou
+                                                                                          4021
+                                                                                                                               Average
+             matching score between region pairs, (b) the matching pro-                     Pointwise Feature Extraction
+                                                                                                                               over views
+             cess between sets of regions, and (c) the order of frames or                  View 
+                                                                             3D proposals
+             region sets used in matching and merging.                                  View 2
+                                                                                       View 1
+             Matching score. For a pair of point cloud regions (ri,rj),
+             we deﬁne a matching score based on (a) feature similar-                                               CLIP
+                                                                                                                   Encoder
+             ity and (b) overlap degree. Their feature-based similarity
+                                                                                                   Multi-scale crops
+                                                                                                                                Pointwise
+             s′ is measured through cosine similarity between the re-                   2D projection
+                                                                                                                                feature
+             gions’ feature vectors f3D, or s′  = cos(f3D,f3D), which
+                                    i       i,j         i   j                Figure 4. Pointwise Feature Extraction. Each 3D proposal un-
+             are in turn computed as the average of their point fea-         dergoes projection onto top-λ views and multiscale cropping [45],
+             tures. While this measures if the regions belong to the         to extract CLIP features. The resulting proposal feature is then av-
+             same object’s shape, it may yield high similarity for du-       eraged across views and accumulated into the point cloud feature.
+             plicate instances with the same geometry. To address this,
+             we also consider the degree of overlap, expressed as the        object candidate, the kernel computed from sampled points
+             IoU o′    = IoU(r ,r ) between the two regions r ,r ,           andtheir neighbors is convolved with point-wise features to
+                   i,j          i   j                             i   j      predict the binary mask. In our open-vocabulary scenario,
+             which is expected to be high for overlapping regions of the
+             sameinstance. Tworegionsareconsideredmatchingiftheir            weexclude semantic labeling heads, focusing solely on the
+             feature-based similarity and IoU score satisfy s′  > τ          binary instance mask head. The output consists of K2 bi-
+                                                            i,j     sim      nary masks in a K ×N binary matrix M (see Fig. 2 - 4 ).
+             and o′  >τ (samethresholdsusedduringper-framesu-                                  2                     2
+                  i,j    iou
+             perpoint merging). Our approach, incorporating matching         Combiningobjectinstance proposals. We simply append
+             scores based on point cloud deep features and geometric         the proposals of set M2 to M1 to form the ﬁnal set of K
+             structures, results in more coherent and well-deﬁned point      proposals M with the size of K×N. Note that we ap-
+             cloud regions compared to other strategies (see Tab. 7).        ply NMS here to remove near-duplicate proposals with the
+             Agglomerative clustering process. To merge region sets          overlapping IoU threshold τdup.
+                 I             J
+             {ri}     and {rj}     from different frames into a uniﬁed       3.3. Pointwise Feature Extraction
+                 i=1           j=1
+                     L
+             set {rl}   , where L ≤ I + J, we employ Agglomerative
+                     l=1                                                     In the ﬁnal stage of our pipeline, we compute a feature vec-
+             clustering [35]. We begin by concatenating them into a sin-     tor for each 3D object proposal from our combined pro-
+                                 I+J
+             gle “active set” {rl}   . We compute the each entry ci,j of
+                                 l=1                                         posal set. This per-proposal feature vector serves various
+             the binary cost matrix C of size (I + J) × (I + J) as:          instance-based tasks, such as comparison with text prompts
+                                ′                ′                         in the CLIP space [39].     Unlike prior open-vocabulary
+                     c   =✶ o >τ            ⊙✶ s >τ           ,     (1)
+                      i,j       i,j    iou        i,j    sim                 instance segmentation methods [45], which use a top-λ
+             where✶(·)istheindicatorfunction, ⊙istheANDoperator.             frame/view approach, we employ a more “3D-aware” pool-
+             The agglomerative clustering procedure iteratively merges       ing strategy. This strategy accumulates feature vectors on
+             regions within the “active set” according to the cost ma-       the point cloud, considering the frequency of each point’s
+             trix C and continues to update this matrix until no further     visibility in each view (see Fig. 4). Our rationale is that
+             merges are possible - indicated by the absence of any posi-     pointsmorefrequentlyvisibleinthetop-λviewsshouldcon-
+             tive elements in C.                                             tribute more to the proposal’s feature vector.
+                                                                                Let fCLIP ∈ RDCLIP be the 2D CLIP image feature of
+             Merging order. We explored two merging strategies: a se-                λ,k
+                                                                             k-th instance in λ-th view, ν  ∈ {0,1}N be the visibility
+             quential order, where region sets are merged between con-                                   λ
+                                                                                                    3D          N
+             secutive frames, and the resulting set is further merged with   map of view λ, and mk ∈ {0,1}         be the k-th proposal
+             the next frame, and a hierarchical order, which involves        binary mask in M. We obtain the pointwise CLIP feature
+                                                                             FCLIP ∈ RN×DCLIP as:
+             mergingregionsetsbetweennon-consecutiveframesinsep-
+             arate passes. The hierarchical approach forms a binary tree,       FCLIP = NV X X(νλ∗fCLIP)∗m3D!!,                     (2)
+             with each level merging sets from consecutive pairs of the                                        λ,k       k
+             previous level (see Fig. 3). Details and performance analy-                         k    λ
+             sis are presented in the Experiments section.                   where ∗ is the element-wise multiplication (broadcasting if
+                                                                             necessary) and NV(x) is the L2 normalized vector of x.
+             3.2. 3D Instance Segmentation Network                              The ﬁnal score between a text query ρ and a 3D mask
+                                                                             m3D is the average cosine similarity between its CLIP text
+             Networkdesign. This network directly processes 3D point           k
+                                                                             embedding e and all points within the mask, particularly:
+             clouds to generate 3D object instance masks.      We em-                     ρ
+             ploy established 3D instance segmentation networks like                 sCLIP =    1    Xcos(FCLIP∗m3D,e ),            (3)
+             Mask3D [42] and ISBNet [36] as our backbone. For each                    k,ρ     |m3D|                    k    ρ
+                                                                                                 k    n
+                                                                          4022
+                     where |m3D| is the number of points in the k-th mask.                                                   which is effective in crafting precise 3D instance masks
+                                    k
+                                                                                                                             independently of any 3D models. Combining with class-
+                     4. Experiments                                                                                          agnostic3DproposalsfromISBNetboostsourperformance
+                                                                                                                             to 23.7, 29.4, and 32.8 in AP, AP50, and AP25 — reﬂect-
+                     4.1. Experimental Setup                                                                                 ing a 1.5x enhancement in AP compared to prior methods.
+                                                                                                                             Impressively, our method competes closely with fully su-
+                     Datasets. We mainly conduct our experiments on the chal-                                                pervised techniques, attaining approximately 96% and 88%
+                     lenging dataset ScanNet200 [41], comprising 1,201 train-                                                of the AP scores of ISBNet and Mask3D, and excelling in
+                     ing and 312 validation scenes with 198 object categories.                                               the AP           andAP . Thisperformanceunderscoresthead-
+                     This dataset is well-suited for evaluating real-world open-                                                        com              tail
+                                                                                                                             vantagesofmerging2Dand3Dproposalsanddemonstrates
+                     vocabularyscenarioswithalong-taildistribution. Addition-                                                our model’s adeptness at segmenting rare objects.
+                     ally, we conduct experiments on Replica [43] (48 classes)
+                     andS3DIS[2](13classes)forcomparisonwithpriormeth-                                                           To assess the generalizability of our approach, we con-
+                     ods [7, 8]. Replica has 8 evaluation scenes, while S3DIS                                                ducted an additional experiment where the class-agnostic
+                     includes 271 scenes across 6 areas, with Area 5 used for                                                3D proposal network is substituted with the one trained
+                     evaluation. We follow the categorization approach from [8]                                              solely on the ScanNet20 dataset. We then categorized the
+                     for S3DIS.Notably,weomitexperimentsonScanNetV2[5]                                                       ScanNet200 instance classes into two groups: the base
+                     due to its relative ease compared to ScanNet200 and identi-                                             group, consisting of 51 classes with semantics similar to
+                     cal input point clouds.                                                                                 ScanNet20categories, and the novel group of the remaining
+                                                                                                                             classes. WereporttheAP                        , AP         , and APinTab.3. Our
+                     Evaluation metrics. We evaluate using standard AP met-                                                                                          novel        base
+                     rics at IoU thresholds of 50% and 25%. Additionally, we                                                 proposed Open3DIS achieves superior performance com-
+                     calculate mAP across IoU thresholds from 50% to 95% in                                                  pared to PLA [8], OpenMask3D [45], with large margins
+                     5%increments. ForScanNet200,wereportcategorygroup-                                                      in both novel and base classes. Notably, PLA [8], trained
+                     speciﬁc AP             , AP         , and AP         .                                                  with contrastive learning techniques, falls in a setting with
+                                       head         com                tail                                                  hundreds of novel categories.
+                     Implementation Details.                        To process ScanNet200 and
+                     S3DIS scans efﬁciently, we downsampled the RGB-D                                                        Setting 2: Replica. We further evaluate the zero-shot ca-
+                     frames by a factor of 10.                         Our approach utilizes the                             pability of our method on the Replica dataset, with results
+                     Grounded-SAM framework1. We employ the dataset class                                                    detailed in Tab. 4. Considering that several Replica cate-
+                     names as text prompts for generating 2D instance masks,                                                 gories share semantic similarities with ScanNet200 classes,
+                     followed by NMS with τdup = 0.5 to handle overlap-                                                      to maintain a truly zero-shot scenario, we omitted the class-
+                     ping instances. Our implementation of generating super-                                                 agnostic 3D proposal network for this dataset (using pro-
+                     points is from [27, 40]. In Pointwise Feature Extraction,                                               posals from 2D only). Under this constraint, our approach
+                     each proposal is projected into all viewpoints, and we se-                                              still outperforms OpenMask3D [45] and OVIR-3D [33] by
+                     lect the top λ=5 views with the largest number of projected                                             margins of +5.0 and +7.0 in AP, respectively.
+                     points. For CLIP, we use the ViT-L/14 [39]. We follow
+                     OpenMask3D[45]bysettingtheconﬁdencescoreat1.0for                                                        Setting 3: S3DIS. In line with the setting of PLA [8], we
+                     every 3D proposal.                                                                                      trained a fully-supervised 3DIS model on the base classes
+                                                                                                                             of the S3DIS dataset, followed by testing the model on both
+                     4.2. Comparison to prior work                                                                           base and novel classes. The results are shown in Tab. 5,
+                                                                                                                                                                                                                 B
+                                                                                                                             where we report the performance in terms of AP                                           and
+                     Setting 1: ScanNet200. The quantitative evaluation of                                                                                                                                       50
+                                                                                                                                  N
+                                                                                                                             AP , representing the AP50 for the base and novel cate-
+                     the ScanNet200 dataset is summarized in Tab. 2. Follow-                                                      50
+                     ing [45], we utilize the class-agnostic 3D proposal network                                             gories, respectively. Open3DIS signiﬁcantly outperforms
+                                                                                                                             existing methods in APN, achieving more than double their
+                     trained on the ScanNet200 training set, then test the OV-                                                                                    50
+                     3DIS on the validation set. Employing our 2D-Guided-3D                                                  scores. This remarkable performance underscores the ef-
+                     Instance Proposal Module, Open3DIS achieves 18.2 and                                                    ﬁcacy of our approach in dealing with unseen categories,
+                     19.2 in AP and AP                  .  Weoutperform OVIR-3D [33] and                                     with the support of the 2D foundation model.
+                                                    tail
+                     OpenMask3D [45] by margins of +5.2 and +2.8 in AP,                                                      Our qualitative results with arbitrary text queries. We
+                     andsurpassallothermethods,eventhefully-supervisedap-                                                    visualize the qualitative results of text-driven 3D instance
+                     proaches in the AP                   metric. This emphasizes the effec-
+                                                    tail                                                                     segmentation in Fig. 5. Our model successfully segments
+                     tiveness of our 2D-Guided-3D Instance Proposal Module,                                                  instances based on different kinds of input text prompts, in-
+                         1https://github.com/IDEA-Research/Grounded-                                                         volving object categories that are not present in the labels,
+                     Segment-Anything                                                                                        object’s functionality, object’s branch, and other properties.
+                                                                                                                        4023
+                            Method                                       Setting         3DProposal          AP       AP50      AP25      APhead      APcom       APtail
+                            ISBNet[36]                                  Fully-sup                           24.5      32.7       37.6       38.6       20.5       12.5
+                            Mask3D[42]                                                                      26.9      36.2       41.4       39.8       21.7       17.9
+                                                                 †
+                            OpenScene[37] + DBScan [10]                                      None            2.8       7.8       18.6       2.7         3.1        2.6
+                            OpenScene[37] + Mask3D [42]                                  Mask3D[42]         11.7      15.2       17.8       13.4       11.6        9.9
+                            SAM3D†[59]                                                       None            6.1      14.2       21.3       7.0         6.2        4.6
+                            OVIR-3D† [33]                              Open-vocab            None           13.0      24.9       32.3       14.4       12.7       11.7
+                            OpenIns3D[19]                                                Mask3D[42]          8.8      10.3       14.4       16.0        6.5        4.2
+                            OpenMask3D[45]                                               Mask3D[42]         15.4      19.9       23.1       17.1       14.1       14.9
+                            Ours(only2D)                                                     None           18.2      26.1       31.4       18.9       16.5       19.2
+                            Ours(only3D)                               Open-vocab        ISBNet[36]         18.6      23.1       27.3       24.7       16.9       13.3
+                            Ours(2Dand3D)                                                ISBNet[36]         23.7      29.4       32.8       27.8       21.2       21.8
+                 Table 2. OV-3DIS results on ScanNet200. Methods with † are adapted and evaluated on ScanNet200. Our proposed method achieves the
+                 highest AP, outperforming previous methods in all metrics. The best results are in bold while the second best results are underscored.
+                                                                                                                                                  "Muscle gain"
+                                                                                       "Nightstand"
+                                                                   "White pillow"
+                                                                                                                        "Cool down"
+                                                                                    "Blue pillow
+                     "Wipe dishes"      "Make coffee"
+                                                                                                                   "Nike"
+                 Figure 5. Qualitative results of our method on open-vocabulary instance segmentation. We query instance masks using arbitrary text
+                 prompts involving object categories that are not present in the ScanNet200 labels. For each scene, we showcase the instance that has
+                 the highest similarity score to the query’s embedding. These visualizations underscore the model’s open-vocabulary capability, as it
+                 successfully identiﬁes and segments objects that were never encountered during the training phase of the 3D proposal network.
+                   Method                         Pretrain       AP         AP         AP                                              B8/N4                   B6/N6
+                                                                     novel      base                          Method
+                                                                                                                                      B           N          B           N
+                                                                                                                                  AP          AP          AP         AP
+                   OpenMask3D                                      15.0       16.2     15.4                                           50          50         50          50
+                   Ours                         ScanNet200         22.6       26.7     23.7                   LSeg-3D[8]           58.3        0.3        41.1         0.5
+                   PLA(Base15)                                      0.3       10.8     3.2                    PLA[8]               59.0        8.6        46.9         9.8
+                   PLA(Base20)                                      0.3       15.8     4.5                    Lowis3D[7]           58.7       13.8        51.8        15.8
+                   OpenScene+Mask3D              ScanNet20          7.6       11.1     8.5                    Ours                 60.8       26.3        50.0        29.0
+                   OpenMask3D                                      11.9       14.3     12.6
+                   Ours                                            16.5       25.8     19.0                                                                        B           N
+                                                                                                       Table 5. OV-3DIS results on S3DIS in terms of AP               and AP .
+                                                                                                                                                                   50          50
+                                                                                                           Setting                            AP AP           AP       AP
+                 Table 3. OV-3DIS results on ScanNet200 dataset, using the class-                                                                       head      com      tail
+                 agnostic 3D proposal network trained on ScanNet20.                                        A1: OpenScene (distill)            3.3     5.5       2.4      1.7
+                                                                                                           A2: OpenScene (fusion)            17.5     21.5     17.1     13.3
+                    Method                       3DProposal         AP AP           AP                     A3: OpenScene (ensemble) 5.6               6.4       4.8      5.7
+                                                                               50       25
+                    OpenScene+Mask3D                Mask3D         10.9     15.6     17.3                  B: Mask-wise Feature              22.2     25.9     19.3     21.4
+                    OpenMask3D                      Mask3D         13.1     18.4     24.2                  C: Point-wise Feature             23.7     27.8     21.2     21.8
+                    OVIR-3D†                          None         11.1     20.5     27.5
+                                                                                                      Table 6. Comparing between extracting per-mask and per-point
+                    Ours(only2D)                      None         18.1     26.7     30.5             features for classiﬁcation using Open3DIS instance proposal set.
+                    Ours(only3D)                     ISBNet        14.9     18.8     23.6              UseSuperpoint Filtering Cond. AP AP                        AP        AP
+                                                                                                                                                             head     com       tail
+                    Ours(2Dand3D)                    ISBNet        18.5     24.5     28.2                      ✓              Deep. Feature       18.2    18.9      16.5     19.2
+                                                                      †                                        ✓                   None           15.9    16.5      14.3     17.0
+                 Table4. OV-3DISresultsonReplicadataset. Weadoptthesource
+                 code of [33] to this dataset.                                                                 ✓               Euclid Dist.       16.0    16.4      14.1     17.6
+                                                                                                                                   None           12.0    12.6      11.2     12.2
+                                                                                                       Table 7. Ablation on different conﬁgurations of the 2D-G-3DIP.
+                                                                                                  4024
+                MergingStrat. MergingOrd. AP AP                AP     AP                  2DSeg.              AP     AP        AP       AP
+                                                          head    com     tail                                          head      com      tail
+                Hungarian        Sequential      13.2   13.9    11.3   14.7               SEEM[70]            21.5    26.5      19.6     18.0
+                Hungarian        Hierarchical    16.1   16.1    13.3   19.4               ODISE[54]           21.6    26.0      19.5     19.1
+                Agglomerative    Sequential      16.9   17.8    16.1   18.0               Detic [68]          22.2    26.8      20.0     19.2
+                Agglomerative    Hierarchical    18.2   18.9    16.5   19.2               Grounded-SAM        23.7    27.8      21.2     21.8
+                    Table 8. Ablation on different merging conﬁgurations.                    Table 10. Ablation on different 2D segmenters.
+                      3DSeg.          AP     AP        AP        AP                  τiou  0.3 0.5 0.7 0.9 0.95 τsim 0.5 0.7 0.8 0.9 0.95
+                                                 head     com       tail
+                      Mask3D[42]      23.7     26.4     22.5     21.9                AP 17.717.818.018.216.9 AP 14.214.617.218.216.2
+                                                                                     AP 25.425.825.926.124.1 AP 21.021.825.126.123.8
+                      ISBNet[36]      23.7     27.8     21.2     21.8                   50                             50
+                        Table 9. Ablation on different 3D segmenters.                Table 11. Ablation on τiou.     Table 12. Ablation on τsim.
+              4.3. Ablation study                                                         ViewSelection Top 1 Top 5 Top 10 Top 20 All
+                                                                                          AP                21.2   23.7    22.6    22.5   22.5
+              Tovalidate design choices of our method, series of ablation                 AP                27.3   29.4    28.7    29.0   29.1
+                                                                                              50
+              studies are conducted on validation set of ScanNet200.
+              Studyondifferentkindsoffeaturesforopen-vocabulary                                Table 13. Ablation on top-λ view selection.
+              classiﬁcation is presented in Tab. 6. In the ﬁrst three rows          Ablation Study on Segmenters. Our comparative anal-
+              (setting A1-A3), we employ the pointwise feature map ex-              ysis of various class-agnostic 3D segmenters and open-
+              tracted by OpenScene [37] to perform classiﬁcation on our             vocabulary 2D segmenters is presented in Tab. 9 and 10.
+              3Dproposals. Of these, the fusion approach, which directly            The ﬁndings reveal that utilizing either ISBNet [36] or
+              projects CLIP features from 2D images onto the 3D point               Mask3D[42]leadstosimilarlevelsofperformance,achiev-
+              cloud, yields the highest results, 17.5 in AP. In setting B,          ing an AP of 23.7. Incorporating 2D instance masks from
+              weadoptastrategyakinto[45],extractingfeaturesforeach                  SEEM[70], Detic [68] or ODISE [54] leads to a slight de-
+              mask by projecting the 3D proposals onto the top-λ views,             crease in AP by ∼1.4, which we attribute to the less reﬁned
+              which attains an AP of 22.2. Surpassing these, our Point-             outputs produced by these models.
+              wise Feature Extraction (setting C) achieves the best AP
+              score of 23.7, substantiating our design choice.                      Ablation study on different values of visibility thresh-
+                                                                                    old and similarity threshold. We report the performance
+              Study on the 2D-Guided-3D Instance Proposal Module                    of our version using only proposals from the 2D-G-3DIP
+              is in Tab. 7. Our proposed approach (row 1), utilizing su-            with different values of the visibility threshold and similar-
+              perpoints to merge 3D points into regions and ﬁlter outliers          ity threshold in Tab. 11 and 12.
+              based on cosine similarity in feature space, achieves an AP
+              of 18.2. Disabling this ﬁltering notably reduces AP by 2.3.           Study on different values of viewpoints is illustrated in
+              Comparatively, a more basic method (row 3) relying on Eu-             Tab. 13. Relying only on the viewpoint with the highest
+              clidean distance to eliminate outlier superpoints yields an           number of projected points reduces the AP score to 21.2.
+              AP of 16.0, showing the lesser effectiveness of Euclidean             Conversely, raising the number of views to 10 or more also
+              distance for noise ﬁltering. Our baseline (last row), group-          yields worse results, likely due to the presence of inferior,
+              ing 3D points solely based on 2D masks, signiﬁcantly de-              occluded 2D masks. λ=5 reports the best performance.
+              creasesAPto12.0,underscoringthenecessityofsuperpoint
+              merging for effective 3D proposal creation.                           5. Discussion
+                 We study different merging conﬁgurations, including                We presented a method for open-vocabulary instance seg-
+              merging strategy and merging order in Tab. 8. Specif-                 mentation in 3D scenes, which aggregates proposals from
+              ically, we ﬁrst establish a partial matching between two              both point cloud-based instance segmenters and 2D image-
+              sets of regions, then matched pairs are merged into new re-           based networks in a geometrically coherent manner.
+              ﬁned regions, and unmatched ones remain the same. Using
+              Hungarian matching yields inferior results relative to pro-           Limitations.     Our Class-agnostic 3D Proposal and 2D-
+              posedAgglomerativeClustering,withadropof∼2.0inAP.                     Guided-3D Instance Proposal Module currently operate in-
+              Adopting the sequential merging order leads to a slight de-           dependently, with their outputs being combined to obtain
+              crease by ∼1.0 in AP in performance. The best results are             the ﬁnal 3D proposal set.       A better-integrating strategy,
+              achieved when agglomerative clustering is paired with the             wherethesemodulesenhanceeachother’sperformanceina
+              hierarchical merging order.                                           synergistic fashion, would be an interesting future direction.
+                                                                                 4025
+               References                                                               [14] Tong He, Chunhua Shen, and Anton van den Hengel.
+                                                                                             Dyco3d: Robust instance segmentation of 3d point clouds
+                [1] Iro Armeni, Ozan Sener, Amir R Zamir, Helen Jiang, Ioan-                 through dynamic convolution.         In Proceedings of the
+                    nis Brilakis, Martin Fischer, and Silvio Savarese. 3d seman-             IEEE/CVF Conference on Computer Vision and Pattern
+                    tic parsing of large-scale indoor spaces. In Proceedings of              Recognition, pages 354–363, 2021. 2
+                    the IEEE conference on computer vision and pattern recog-           [15] Tong He, Wei Yin, Chunhua Shen, and Anton van den Hen-
+                    nition, pages 1534–1543, 2016. 2                                         gel.  Pointinst3d: Segmenting 3d instances by points. In
+                [2] Iro Armeni, Sasha Sax, Amir R Zamir, and Silvio Savarese.                Computer Vision–ECCV 2022: 17th European Conference,
+                    Joint 2d-3d-semantic data for indoor scene understanding.                Tel Aviv, Israel, October 23–27, 2022, Proceedings, Part III,
+                    arXiv preprint arXiv:1702.01105, 2017. 6                                 pages 286–302. Springer, 2022. 2
+                [3] Yang Cao, Yihan Zeng, Hang Xu, and Dan Xu.             Coda:        [16] Deepti Hegde, Jeya Maria Jose Valanarasu, and Vishal M
+                    Collaborative novel box discovery and cross-modal align-                 Patel. Clip goes 3d: Leveraging prompt tuning for language
+                    mentforopen-vocabulary3dobjectdetection. arXivpreprint                   grounded 3d recognition. arXiv preprint arXiv:2303.11313,
+                    arXiv:2310.02960, 2023. 2                                                2023. 3
+                [4] Shaoyu Chen, Jiemin Fang, Qian Zhang, Wenyu Liu, and                [17] Yining Hong, Chunru Lin, Yilun Du, Zhenfang Chen,
+                    Xinggang Wang. Hierarchical aggregation for 3d instance                  Joshua B Tenenbaum, and Chuang Gan. 3d concept learn-
+                    segmentation.    In Proceedings of the IEEE/CVF Interna-                 ing and reasoning from multi-view images. In Proceedings
+                    tional Conference on Computer Vision, pages 15467–15476,                 of the IEEE/CVF Conference on Computer Vision and Pat-
+                    2021. 2                                                                  tern Recognition, pages 9202–9212, 2023. 2
+                [5] Angela Dai, Angel X. Chang, Manolis Savva, Maciej Hal-              [18] JiHou,AngelaDai,andMatthiasNießner. 3d-sis: 3dseman-
+                    ber, Thomas Funkhouser, and Matthias Nießner. Scannet:                   tic instance segmentation of rgb-d scans. In Proceedings of
+                    Richly-annotated 3d reconstructions of indoor scenes.      In            the IEEE/CVF Conference on Computer Vision and Pattern
+                    Proc. Computer Vision and Pattern Recognition (CVPR),                    Recognition, pages 4421–4430, 2019. 2
+                    IEEE, 2017. 6                                                       [19] Zhening Huang, Xiaoyang Wu, Xi Chen, Hengshuang Zhao,
+                [6] Jian Ding, Nan Xue, Gui-Song Xia, and Dengxin Dai. De-                   LeiZhu,andJoanLasenby. Openins3d: Snapandlookupfor
+                    coupling zero-shot semantic segmentation. 2022. 2                        3d open-vocabulary instance segmentation. arXiv preprint,
+                [7] Runyu Ding, Jihan Yang, Chuhui Xue, Wenqing Zhang,                       2023. 3, 7
+                    Song Bai, and Xiaojuan Qi.       Lowis3d: Language-driven           [20] Le Hui, Linghua Tang, Yaqi Shen, Jin Xie, and Jian Yang.
+                    open-world instance-level 3d scene understanding.       arXiv            Learning superpoint graph cut for 3d instance segmenta-
+                    preprint arXiv:2308.00353, 2023. 2, 3, 6, 7                              tion. In Advances in Neural Information Processing Systems,
+                [8] Runyu Ding, Jihan Yang, Chuhui Xue, Wenqing Zhang,                       2022. 2
+                    Song Bai, and Xiaojuan Qi. Pla: Language-driven open-               [21] Dat Huynh, Jason Kuen, Zhe Lin, Jiuxiang Gu, and Ehsan
+                    vocabulary 3d scene understanding.        In Proceedings of              Elhamifar. Open-vocabulary instance segmentation via ro-
+                    the IEEE/CVF Conference on Computer Vision and Pattern                   bust cross-modal pseudo-labeling.      In Proceedings of the
+                    Recognition, 2023. 2, 3, 6, 7                                            IEEE/CVF Conference on Computer Vision and Pattern
+                [9] Shichao Dong, Guosheng Lin, and Tzu-Yi Hung. Learning                    Recognition, pages 7020–7031, 2022. 2
+                    regional purity for instance segmentation on 3d point clouds.       [22] ChaoJia,YinfeiYang,YeXia,Yi-TingChen,ZaranaParekh,
+                    In European Conference on Computer Vision, pages 56–72.                  Hieu Pham, Quoc Le, Yun-Hsuan Sung, Zhen Li, and Tom
+                    Springer, 2022. 2                                                        Duerig. Scaling up visual and vision-language representa-
+                                                        ¨                                    tion learning with noisy text supervision. In International
+               [10] Martin Ester, Hans-Peter Kriegel, Jorg Sander, Xiaowei Xu,
+                    et al. A density-based algorithm for discovering clusters in             conference on machine learning, pages 4904–4916. PMLR,
+                    large spatial databases with noise. In kdd, pages 226–231,               2021. 2
+                    1996. 7                                                             [23] Li Jiang, Hengshuang Zhao, Shaoshuai Shi, Shu Liu, Chi-
+               [11] Pedro F Felzenszwalb and Daniel P Huttenlocher. Efﬁcient                 Wing Fu, and Jiaya Jia. Pointgroup: Dual-set point group-
+                    graph-based image segmentation. International journal of                 ing for 3d instance segmentation.      In Proceedings of the
+                    computer vision, 59:167–181, 2004. 4                                     IEEE/CVF Conference on Computer Vision and Pattern
+               [12] Qiao Gu, Alihusein Kuwajerwala, Sacha Morin, Kr-                         Recognition, pages 4867–4876, 2020. 2
+                    ishna Murthy Jatavallabhula, Bipasha Sen, Aditya Agarwal,           [24] Prannay Kaul, Weidi Xie, and Andrew Zisserman. Multi-
+                    Corban Rivera, William Paul, Kirsty Ellis, Rama Chellappa,               modal classiﬁers for open-vocabulary object detection. In
+                    et al. Conceptgraphs: Open-vocabulary 3d scene graphs for                International Conference on Machine Learning, 2023. 2
+                    perception and planning. arXiv preprint arXiv:2309.16650,           [25] Alexander Kirillov, Eric Mintun, Nikhila Ravi, Hanzi Mao,
+                    2023. 2                                                                  Chloe Rolland, Laura Gustafson, Tete Xiao, Spencer White-
+                                                                                                                                                   ´
+               [13] Shuting He, Henghui Ding, and Wei Jiang.           Semantic-             head, Alexander C. Berg, Wan-Yen Lo, Piotr Dollar, and
+                    promoted debiasing and background disambiguation for                     Ross Girshick. Segment anything. arXiv:2304.02643, 2023.
+                    zero-shot instance segmentation.      In Proceedings of the              3
+                    IEEE/CVF Conference on Computer Vision and Pattern                  [26] Alexander Kirillov, Eric Mintun, Nikhila Ravi, Hanzi Mao,
+                    Recognition, pages 19498–19507, 2023. 2                                  Chloe Rolland, Laura Gustafson, Tete Xiao, Spencer White-
+                                                                                    4026
+                    head, Alexander C Berg, Wan-Yen Lo, et al. Segment any-           [40] Damien Robert, Hugo Raguet, and Loic Landrieu.          Efﬁ-
+                    thing. arXiv preprint arXiv:2304.02643, 2023. 4                         cient 3d semantic segmentation with superpoint transformer.
+              [27] Loic Landrieu and Mohamed Boussaha. Point cloud over-                    arXiv preprint arXiv:2306.08045, 2023. 6
+                    segmentation with graph-structured deep metric learning. In       [41] David Rozenberszki, Or Litany, and Angela Dai. Language-
+                    Proceedings of the IEEE/CVF Conference on Computer Vi-                  grounded indoor 3d semantic segmentation in the wild. In
+                    sion and Pattern Recognition, pages 7440–7449, 2019. 6                  Proceedings of the European Conference on Computer Vi-
+              [28] Boyi Li, Kilian Q Weinberger, Serge Belongie, Vladlen                    sion (ECCV), 2022. 1, 2, 3, 4, 6
+                    Koltun, and Rene Ranftl. Language-driven semantic seg-            [42] Jonas Schult, Francis Engelmann, Alexander Hermans, Or
+                    mentation. In International Conference on Learning Rep-                 Litany, Siyu Tang, and Bastian Leibe. Mask3d for 3d se-
+                    resentations, 2022. 2                                                   mantic instance segmentation. In International Conference
+              [29] Ziyi Li, Qinye Zhou, Xiaoyun Zhang, Ya Zhang, Yanfeng                    onRobotics and Automation (ICRA), 2023. 2, 4, 5, 7, 8
+                    Wang,andWeidiXie. Open-vocabularyobjectsegmentation               [43] JulianStraub,ThomasWhelan,LingniMa,YufanChen,Erik
+                    with diffusion models. 2023. 2                                          Wijmans,SimonGreen,JakobJEngel,RaulMur-Artal,Carl
+              [30] Zhihao Liang, Zhihao Li, Songcen Xu, Mingkui Tan, and                    Ren, Shobhit Verma, et al. The replica dataset: A digital
+                    Kui Jia. Instance segmentation in 3d scenes using semantic              replica of indoor spaces. arXiv preprint arXiv:1906.05797,
+                    superpoint tree networks. In Proceedings of the IEEE/CVF                2019. 2, 6
+                    International Conference on Computer Vision, pages 2783–          [44] Jiahao Sun, Chunmei Qing, Junpeng Tan, and Xiangmin Xu.
+                    2792, 2021. 2                                                           Superpoint transformer for 3d scene instance segmentation.
+              [31] Jiaheng Liu, Tong He, Honghui Yang, Rui Su, Jiayi Tian,                  arXiv preprint arXiv:2211.15766, 2022. 2
+                    Junran Wu, Hongcheng Guo, Ke Xu, and Wanli Ouyang.                [45] Aycca Takmaz, Elisabetta Fedele, Robert W. Sumner,
+                    3d-queryis: A query-based framework for 3d instance seg-                Marc Pollefeys, Federico Tombari, and Francis Engelmann.
+                    mentation. arXiv preprint arXiv:2211.09375, 2022. 2                     OpenMask3D:Open-Vocabulary3DInstanceSegmentation.
+              [32] Shilong Liu, Zhaoyang Zeng, Tianhe Ren, Feng Li, Hao                     In Advances in Neural Information Processing Systems
+                    Zhang, Jie Yang, Chunyuan Li, Jianwei Yang, Hang Su, Jun                (NeurIPS), 2023. 1, 2, 3, 5, 6, 7, 8
+                    Zhu, et al. Grounding dino: Marrying dino with grounded           [46] Vibashan VS, Ning Yu, Chen Xing, Can Qin, Mingfei Gao,
+                    pre-training for open-set object detection.  arXiv preprint             JuanCarlosNiebles,VishalMPatel,andRanXu. Mask-free
+                    arXiv:2303.05499, 2023. 2, 4                                            ovis: Open-vocabulary instance segmentation without man-
+              [33] ShiyangLu,HaonanChang,EricPuJing,AbdeslamBoular-                         ual maskannotations. In Proceedings of the IEEE/CVF Con-
+                    ias, and Kostas Bekris. Ovir-3d: Open-vocabulary 3d in-                 ference on Computer Vision and Pattern Recognition, pages
+                    stance retrieval without training on 3d data. In 7th Annual             23539–23549, 2023. 2
+                    Conference on Robot Learning, 2023. 1, 2, 3, 6, 7                 [47] Thang Vu, Kookhoi Kim, Tung M. Luu, Xuan Thanh
+              [34] Yuheng Lu, Chenfeng Xu, Xiaobao Wei, Xiaodong Xie,                       Nguyen, and Chang D. Yoo. Softgroup for 3d instance seg-
+                    Masayoshi Tomizuka, Kurt Keutzer, and Shanghang Zhang.                  mentation on 3d point clouds. In CVPR, 2022. 2
+                    Open-vocabularypoint-cloudobjectdetectionwithout3dan-             [48] Luting Wang, Yi Liu, Penghui Du, Zihan Ding, Yue Liao,
+                    notation. 2023. 2                                                       Qiaosong Qi, Biaolong Chen, and Si Liu. Object-aware dis-
+                              ¨                                                             tillation pyramid for open-vocabulary object detection. In
+              [35] Daniel Mullner. Modern hierarchical, agglomerative cluster-
+                    ing algorithms. arXiv preprint arXiv:1109.2378, 2011. 5                 Proceedings of the IEEE/CVF Conference on Computer Vi-
+              [36] Tuan Duc Ngo, Binh-Son Hua, and Khoi Nguyen. Isbnet: a                   sion and Pattern Recognition, pages 11186–11196, 2023. 2
+                    3dpointcloudinstancesegmentationnetworkwithinstance-              [49] Weiyue Wang, Ronald Yu, Qiangui Huang, and Ulrich Neu-
+                    awaresamplingandbox-awaredynamicconvolution. InPro-                     mann.    Sgpn: Similarity group proposal network for 3d
+                    ceedings of the IEEE/CVF Conference on Computer Vision                  point cloud instance segmentation. In Proceedings of the
+                    and Pattern Recognition, pages 13550–13559, 2023. 2, 4, 5,              IEEE conference on computer vision and pattern recogni-
+                    7, 8                                                                    tion, pages 2569–2578, 2018. 2
+              [37] Songyou Peng, Kyle Genova, Chiyu ”Max” Jiang, An-                  [50] Jianzong Wu, Xiangtai Li, Henghui Ding, Xia Li, Guan-
+                    drea Tagliasacchi, Marc Pollefeys, and Thomas Funkhouser.               gliang Cheng, Yunhai Tong, and Chen Change Loy. Be-
+                    Openscene: 3d scene understanding with open vocabularies.               trayed by captions: Joint caption grounding and generation
+                    In Proceedings of the IEEE/CVF Conference on Computer                   for open vocabulary instance segmentation. arXiv preprint
+                    Vision and Pattern Recognition (CVPR), 2023. 2, 3, 7, 8                 arXiv:2301.00805, 2023. 2
+              [38] Chau Pham, Truong Vu, and Khoi Nguyen. Lp-ovod: Open-              [51] Weijia Wu, Yuzhong Zhao, Mike Zheng Shou, Hong Zhou,
+                    vocabularyobjectdetectionbylinearprobing. arXivpreprint                 and Chunhua Shen. Diffumask: Synthesizing images with
+                    arXiv:2310.17109, 2023. 2                                               pixel-level annotations for semantic segmentation using dif-
+              [39] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya                       fusion models. arXiv preprint arXiv:2303.11681, 2023. 2
+                    Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry,             [52] Yizheng Wu, Min Shi, Shuaiyuan Du, Hao Lu, Zhiguo Cao,
+                    AmandaAskell,PamelaMishkin,JackClark,etal. Learning                     and Weicai Zhong. 3d instances as 1d kernels. In Computer
+                    transferable visual models from natural language supervi-               Vision–ECCV2022: 17thEuropeanConference,TelAviv,Is-
+                    sion. In International conference on machinelearning, pages             rael, October 23–27, 2022, Proceedings, Part XXIX, pages
+                    8748–8763. PMLR, 2021. 2, 3, 5, 6                                       235–252. Springer, 2022. 2
+                                                                                   4027
+               [53] Jiarui Xu, Shalini De Mello, Sifei Liu, Wonmin Byeon,                    [67] Yiwu Zhong, Jianwei Yang, Pengchuan Zhang, Chun-
+                     Thomas Breuel, Jan Kautz, and Xiaolong Wang. Groupvit:                        yuan Li, Noel Codella, Liunian Harold Li, Luowei Zhou,
+                     Semantic segmentation emerges from text supervision. In                       Xiyang Dai, Lu Yuan, Yin Li, et al. Regionclip: Region-
+                     Proceedings of the IEEE/CVF Conference on Computer Vi-                        based language-image pretraining.       In Proceedings of the
+                     sion and Pattern Recognition, pages 18134–18144, 2022. 2                      IEEE/CVF Conference on Computer Vision and Pattern
+               [54] Jiarui Xu, Sifei Liu, Arash Vahdat, Wonmin Byeon, Xiao-                        Recognition, pages 16793–16803, 2022. 2
+                     long Wang, and Shalini De Mello. Open-vocabulary panop-                 [68] Xingyi Zhou, Rohit Girdhar, Armand Joulin, Philipp
+                     tic segmentation with text-to-image diffusion models.          In                ¨     ¨
+                                                                                                   Krahenbuhl, and Ishan Misra. Detecting twenty-thousand
+                     Proceedings of the IEEE/CVF Conference on Computer Vi-                        classes using image-level supervision. In ECCV, 2022. 8
+                     sion and Pattern Recognition, pages 2955–2966, 2023. 8                  [69] Chenming Zhu, Wenwei Zhang, Tai Wang, Xihui Liu, and
+               [55] Mutian Xu, Xingyilang Yin, Lingteng Qiu, Yang Liu, Xin                         KaiChen. Object2scene: Puttingobjectsincontextforopen-
+                     Tong, and Xiaoguang Han.            Sampro3d: Locating sam                    vocabulary 3d detection. arXiv preprint arXiv:2309.09456,
+                     prompts in 3d for zero-shot scene segmentation.            arXiv              2023. 2
+                     preprint arXiv:2311.17707, 2023. 3                                      [70] Xueyan Zou, Jianwei Yang, Hao Zhang, Feng Li, Linjie Li,
+               [56] Mi Yan, Jiazhao Zhang, Yan Zhu, and He Wang. Maskclus-                         Jianfeng Gao, and Yong Jae Lee. Segment everything every-
+                     tering:  View consensus based mask graph clustering for                       where all at once. arXiv preprint arXiv:2304.06718, 2023.
+                     open-vocabulary 3d instance segmentation, 2024. 3                             2, 8
+               [57] Bo Yang, Jianan Wang, Ronald Clark, Qingyong Hu, Sen
+                     Wang, Andrew Markham, and Niki Trigoni. Learning ob-
+                     ject bounding boxes for 3d instance segmentation on point
+                     clouds. In Advances in Neural Information Processing Sys-
+                     tems, pages 6737–6746, 2019. 2
+               [58] Jihan Yang, Runyu Ding, Zhe Wang, and Xiaojuan Qi.
+                     Regionplc:     Regional point-language contrastive learning
+                     for open-world 3d scene understanding.           arXiv preprint
+                     arXiv:2304.00962, 2023. 3
+               [59] Yunhan Yang, Xiaoyang Wu, Tong He, Hengshuang Zhao,
+                     andXihuiLiu.Sam3d: Segmentanythingin3dscenes.arXiv
+                     preprint arXiv:2306.03908, 2023. 2, 3, 7
+               [60] Lewei Yao, Jianhua Han, Xiaodan Liang, Dan Xu, Wei
+                     Zhang, Zhenguo Li, and Hang Xu.               Detclipv2:    Scal-
+                     able open-vocabulary object detection pre-training via word-
+                     region alignment. In Proceedings of the IEEE/CVF Con-
+                     ference on Computer Vision and Pattern Recognition, pages
+                     23497–23506, 2023. 2
+               [61] LiYi, WangZhao,HeWang,MinhyukSung,andLeonidasJ
+                     Guibas. Gspn: Generative shape proposal network for 3d
+                     instance segmentation in point cloud.        In Proceedings of
+                     the IEEE/CVF Conference on Computer Vision and Pattern
+                     Recognition, pages 3947–3956, 2019. 2
+               [62] Yingda Yin, Yuzheng Liu, Yang Xiao, Daniel Cohen-Or,
+                     Jingwei Huang, and Baoquan Chen. Sai3d: Segment any in-
+                     stance in 3d scenes. arXiv preprint arXiv:2312.11557, 2023.
+                     3
+               [63] Yuhang Zang, Wei Li, Kaiyang Zhou, Chen Huang, and
+                     Chen Change Loy. Open-vocabulary detr with conditional
+                     matching. 2022. 2
+               [64] Cheng Zhang, Haocheng Wan, Shengqiang Liu, Xinyi Shen,
+                     and Zizhao Wu. Pvt: Point-voxel transformer for 3d deep
+                     learning. arXiv preprint arXiv:2108.06076, 2021. 2
+               [65] Hao Zhang, Feng Li, Xueyan Zou, Shilong Liu, Chunyuan
+                     Li, Jianwei Yang, and Lei Zhang. A simple framework for
+                     open-vocabulary segmentation and detection. In Proceed-
+                     ings of the IEEE/CVF International Conference on Com-
+                     puter Vision, pages 1020–1031, 2023. 2
+               [66] ZhuowenTuZhengDing,JiekeWang.Open-vocabularyuni-
+                     versal image segmentation with maskclip. In International
+                     Conference on Machine Learning, 2023. 2
+                                                                                         4028

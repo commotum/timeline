@@ -1,0 +1,767 @@
+                                 Extending Context Window of Large Language Models from a
+                                                                    Distributional Perspective
+                                                              1*                     1*                           1                            1
+                                       Yingsheng Wu ,YuxuanGu ,XiaochengFeng ,WeihongZhong ,
+                                                                        2                   2                       2                1
+                                                  Dongliang Xu , Qing Yang , Hongtao Liu, Bing Qin
+                                                         1Harbin Institute of Technology, Harbin, China
+                                                    2DuXiaoman(Beijing) Science Technology Co., Ltd.
+                                                     {yswu,yxgu,xcfeng,whzhong,qinb}@ir.hit.edu.cn
+                                                 {xudongliang,yangqing,liuhongtao}@duxiaoman.com
+                                                 Abstract                                                       /2                              /2
+                            Scaling the rotary position embedding (RoPE)
+                            has become a common method for extending
+                            the context window of RoPE-based large lan-                          0                               0
+                            guage models (LLMs). However, existing scal-                                    10                               10
+                                                                                                         20                              20
+                            ing methodsoftenrelyonempiricalapproaches                                30                              30
+                            and lack a profound understanding of the in-
+                            ternal distribution within RoPE, resulting in                                     3 /2                            3 /2
+                            suboptimal performance in extending the con-                                                       (a)
+                            text window length. In this paper, we pro-                                          /2                              /2
+                            pose to optimize the context window extend-
+                            ing task from the view of rotary angle distribu-
+                            tion. Specifically, we first estimate the distri-
+                            bution of the rotary angles within the model                         0                               0
+                            and analyze the extent to which length ex-                                      10                               10
+                            tension perturbs this distribution. Then, we                                 20                              20
+                                                                                                     30                              30
+                            present a novel extension strategy that min-
+                            imizes the disturbance between rotary angle                                       3 /2                            3 /2
+                            distributions to maintain consistency with the                                                    (b)
+                            pre-training phase, enhancing the model’s ca-                              Pre-trained Distribution        Interpolated Distribution
+                            pability to generalize to longer sequences. Ex-                            Extrapolated Distribution
+                            perimental results compared to the strong base-                    Figure 1: Rotary angle distributions of extrapolation
+                            line methods demonstrate that our approach                         and interpolation methods in two different dimensions,
+                            reduces by up to 72% of the distributional                         compared with the pre-trained angle distribution. (a) In
+                            disturbance when extending LLaMA2’s con-                           onedimension,theextrapolatedrotaryangledistribution
+                            text window to 8k, and reduces by up to 32%                        fits more closely with the pre-trained distribution. (b)
+                           when extending to 16k. On the LongBench-                            In another dimension, the interpolated distribution fits
+                            E benchmark, our method achieves an aver-                          better with the pre-trained distribution.
+                            age improvement of up to 4.33% over exist-
+                            ing state-of-the-art methods. Furthermore, our
+                            method maintains the model’s performance on
+                            the Hugging Face Open LLM benchmark af-                            2024), modeling arbitrarily long textual sequences
+                            ter context window extension, with only an                         remains a significant challenge. On the one hand,
+                            average performance fluctuation ranging from                       LLMstrainedonshortsequences often encounter
+                           -0.12 to +0.22. Our code is available at https:                     out-of-distribution (OOD) issues when applied to
+                           //github.com/1180301012/DPRoPE.                                     the longer ones (Liu et al., 2023). On the other
+                                                                                               hand, training an LLM with extremely long con-
+                      1 Introduction                                                           text windows (i.e., the maximal sequence length)
+                      Given the remarkable capabilities of transformer-                        fromscratchisexpensiveandinefficient. Currently,
+                      based large language models (LLMs) in addressing                         the most popular approach is pre-training a large
+                      a wide range of natural language processing tasks                        language model, such as LLaMA, Qwen2 (Tou-
+                      (OpenAI,2023;Touvronetal.,2023a,b;Jiangetal.,                            vron et al., 2023a,b; Team, 2024), with a limited
+                                                                                               context window and the rotary position embedding
+                          * Equal Contribution                                                 (RoPE, Su et al. (2021)). During the inference
+                                                                                         7288
+                               Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing, pages 7288–7301
+                                                   November12-16,2024©2024AssociationforComputational Linguistics
+                  stage, the context window is dynamically extended        interpolated or extrapolated distribution and the
+                  via fine-tuning or tuning-free position interpolation    original one. Finally, we determine the most ap-
+                  strategies (Chen et al., 2023; Peng et al., 2023; Liu    propriate extension strategy for each rotary angle
+                  et al., 2023) on the rotary position embedding.          dimension independently.
+                    However, these position interpolation strategies          Experiments across LLMs of different sizes and
+                  primarily rely on intuition and are developed from       various long-context tasks demonstrate the effec-
+                  an empirical perspective, resulting in a lack of in-     tiveness of our distributional approach. We outper-
+                  terpretability (Zhao et al., 2023) and sub-optimal       form the strong extension baselines PI (Chen et al.,
+                  performanceforcontextextension. Forexample,PI            2023)andYaRN(Pengetal.,2023)onLongBench-
+                  (Chen et al., 2023) equally stretches all dimensions     E(Baietal.,2023),achievinganewstate-of-the-art.
+                  oftheRoPEwiththecontextextensionratio. YaRN              Besides, our method achieves 100% accuracy on
+                  (Peng et al., 2023) observes that heuristically uti-     passkey retrieval (Mohtashami and Jaggi, 2023)
+                  lizing different strategies for different dimensions     and matches the performance of original LLMs on
+                  yields better performance. However, the reasons          short-text tasks in the HuggingFace Open LLM
+                  behind this phenomenon have not been thoroughly          Leaderboard (Face, 2023). In summary, our contri-
+                  investigated, resulting in it likely not achieving the   butions are as follows:
+                  best results. Moreover, the optimal hyperparame-            • Wearethefirst, to the best of our knowledge,
+                  ters determinedexperimentallyinYaRNpotentially                to analyze the context window extension from
+                  hinder its generalization to new model settings.              a distributional perspective, where rotary an-
+                    Tobridge the gap between experiments and the-               gle distributions are observed to be crucial.
+                  oretical analysis, we tackle context window ex-
+                  tension from the view of rotary angle distribution.         • We propose a novel method to minimize the
+                  Hence, we propose a method for length extension               perturbation to the distribution when applying
+                  strategy selection, which has the potential to be the-        position interpolation for context extension.
+                  oretically optimal by minimizing the perturbation
+                  to the rotary angle distributions of the pre-trained        • Experimental results demonstrate that we can
+                  language model. Specifically, we first compare                surpass existing long-text extension methods
+                  the pre-training rotary angle distribution with the           onbothlong-text and short-text benchmarks.
+                  distributions introduced by interpolation and ex-        2 Preliminaries
+                  trapolation. As illustrated in Figure 1(a), interpo-
+                  lation can introduce too many OOD angles that            2.1   Rotary Position Embedding (RoPE)
+                  have a frequency of 0 in the pre-training distri-        Rotary position embedding (Su et al., 2021) is a
+                  bution, indicating a significant disturbance to the      position embedding method widely used in recent
+                  original distribution and posing a challenge for the     LLMs,whichhaveweakextrapolationproperties
+                  model to adapt to the new distribution. While di-        for long text modeling and context window exten-
+                  rect extrapolation may have a negligible impact on       sion. As demonstrated in the upper part of Fig-
+                  the distribution. Contrarily in another dimension        ure 2, OOD position indices can be directly ex-
+                  demonstrated in Figure 1(b), direct extrapolation        trapolated when corresponding rotary angles are
+                  introduces numerous OOD angles in this situation,        periodic. Given a d-dimensional attention head, the
+                  causing a severe distribution disturbance, whereas       mthtoken’s rotary matrix Rd is defined:
+                  interpolation performs better.                                                         m
+                    Fromsuchdistributional view, we find that the                                                           
+                                                                                      ..  ..      0            0        0 0
+                  consistency between the pre-training rotary angle                                                         
+                                                                                      ..  ..      0            0        0 0
+                                                                                                                            
+                  distribution and the extension distribution varies                0 0 cos(mθ ) 9sin(mθ ) 0 0
+                                                                            Rd =                     i             i        
+                  across different dimensions. Thus, we propose to             m    0 0 sin(mθi)          cos(mθi)     0 0
+                                                                                                                            
+                  employ different extension strategies in different                                                        
+                                                                                      0 0         0            0        ..  ..
+                  dimensions according to the rotary angle distri-                    0 0         0            0        ..  ..
+                  bution. We first approximate the distributions of                                                          (1)
+                                                                                                                     92i
+                  rotary angles by calculating the frequency of angles     where i ∈ [0,d/2 − 1] and θi = 10000 d , where
+                  in minimal discrete intervals. Then, we estimate         the hyperparameter 10000 is the default base of
+                  the disturbance introduced by different extension        RoPE (Su et al., 2021). Suppose the input of a
+                                                                                                                      d
+                  strategies by computing the distance between the         single attention head is x ,··· ,x ∈ R , where l
+                                                                                                      1        l
+                                                                       7289
+                              Pre-trained            Extrapolation         scaling strategies to each dimension according to r .
+                     1                                                                                                         i
+                                                                           Given two threshold hyperparameters α,β, YaRN
+                   oPE0                                                    modifies the RoPE as follows:
+                   R                                                                
+                                                                                    
+                                                                                      θ /s,                    if r < α
+                                                                                     i                            i
+                     1                                                        ˆ
+                                                                              θi =    θ ,                      if r > β ,    (4)
+                      0                     4096                    8192             i                            i
+                              Interpolation                                         
+                     1                                                                (1−γi)θi/s+γiθi, otherwise
+                                                                           wheresisthescalingfactorandγ = (r −α)/(β−
+                                                                                                              i     i
+                   oPE(PI)0                                                α). As shown in eq. (4), extrapolation is used
+                   R                                                       for high-frequency dimensions (r > β), while in-
+                                                                                                               i
+                     1                                                     terpolation is used for low-frequency dimensions
+                      0                     8192                           (r < α). Others are deployed with NTK-aware
+                                           Position                          i
+                  Figure 2: An example of context window extension,        (bloc97, 2023b,a) methods. Peng et al. (2023) em-
+                  where green and blue points denote pre-trained and       pirically suggest α = 1 and β = 32 for LLaMAs.
+                  OODposition indices. Upper: Extrapolation directly       3 Method
+                  models position indices with RoPE. Lower: Interpo-
+                  lation mitigates the OOD problem of position indices     In this section, we first introduce how to estimate
+                  while introducing unseen rotary angles (cross points).   the rotary angle distribution. Then, we propose a
+                                                                           novel approach that extends the context window of
+                  is the sequence length and d is the dimension of an      LLMsbyminimizingthedisturbance of the rotary
+                  attention head. With trainable parameters W and          angle distribution.
+                                                                 q
+                  Wk,thetheattention logit q⊤kn with RoPE can
+                                                 m                         3.1   Rotary Angle Distribution
+                  be calculate as follows:                                 LLMs generate language sequences by sam-
+                           ⊤           d         ⊤    d
+                         q k =(R W x ) (R W x )                            pling from the learned distribution p(x)           =
+                           m n         m q m          n   k n       (2)    Q
+                                     ⊤       d                                  p(x |x      ), where the position order is im-
+                                =x WR Wx                                      m     m <m
+                                     m q n−m k n                           plicitly controlled by position embedding. This
+                           d           d T d                               meansthat changes in the distribution of position
+                  where R        =(R ) R (Suetal.,2021).
+                           n−m         m      n                            embedding will have an impact on the language
+                  2.2   Position Interpolation (PI)                        distribution. Thus, we need to model this distribu-
+                  Asshowninthelowerpart of Figure 2, PI (Chen              tion and maintain its consistency when extending
+                  et al., 2023) suggests linear interpolation to all di-   the context window.
+                                                                                                                           i
+                  mensions to keep position indices within the pre-           As illustrated in eq. (1), rotary angles Θ      =
+                                                                                                                           m
+                  trained range. When extending the context window         (mθ mod2π) of a specific dimension i are fi-
+                                                                               i
+                               ′                                   ′       nite discrete numbers during the pre-training stage,
+                  from L to L , with the scaling factor s = L /L,
+                           ˆ                                 ˆ             since 0 ≤ m < L,m ∈ N. Considering them as
+                  the new θi is scaled correspondingly as θi = θi/s.
+                  Although alleviating OOD position indices, this          sampled from the rotary angle distribution, we can
+                  approach is likely to disturb the original periodicity   statistically estimate this distribution. We divide
+                  and add unseen rotary angles.                            the rotary range [0,2π) uniformly into b intervals,
+                                                                           where the kth interval in ith dimension is defined:
+                  2.3   YaRN                                                                i    2kπ 2(k+1)π
+                                                                                    Interval =         ,               ,     (5)
+                  Foreachdimensionpair(2i,2i+1)inRoPE,Peng                                  k       b         b
+                  et al. (2023) define its wavelength as follows:          wherek = 0,...,b−1,wesetthedefaultvalueof
+                                                              2i           b to 360. The frequency of rotary angles Fi(L) in
+                        λ =λ          =2π/θ =2π·10000d.             (3)                                                 k
+                         2i     2i+1          i                            each interval is calculated as:
+                                                                                                                        
+                  YaRN (Peng et al., 2023) argues that high-                  i            i            i               	 
+                                                                            F (L) =  Θ ∈Interval , ∀m ∈ [0,L)  L.
+                  frequency dimensions should employ less scaling,            k            m            k
+                  significantly improving the performance of posi-                                                           (6)
+                  tional interpolation. They introduce the ratio r         Therefore, the discrete probability density function
+                                                                      i    of rotary angle distribution at the ith dimension is:
+                  between the original context size L and the wave-
+                                                                                        i               i       i
+                  length λ , which is r = L/λ , and apply different                   P (Θ∈Interval ) = F (L),               (7)
+                           i            i        i                                      L               k      k
+                                                                       7290
+                                                                         text window and improves its performance on long-
+                    0.004                                                text tasks. Therefore, we will choose the context
+                    0.003                                                windowextension methods with the least perturba-
+                    equency0.002
+                    r
+                    F                                                    tion according to the rotary angle distribution on
+                    0.001                                                different dimensions.
+                    0.000
+                    0.006
+                                                                         3.2   Minimizing Distribution Disturbance
+                    0.004
+                    equency
+                    r
+                    F0.002                                               In this part, we derive the disturbance between
+                    0.000                                                rotary angle distributions and minimizing the dis-
+                          0       5        10      15       20           turbance to maintain the their consistency. Given a
+                                          Rotation Angle
+                                                                         LLMpre-trained on the sequence length of L with
+                            Pre-Trained L=4K  Interpolation(s=2) L0=8K
+                            Extraplolation L0=8K                         the rotary position embedding, the set of rotary an-
+                                                                         gle distributions for all dimensions is denoted as
+                 Figure 3: The learned rotary angle distributions of            n 0              d/2−1    o
+                                                                         P = P (Θ),...,P              (Θ) . Extending the
+                                                                           L       L            L
+                 LLaMA2. We demonstrate the 6th and 22nd dimen-          context windowtoL′,thenewrotaryangledistribu-
+                 sions during pre-training within the 4k length, and the                                                 ′
+                                                                         tion set is P ′. We define the disturbance D(L ,L)
+                 corresponding rotary angle distributions when extended              L
+                                                                         between these two distributions P ′ and P as:
+                 to 8k via interpolation and extrapolation, respectively.                                   L        L
+                 Wesetthenumberofintervals to b = 360 and we only
+                 display the first 24 intervals for clarity. The distributions              b−1
+                 of full intervals are provided in appendix A.1.              i             X i ′           Fi(L′)+ϵ
+                                                                           D(P ′,P )=           F (L)log k
+                                                                                 L    L           k         Fi(L)+ϵ
+                                                                                            k=0               k           (8)
+                                b−1                                                             d/2−1              .
+                                 P i                  i                                          X i
+                 where there is     P (Θ∈Interval ) = 1.                    D(P ′,P ) = 2×            D(P ′,P ) d,
+                                      L               k                          L    L                     L    L
+                                k=0                                                              i=0
+                    TakeLLaMA2-7Basanexample,whereL = 4k
+                 and d = 128, we analyze the rotary angle distribu-
+                 tion of pre-trained parameters. We demonstrate the      where ϵ is an extremely small number to prevent
+                                                                         dividing 0 and Di(P ′,P ) is the KL divergence.
+                 distributions in Figure 3, which vary significantly                           L   L
+                 as the dimension changes. Whenextendingthecon-          For OOD rotary angles introduced by interpola-
+                                    ′           ′                        tion or extrapolation, Di(P ′,P ) yields a high
+                 text window to L , such as L = 8k, we consider                                       L    L
+                 two scenarios for each dimension: interpolation         disturbance score due to the large value of Fi(L′).
+                                                                                                                       k
+                 with the scaling factor s = 2 and direct extrapola-     Thescore is low when Fi(L′) ≪ Fi(L), since the
+                                                                                                  k           k
+                 tion. Consistency of the distributions derived by       incomplete sampling from the pre-trained rotary
+                 these two extension approaches with the original        angle distribution does not have a serious impact
+                 distribution also changes with different dimensions.    during the inference stage.
+                 As shown in Figure 3, the rotary angle distribu-           Nowwecanquantitativelycomparethesituation
+                 tion of the interpolation enables better maintenance    in Figure 3 and we can further control the exten-
+                 of consistency with the pre-trained distribution on     sion strategy in a fine-grained manner with the
+                 the 6th dimension. When it comes to the 22nd            disturbance score, where the primary objective is
+                 dimension, the situation is completely the oppo-        to minimize the disturbance, minD(P ′,P ). In
+                 site. Furthermore, we observe that interpolation                                                L    L
+                                                                         detail, we combine the two strategies: one is based
+                 introduces too many OOD angles that are assigned        on PI, where we use s = L′/L to interpolate and
+                 the frequency of 0 by the pre-trained distribution,     obtain the corresponding rotary angle distributions
+                 challenging model’s generalization capability.          PI,andtheother involves directly extrapolating
+                                                                            ′
+                                                                           L
+                    It’s worth noting that our observation is inline     to L′ with distributions PE . We minimize the dis-
+                                                                                                     ′
+                                                                                                   L
+                 with the empirical strategies in YaRN (Peng et al.,     turbance score for each dimension independently,
+                                                                                                     d/2−1
+                 2023), where different dimensions have completely       since minD(P ′,P ) ∝         P minDi(P ′,P ),
+                 different situations. Besides, distributional consis-                   L    L                      L    L
+                                                                                                      i=0
+                 tency is essential for mitigating the OOD issue,        via selecting interpolation or extrapolation based
+                 which enables LLMs to generalize to longer con-         onthe score. Thus, we modify the rotary position
+                                                                     7291
+                         Base             Model        Context     Evaluation Context Length          Average
+                         LLM              Name         Window       0-4k      4-8k       8k+      Avg.    Avg.
+                                                                                                               >4k
+                                         Original         4k        27.69     26.24     25.79     26.57    26.02
+                                         PI(s=2)          8k        28.21     26.90     26.79     27.30    26.85
+                     LLaMA2-7B           PI(s=4)          16k       29.46     29.53     27.59     28.87    28.56
+                                       YaRN(s=2)          8k        27.99     27.01     26.93     27.31    26.97
+                                       YaRN(s=4)          16k       27.92     29.19     28.85     28.65    29.02
+                                      CLEX(ms=16)         64k       25.22     28.87     28.62     27.57    28.75
+                                        Ours(s=2)         8k        28.24     27.78     27.43     27.82    27.61
+                                        Ours(s=4)         16k       29.98     30.30     30.09     30.12    30.20
+                                         Original         4k        26.97     26.05     26.27     26.43    26.16
+                                         PI(s=2)          8k        31.43     30.95     29.74     30.71    30.35
+                     LLaMA2-13B          PI(s=4)          16k       30.80     31.33     30.86     30.99    31.10
+                                       YaRN(s=2)          8k        31.00     30.42     30.07     30.50    30.25
+                                       YaRN(s=4)          16k       31.59     31.35     29.89     30.94    30.62
+                                      CLEX(ms=16)         64k       29.84     30.22     30.22     30.09    30.22
+                                        Ours(s=2)         8k        31.64     31.40     30.43     31.16    30.91
+                                        Ours(s=4)         16k       31.58     32.29     31.15     31.67    31.72
+                Table 1: Comparative performance analysis of various context window extension methods on the Longbench-E
+                benchmark. Avg. denotes the average score across all lengths, while Avg.>4k represents the average score for
+                lengths exceeding the pre-training length. The scaling factor of CLEX (Chen et al., 2024) is dynamic, "ms" denotes
+                the maximumscaling factor, and we set the maximum scaling factor to 16 in accordance with the settings of Chen
+                et al. (2024).
+                embedding as follows:                                extension of RoPE-based LLMs while maintaining
+                       (θ         i   E          i   I               their original short-context capabilities.
+                          i   if D (P ′,P ) > D (P ′,P )+t
+                  ˆ       s          L    L          L   L
+                  θi =   θ    otherwise,                             4.1   Experimental Details
+                          i
+                                                               (9)   Wevalidate the effectiveness of our method on the
+                where t is a threshold to determine the extension    trending LLaMA2 (Touvron et al., 2023b) model,
+                strategy when the disturbance scores Di(PE ,P )
+                                                            ′   L    including 7B and 13B parameter models. All mod-
+                                                           L
+                and Di(PI ,P ) are very close. As demonstrated
+                           ′   L                                     els are trained on a subset of PG19 (Rae et al.,
+                          L
+                in eq. (9), for the ith dimension, we employ linear  2020) datasets. For s = 2, models are fine-tuned
+                                         ′
+                interpolation with s = L /L, when its disturbance
+                                   i                                 for 1000 steps with a global batch size of 64 and
+                score is much smaller. Otherwise, direct extrapola-  max length of 8192. For s = 4, models are fine-
+                tion is a preferred choice for this dimension.       tuned for 500 steps with a global batch size of 64
+                   It’s worth noting that our approach is a pre-     andamaxlengthof16384. Wesetthedefaultvalue
+                execution strategy that does not add any time or     of b in eq. (5) to 360. By adjusting the value of t in
+                calculation cost during the inference phase as long  eq. (9), we set the default number of interpolated
+                as the extension length L′ is provided. Besides,     dimensionsto80for8kextensionandto64for16k
+                since we only modify the value of θ, any advanced    extension. See more details in appendix B.1.
+                method that influences the attention mechanism,
+                such as FlashAttention (Dao et al., 2022; Dao,       4.2   LongContextEvaluation
+                2023), is still compatible.                          Toevaluate the model’s capabilities on real-world
+                4 Experiments                                        long context tasks with an extended context win-
+                                                                     dow. We utilize the Longbench-E benchmark (Bai
+                In this section, we evaluate our distribution-based  et al., 2023), which is specifically designed for
+                method on both long- and short-context bench-        evaluating models with long context window. The
+                marks. Theresultsshowthatmodelsemployingour          Longbench-E benchmark consists of 13 diverse
+                method outperform existing context window exten-     tasks, with the average length of most tasks rang-
+                sion methods, indicating a better context window     ing from 5k to 15k. Furthermore, Bai et al. (2023)
+                                                                 7292
+                         Model        Model    Context     TruthfulQA     Hellaswag    MMLU ARC-c Avg.
+                         Name          Size    Window
+                     LLaMA2-7B          7B        4k          38.74          77.38       46.96     52.22    53.82
+                        PI(s=2)         7B        8k          38.03          76.61       44.02     50.68    50.35
+                        PI(s=4)         7B        16k         35.99          76.08       45.26     49.74    51.77
+                      YaRN(s=2)         7B        8k          39.10          76.83       46.05     51.45    53.36
+                      YaRN(s=4)         7B        16k         38.90          77.10       45.98     51.19    53.29
+                       Ours(s=2)        7B        8k          39.92          76.80       46.18     51.88    53.70
+                       Ours(s=4)        7B        16k         39.83          76.91       46.96     51.45    53.79
+                     LLaMA2-13B        13B        4k          37.37          80.83       59.70     64.25    60.54
+                        PI(s=2)        13B        8k          37.68          80.25       59.44     63.99    60.34
+                        PI(s=4)        13B        16k         35.35          79.94       58.76     61.77    58.96
+                      YaRN(s=2)        13B        8k          37.71          80.31       59.99     64.59    60.65
+                      YaRN(s=4)        13B        16k         38.53          80.35       59.05     64.16    60.52
+                       Ours(s=2)       13B        8k          38.10          80.09       60.16     64.68    60.76
+                       Ours(s=4)       13B        16k         39.26          80.03       59.57     64.08    60.74
+                Table 2: Comparative performance of various context window extension methods relative to the original LLaMA2
+                onthe Hugging Face Open LLM benchmark.
+                categorizes the test samples into groups based on    ging Face Open LLM Leaderboard (Face, 2023)
+                length intervals of 0-4k, 4-8k, and 8k+ to provide   to observe how its ability in the original length
+                an analysis of the model’s performance variations    range changes after extending the context window.
+                at different input lengths.                          Specifically, we use 0-shot TruthfulQA (Lin et al.,
+                    Table 1 shows a side-by-side comparison of the   2022) and Hellaswag (Zellers et al., 2019), 5-shot
+                LLaMA2modelextendedfrom4ktothecontext                MMLU(Hendrycksetal.,2020)and25-shotARC-
+                length of 8k and 16k via PI (Chen et al., 2023),     c (Clark et al., 2018). The results demonstrate that
+                YaRN (Peng et al., 2023) and our method. We          the performance using our method to extend the
+                observe that models of different parameter sizes,    context window is not significantly affected.
+                employing our method as the extension method,           As illustrated in Table 1, when extending the
+                achieve optimal average results when extended        LLaMA2-7Bmodelto8kwithourapproach, we
+                to various context lengths. Compared to PI, our      observe only a 0.12 average score decrease com-
+                method achieves an average score improvement of      pared to the original model. Meanwhile, extending
+                up to 4.33% when extending the context window        the context window of the LLaMA2-7B model to
+                of LLaMA2-7B to 16k. To further demonstrate          16k using YaRN results in a maximum average
+                the model’s performance when surpassing the pre-     performance drop of 0.53, which is further exacer-
+                training length, we also report the average scores   bated in the case of PI. When applying our method
+                for evaluations with lengths greater than 4k. When   to extend the context window of the LLaMA2-13B
+                extended to 16k, we can observe that models us-      model, we can even achieve a slightly average per-
+                ing our method maintain their performance in the     formance improvement, suggesting that extending
+                extended context length range, whereas the model     the model’s context window with our method does
+                employing PI exhibits performance degradation        not substantially harm the model’s capability.
+                at the 7B model and YaRN exhibits performance
+                degradation at the 13B model. We also evaluated      4.4   Passkey Retrieval
+                the perplexity of the models as well as their per-   Tostudytheeffective context window size of our
+                formance on the RULER benchmark (Hsieh et al.,       modelafter extension, i.e. the maximum distance
+                2024), as shown in Appendix B.2.                     of a token that can be effectively attended to during
+                4.3   Short Context Validation                       inference. We further evaluate the model’s ability
+                                                                     to retrieve a simple passkey from a massive amount
+                Wefurther evaluate the LLaMA2 models on the          of text via passkey retrieval task (Mohtashami and
+                standard short context benchmark from the Hug-       Jaggi, 2023). Following the experimental setup of
+                                                                 7293
+                             100%
+                              80%
+                              60%                                                   LLaMA2-7B                 31.1
+                            ccuracy40%                                              LLaMA2-7B-8k
+                            A                                                       LLaMA2-7B-16k             31.0
+                              20%
+                               0%                                                                            e30.9
+                                        2k    4k    6k    8k   10k   12k   14k   16k   18k   20k
+                                                            Context Length
+                             100%                                                                             30.8
+                              80%                                                                            verage Scor
+                                                                                                             A30.7                                     PI(s=2)
+                              60%                                                  LLaMA2-13B
+                            ccuracy40%                                             LLaMA2-13B-8k
+                            A                                                      LLaMA2-13B-16k             30.6
+                              20%                                                                                                                                  YaRN(s=2)
+                               0%                                                                             30.5
+                                        2k    4k    6k    8k   10k   12k   14k   16k   18k   20k                   6.71 6.74  6.78   6.86         24.8            25.55
+                                                            Context Length                                                              Disturbance(×10 3)
+                         Figure 4: Passkey retrieval performance of models with                          Figure 5: Performance of LLaMA2 declines on the
+                         different sizes under various context window lengths.                           LongBench-Ewiththeincreasing disturbance.
+                                         Method ContextLength                                                        nˆ     0-4k         4-8k         8k+         Avg.
+                                                            8k            16k                                       56      31.20       31.07        29.87       30.71
+                                              PI          24.08          33.67                                      64      31.19       31.03        30.27       30.83
+                                           YaRN           25.55          35.44                                      72      31.39       31.12        30.12       30.87
+                                            Ours           6.71          22.92                                      80      31.64       31.40        30.43       31.15
+                                                             −3                                                     88      31.32       31.34        30.53       31.06
+                         Table 3: Disturbance(×10                ) of rotary angle distribu-                        96      31.38       31.52        30.34       31.08
+                         tions resulting from difference methods when extended
+                         to various length. Our method has the lowest distur-                            Table 4: Influence of interpolation dimension numbers
+                         bance. More details are shown in appendix A.2.                                  nˆ on the long context benchmark.
+                         MohtashamiandJaggi(2023),wesetthemaximum                                        turbance via incrementing the value of t in eq. (9).
+                         input length for all models to 20k, with prompt de-                             As shown in Figure 5, with the disturbance in-
+                         tails demonstrated in Appendix B.3. As shown in                                 creases, the performance of the model basically
+                         Figure 4, the LLaMA2 models, utilizing our con-                                 shows a monotonically decreasing trend, which re-
+                         text window extension approaches, achieve 100%                                  veals a strong consistency between the disturbance
+                         accuracy within the predetermined length.                                       metric and the experimental performance.
+                         5 Analysis                                                                      5.2      Influence of Interpolation Dimension
+                         In this section, we analyze the impact of distribu-                             Let us denote the number of interpolation dimen-
+                         tional disturbance on model performance. More-                                  sions as 0 ≤ nˆ ≤ d. In eq. (9), we can control
+                         over, we analyze the selection of different interpo-                            the value of t to decide how many dimensions the
+                         lation dimension numbers in eq. (9) and the impact                              interpolation strategy is used for. We demonstrate
+                         of the number of intervals in eq. (5). All analy-                               the influence of the number of interpolated dimen-
+                         ses are based on the task of extending the context                              sions nˆ in Table 4, where nˆ decreases from 96
+                         windowofLLaMA2-13Bfrom4kto8k.                                                   to 56 as t increases. We observe that for dimen-
+                                                                                                         sions where the disturbance scores Di(PE ,P )
+                         5.1     Influence of Disturbance                                                          i    I                                                 L′     L
+                                                                                                         and D (P ′,P ) are very close, corresponding to
+                                                                                                                        L      L
+                         Wecalculate the distributional disturbance induced                              the cases of nˆ = 96, 88, and 80, the impact of choos-
+                         by different methods with eq. (8). As illustrated                               ing extrapolation or interpolation on the model’s
+                         in Table 3, we achieve the lowest distributional                                performance is slight and negligible. However,
+                         disturbance, whichisinlinewithexperimentresults.                                as the disturbance increases, corresponding to the
+                                                                                                         cases of nˆ < 80, maintaining distributional consis-
+                             Furthermore, when extending the context win-                                tency becomes crucial, and we can observe a grad-
+                         dow of LLaMA2-13B to 8k, we investigate the                                     ual decline in the performance when employing
+                         model’s extension performance with increased dis-                               extrapolation to those dimensions where the dis-
+                                                                                                   7294
+                            nˆ  TruthfulQA Hellaswag MMLU ARC-c                                            b    TruthfulQA Hellaswag MMLU ARC-c
+                           56         38.95             80.27           60.29       64.25                 90         37.44              80.12          60.74        64.68
+                           64         38.68             80.23           60.55       64.76                180         38.18              80.23          60.48        64.76
+                           72         38.51             80.27           60.22       64.16                360         38.10              80.09          60.16        64.68
+                           80         38.10             80.09           60.16       64.68                720         38.78              80.29          60.35        64.33
+                           88         37.74             80.17           60.61       64.76              Table 7: Influence of the interval numbers b on the
+                           96         38.60             80.14           60.09       64.76              Hugging Face Open LLM benchmark.
+                        Table 5: Influence of interpolation dimension numbers
+                        nˆ on the Hugging Face Open LLM benchmark.
+                                    b       0-4k        4-8k         8k+        Avg.                   but only generalizes to limited lengths on down-
+                                  90       31.47       31.26       30.44        31.06                  stream tasks (Kazemnejad et al., 2023). RoPE (Su
+                                  180      31.68       31.09       30.51        31.09                  et al., 2021) cannot generalize to lengths beyond
+                                  360      31.64       31.40       30.43        31.15                  its pre-training length.
+                                  720      31.32       31.03       30.18        30.84                      Someworkshavebeendonetoovercomesuch
+                        Table 6: Influence of the interval numbers b on the long                       limitation. Ruoss et al. (2023) randomize token’s
+                        context benchmark.                                                             position embedding during pre-training, enabling
+                                                                                                       the model based on RoPE to generalize to prede-
+                        turbance score Di(PE ,P ) is significantly larger                              termined sequence lengths. This effectively guar-
+                                                        ′    L
+                                                       L                                               antees consistency in the distribution of rotation
+                        than Di(PI ,P ). We illustrate the influence of
+                                          ′    L
+                                        L                                                              angles when generalizing to predetermined lengths,
+                        interpolation dimension numbers on downstream                                  demonstrating that rotation angle distribution con-
+                        tasks in Table 5, where the value of nˆ has little                             sistency is crucial for the model’s ability to gen-
+                        effect and different datasets prefer different nˆ.                             eralize. Chen et al. (2023); bloc97 (2023b,a); Liu
+                        5.3     Influence of Interval                                                  et al. (2023); Peng et al. (2023) extend the context
+                        During the analysis of the rotary angle distribution                           window of existing LLMs (i.e., LLaMA2 (Tou-
+                        in eq. (5), we divide [0,2π) into b intervals and                              vron et al., 2023b)) by slightly modifying RoPE’s
+                        statistically estimate their distribution. In this part,                       θ (as show in eq. (1)). Chen et al. (2023) achieves
+                        weexploretheimpactofb,rangingfrom90to720,                                      proposed to extend the context window by interpo-
+                        on the extension of the model’s context window.                                lating positions, using a scaling factor s = L′/L
+                        As shown in Table 6, when b = 90, 180 and 360,                                 to uniformly scale θi, and fine-tuning on a small
+                        the model’s performance after extension exhibits                               amountofdata to extend the model’s context win-
+                        no significant fluctuations. This suggests that the                            dow. bloc97 (2023b,a) base on the Neural Tangent
+                        model is capable of tolerating subtle differences                              Kernel (NTK) theory, they scale lower dimensions
+                        in rotation angles. The performance drops when                                 less and higher dimensions more, this is also re-
+                        b = 720. This is because excessive intervals can                               ferred to as Adjusted Base Frequency (ABF). Liu
+                        actually increase the error in the distribution esti-                          et al. (2023) achieves an effect similar to NTK by
+                        mation, since the number of rotary angle samples L                             modifying the base of RoPE. YaRN (Peng et al.,
+                        is not very large. Table 7 illustrates that the choice                         2023) improved NTK by dividing RoPE dimen-
+                        of b does not influence the downstream tasks.                                  sions into three frequency-based groups and ap-
+                                                                                                       plying different strategies to each group. Low fre-
+                                                                                                       quency (r < α) dimensions use interpolation like
+                        6 RelatedWorks                                                                               i
+                                                                                                       PI and high frequency (ri > β) dimensions use
+                        Long-sequence modeling is a crucial issue in the                               extrapolation, dimensions that fall in-between em-
+                        application of LLMs. Recent efforts focus on im-                               ploys the NTK. YaRN achieved good performance,
+                        proving position embedding to enable LLMs have                                 but lacked interpretability, the hyperparameters α
+                        larger context window. Currently, the most popular                             andβ werealsoempirically chosen, making it hard
+                        relative position embedding are ALiBi (Press et al.,                           to obtain the optimal results. Different from these
+                        2022) and RoPE (Su et al., 2021). ALiBi (Press                                 empirical method, our work initially highlights the
+                        et al., 2022) adds bias to attention, enabling models                          consistency of rotary angle distribution as a theo-
+                        to maintain lower perplexity on long sequences,                                retical guidance for extending the context window.
+                                                                                                 7295
+                 7 Conclusion                                          windowofevenlargermodelstoachievestronger
+                 In this work, we proposed to study the context win-    long contextual abilities.
+                 dowextensionfromadistributionalperspectiveand          9 EthicsStatement
+                 demonstrated that the consistency of rotary angle
+                 distributions has a significant impact on extending   Wearetotallyawarethattextgenerationtechnology
+                 the context window of LLMs based on the rotary         has a potential to be used maliciously to generate
+                 position embedding. We designed a framework to         fake, toxic, or offensive content. We are aware that
+                 select scaling strategies with the guidance of mini-   if LLMsgenerateharmfulortoxicinformation, our
+                 mizingthedisturbance of rotary angle distributions.    approach cannot explicitly prevent it. However,
+                 Experimental results demonstrated the effective-       since the models and datasets used in our study are
+                 ness and superiority of our approach. Although our     publicly available and examined, we are confident
+                 approach is limited by the rotary position embed-      that our approach will not introduce toxic content
+                 ding, we believe that our distributional perspective   during the length extension phase.
+                 has the potential to inspire future work.              10 Acknowledgments
+                 8 Limitations                                         Xiaocheng Feng is the corresponding author of
+                 Our method is limited by the rotary position em-       this work.   We thank the anonymous review-
+                 bedding, which is not currently available for LLMs     ers for their insightful comments.     This work
+                 with other embedding methods. However, this is        was supported by the National Natural Science
+                 not a serious problem because (1) the most power-      Foundation of China (NSFC) (U22B2059, grant
+                 ful opensourceLLMs,suchasLLaMA2,utilizethe             62276078),theKeyR&DProgramofHeilongjiang
+                 rotarypositionembedding,and(2)ourapproachad-          via grant 2022ZX01A32, the International Cooper-
+                 dresses the problem from a theoretical perspective,    ation Project of PCL, PCL2022D01 and the Funda-
+                 whichcanbebettergeneralizedtootherembedding            mental Research Funds for the Central Universities
+                 frameworks in future research than empirical work.    (Grant No.HIT.OCEF.2023018).
+                   When applying the model to long contextual
+                 tasks, the quadratic computational complexityprob-     References
+                 lem of transformers still exists. Fortunately, our
+                 method does not introduce more computational           Yushi Bai, Xin Lv, Jiajie Zhang, Hongchang Lyu,
+                 overhead in the inference phase. Besides, we are         Jiankai Tang, Zhidian Huang, Zhengxiao Du, Xiao
+                 compatible with other computationally efficient          Liu, Aohan Zeng, Lei Hou, Yuxiao Dong, Jie Tang,
+                 Transformer methods.                                     and Juanzi Li. 2023. Longbench: A bilingual, mul-
+                                                                          titask benchmark for long context understanding.
+                   Our method does not make any structural im-            CoRR,abs/2308.14508.
+                 provements to the rotation position embedding or       bloc97. 2023a. Dynamically scaled rope further in-
+                 interpolation methods, so it still does not fully        creases performance of long context llama with zero
+                 achieve the optimal situation with the distribution      fine-tuning.
+                 perturbation D(P ′,P ) = 0. This provides inspi-
+                                   L   L                                bloc97. 2023b. Ntk-aware scaled rope allows llama
+                 ration for future exploration.                           models to have extended (8k+) context size without
+                   Theaccuracy of our estimated rotary angle dis-         any fine-tuning and minimal perplexity degradation.
+                 tribution is affected by the pre-training sequence
+                 length L, since the rotary angles are regarded as      Guanzheng Chen, Xin Li, Zaiqiao Meng, Shangsong
+                 sampledLtimesfromtherealrotaryangledistribu-             Liang, and Lidong Bing. 2024. CLEX: continuous
+                 tion. Currently, our method can achieve satisfying       length extrapolation for large language models. In
+                                                                          The Twelfth International Conference on Learning
+                 improvementformodelswithL = 4k,andwillper-               Representations, ICLR 2024, Vienna, Austria, May
+                 form better when applied for models with longer          7-11, 2024. OpenReview.net.
+                 pre-training length.                                   ShouyuanChen,ShermanWong,LiangjianChen,and
+                   Duetothe constraints of computing resources,           YuandongTian. 2023. Extending context window of
+                 our experiments are limited to LLaMA2-7B and             large language models via positional interpolation.
+                 LLaMA2-13B, and the long contextual ability is           CoRR,abs/2306.15595.
+                 also constrained by the model size. In the future,     Peter Clark, Isaac Cowhey, Oren Etzioni, Tushar Khot,
+                 wehopetoapplyourmethodtoextendthecontext                 Ashish Sabharwal, Carissa Schoenick, and Oyvind
+                                                                   7296
+                    Tafjord. 2018. Think you have solved question an-    Amirkeivan Mohtashami and Martin Jaggi. 2023. Land-
+                    swering? try arc, the AI2 reasoning challenge. CoRR,   mark attention:   Random-access infinite context
+                    abs/1803.05457.                                        length for transformers. CoRR, abs/2305.16300.
+                 Tri Dao. 2023. Flashattention-2: Faster attention with  OpenAI. 2023.     GPT-4 technical report.    CoRR,
+                    better parallelism and work partitioning.  CoRR,       abs/2303.08774.
+                    abs/2307.08691.
+                 Tri Dao, Daniel Y. Fu, Stefano Ermon, Atri Rudra,       BowenPeng, Jeffrey Quesnelle, Honglu Fan, and En-
+                    and Christopher Ré. 2022. Flashattention: Fast and     rico Shippole. 2023. Yarn: Efficient context win-
+                    memory-efficient exact attention with io-awareness.    dow extension of large language models. CoRR,
+                    In Advances in Neural Information Processing Sys-      abs/2309.00071.
+                    tems 35: Annual Conference on Neural Information     Ofir Press, NoahA.Smith,andMikeLewis.2022. Train
+                    Processing Systems 2022, NeurIPS 2022, New Or-         short, test long: Attention with linear biases enables
+                    leans, LA, USA, November 28 - December 9, 2022.        inputlengthextrapolation. InTheTenthInternational
+                 Hugging Face. 2023. Open llm leaderboard.                 ConferenceonLearningRepresentations, ICLR2022,
+                                                                           Virtual Event, April 25-29, 2022. OpenReview.net.
+                 DanHendrycks,CollinBurns,StevenBasart,AndyZou,          Jack W. Rae, Anna Potapenko, Siddhant M. Jayakumar,
+                    Mantas Mazeika, Dawn Song, and Jacob Steinhardt.       Chloe Hillier, and Timothy P. Lillicrap. 2020. Com-
+                    2020. Measuring massive multitask language under-      pressive transformers for long-range sequence mod-
+                    standing. arXiv preprint arXiv:2009.03300.             elling. In 8th International Conference on Learning
+                 Cheng-Ping Hsieh, Simeng Sun, Samuel Kriman, Shan-        Representations, ICLR 2020, Addis Ababa, Ethiopia,
+                    tanu Acharya, Dima Rekesh, Fei Jia, Yang Zhang,        April 26-30, 2020. OpenReview.net.
+                    and Boris Ginsburg. 2024. RULER: what’s the real     Samyam Rajbhandari, Jeff Rasley, Olatunji Ruwase,
+                    context size of your long-context language models?     and Yuxiong He. 2020. Zero: memory optimizations
+                    CoRR,abs/2404.06654.                                   toward training trillion parameter models. In Pro-
+                 Albert Q. Jiang, Alexandre Sablayrolles, Antoine          ceedings of the International Conference for High
+                    Roux, Arthur Mensch, Blanche Savary, Chris Bam-        Performance Computing, Networking, Storage and
+                    ford, Devendra Singh Chaplot, Diego de Las Casas,      Analysis, SC 2020, Virtual Event / Atlanta, Georgia,
+                    Emma Bou Hanna, Florian Bressand, Gianna               USA,November9-19,2020,page20.IEEE/ACM.
+                    Lengyel, Guillaume Bour, Guillaume Lample,           Anian Ruoss, Grégoire Delétang, Tim Genewein, Jordi
+                    Lélio Renard Lavaud, Lucile Saulnier, Marie-           Grau-Moya, Róbert Csordás, Mehdi Bennani, Shane
+                    AnneLachaux,Pierre Stock, Sandeep Subramanian,         Legg, and Joel Veness. 2023. Randomized positional
+                    Sophia Yang, Szymon Antoniak, Teven Le Scao,           encodings boost length generalization of transform-
+                    Théophile Gervet, Thibaut Lavril, Thomas Wang,         ers. In Proceedings of the 61st Annual Meeting of
+                    TimothéeLacroix, and William El Sayed. 2024. Mix-      the Association for Computational Linguistics (Vol-
+                    tral of experts. CoRR, abs/2401.04088.                 ume2: Short Papers), ACL 2023, Toronto, Canada,
+                 Amirhossein      Kazemnejad,        Inkit     Padhi,      July 9-14, 2023, pages 1889–1903. Association for
+                    Karthikeyan Natesan Ramamurthy, Payel Das,             Computational Linguistics.
+                    and Siva Reddy. 2023. The impact of positional       Jianlin Su, Yu Lu, ShengfengPan, BoWen,andYunfeng
+                    encodingonlengthgeneralizationintransformers. In       Liu. 2021. Roformer: Enhanced transformer with
+                    Advances in Neural Information Processing Systems      rotary position embedding. CoRR, abs/2104.09864.
+                    36:  Annual Conference on Neural Information
+                    Processing Systems 2023, NeurIPS 2023, New           QwenTeam.2024. Qwen2technicalreport.
+                    Orleans, LA, USA, December 10 - 16, 2023.
+                 Stephanie Lin, Jacob Hilton, and Owain Evans. 2022.     HugoTouvron,Thibaut Lavril, Gautier Izacard, Xavier
+                    Truthfulqa: Measuring how models mimic human           Martinet, Marie-Anne Lachaux, Timothée Lacroix,
+                    falsehoods. In Proceedings of the 60th Annual Meet-    Baptiste Rozière, Naman Goyal, Eric Hambro, Faisal
+                    ing of the Association for Computational Linguistics   Azhar, Aurélien Rodriguez, Armand Joulin, Edouard
+                    (Volume 1: Long Papers), ACL 2022, Dublin, Ireland,    Grave, and Guillaume Lample. 2023a. Llama: Open
+                    May22-27,2022,pages3214–3252. Association for          and efficient foundation language models. CoRR,
+                    Computational Linguistics.                             abs/2302.13971.
+                 Xiaoran Liu, Hang Yan, Shuo Zhang, Chenxin An,          Hugo Touvron, Louis Martin, Kevin Stone, Peter Al-
+                    Xipeng Qiu, and Dahua Lin. 2023. Scaling laws          bert, Amjad Almahairi, Yasmine Babaei, Nikolay
+                    of rope-based extrapolation. CoRR, abs/2310.05209.     Bashlykov, Soumya Batra, Prajjwal Bhargava, Shruti
+                                                                           Bhosale, Dan Bikel, Lukas Blecher, Cristian Canton-
+                 Ilya Loshchilov and Frank Hutter. 2019. Decoupled         Ferrer, Moya Chen, Guillem Cucurull, David Esiobu,
+                    weight decay regularization. In 7th International      Jude Fernandes, Jeremy Fu, Wenyin Fu, Brian Fuller,
+                    ConferenceonLearningRepresentations, ICLR2019,         Cynthia Gao, Vedanuj Goswami, Naman Goyal, An-
+                    New Orleans, LA, USA, May 6-9, 2019. OpenRe-           thony Hartshorn, Saghar Hosseini, Rui Hou, Hakan
+                    view.net.                                              Inan, Marcin Kardas, Viktor Kerkez, Madian Khabsa,
+                                                                    7297
+         Isabel Kloumann,ArtemKorenev,PunitSinghKoura,
+         Marie-Anne Lachaux, Thibaut Lavril, Jenya Lee, Di-
+         anaLiskovich, Yinghai Lu, Yuning Mao, Xavier Mar-
+         tinet, Todor Mihaylov, Pushkar Mishra, Igor Moly-
+         bog, Yixin Nie, Andrew Poulton, Jeremy Reizen-
+         stein, Rashi Rungta, Kalyan Saladi, Alan Schelten,
+         Ruan Silva, Eric Michael Smith, Ranjan Subrama-
+         nian, Xiaoqing Ellen Tan, Binh Tang, Ross Tay-
+         lor, Adina Williams, Jian Xiang Kuan, Puxin Xu,
+         ZhengYan,IliyanZarov, Yuchen Zhang, Angela Fan,
+         Melanie Kambadur, Sharan Narang, Aurélien Ro-
+         driguez, Robert Stojnic, Sergey Edunov, and Thomas
+         Scialom. 2023b. Llama 2: Open foundation and
+         fine-tuned chat models. CoRR, abs/2307.09288.
+        Rowan Zellers, Ari Holtzman, Yonatan Bisk, Ali
+         Farhadi, and Yejin Choi. 2019. Hellaswag: Can a
+         machine really finish your sentence? In Proceedings
+         of the 57th Conference of the Association for Compu-
+         tational Linguistics, ACL 2019, Florence, Italy, July
+         28- August 2, 2019, Volume 1: Long Papers, pages
+         4791–4800. Association for Computational Linguis-
+         tics.
+        LiangZhao,XiaochengFeng,XiachongFeng,BingQin,
+         and Ting Liu. 2023. Length extrapolation of trans-
+         formers: A survey from the perspective of position
+         encoding. CoRR, abs/2312.17044.
+                              7298
+                             A RotationAngleDistributionDetails                                                                    Figure 8 illustrates the disturbance to each di-
+                             A.1        Rotation Angle Distribution                                                           mensional distribution caused by PI(Chen et al.,
+                                                                                                                              2023) ,YaRN(Peng et al., 2023) and our method
+                             Figure 6 illustrates the complete rotary angle dis-                                             whenthecontext window of the model is extended
+                             tributions of the 6th and 22nd dimensions when the                                               to 8k and 16k. Our method achieves the lowest
+                             numberofintervals is set to 360.                                                                 disturbance to the distribution.
+                                   0.004                                                                                            1.0
+                                                                                                                                    0.8
+                                   0.003                                                                                            0.6
+                                  equency0.002                                                                                      0.4
+                                  r
+                                  F0.001                                                                                           Disturbance0.2
+                                   0.000                                                                                            0.0
+                                   0.006                                                                                            0.8
+                                                                                                                                    0.6
+                                   0.004                                                                                            0.4
+                                  equency
+                                  r                                                                                                Disturbance
+                                  F0.002                                                                                            0.2
+                                                                                                                                    0.0
+                                   0.000                                                                                                   0         10        20       30        40        50        60
+                                            0        50       100      150       200      250       300      350                                                      Dimension
+                                                                        Rotation Angle                                                                   Interpolation          YaRN          Ours
+                                                Pre-Trained L=4K               Interpolation(s=2) L0=8K
+                                                Extraplolation L0=8K                                                          Figure 8: Illustration of the impact of PI, YaRN and
+                                                                                                                              our method on each dimensional distribution. Upper:
+                             Figure 6: Complete rotary angle distributions of 6th and                                         Disturbance when the context window is extended to
+                             22nd dimensions when the number of intervals is set to                                           8k. Lower: Disturbance when the context window is
+                             360.                                                                                             extended to 16k.
+                             A.2        Disturbance of Different Method                                                       B ExperimentalDetails
+                               Figure 7 illustrates the disturbance to each dimen-                                            B.1       Experimental Setup
+                             sional distribution caused by interpolation and ex-                                             We use 8 A100 GPUs and adopt ZeRO3 (Rajb-
+                             trapolation when the context window of the model                                                 handari et al., 2020) strategies during the training
+                             is extended to 8k and 16k. Interpolation and extrap-                                             stage, and use AdamW (Loshchilov and Hutter,
+                             olation exhibit advantages in different dimensions,                                              2019) optimizer with β = 0.9 and β = 0.999. We
+                                                                                                                                                                       1                      2
+                             respectively.                                                                                                                                         −5
+                                                                                                                              set the learning rate to 2 × 10                            without warmup
+                                                                                                                              andweightdecay. Whenextendingthecontextwin-
+                                                                                                                              dowto8k,wespentapproximately6hourstraining
+                                    1.0                                                                                       LLaMA-7Bandapproximately10hourstraining
+                                                                                                                              LLaMA2-13B. When extending the context win-
+                                   Disturbance0.5                                                                             dowto16k,wespentapproximately 7 hours train-
+                                    0.0                                                                                       ing LLaMA-7Bandapproximately11hourstrain-
+                                                                                                                              ing LLaMA2-13B. Both training and testing are
+                                    0.6                                                                                       accelerated by FlashAttention-2 (Dao, 2023).
+                                    0.4
+                                   Disturbance0.2                                                                             B.2       Additional Experimental Results
+                                    0.0                                                                                       B.2.1         RULERBenchmark
+                                           0        10        20        30        40        50        60
+                                                                      Dimension                                              TheRULER(Hsiehetal.,2024)benchmarkisem-
+                                                            Extrapolation          Interpolation                              ployed to evaluate the long-context retrieval capa-
+                             Figure 7: Illustration of the impact of interpolation and                                        bilities of models, with the performance of differ-
+                             extrapolation on each dimensional distribution. Upper:                                           ent methods on this benchmark presented in Table
+                             Disturbance when the context window is extended to                                               8. Although the retrieval performance on short
+                             8k. Lower: Disturbance when the context window is                                                texts has decreased, all methods have enhanced
+                             extended to 16k.                                                                                 the model’s ability to retrieve information from
+                                                                                                                      7299
+                                 Base             Model         Context     Evaluation Context Length         Avg.
+                                LLM               Name          Window        4k       8k          16k
+                                                 Original           4k      82.23      0            0        27.41
+                                                  PI(s=4)          16k      75.22    72.61       68.81       72.21
+                            LLaMA2-7B           YaRN(s=4)          16k      76.21    72.84       67.70       72.25
+                                              CLEX(ms=16)          64k      53.04    49.38       49.79       50.74
+                                                Ours(s=4)          16k      78.74    75.55       71.78       75.35
+                                                 Original           4k      84.93      0            0        28.31
+                                                  PI(s=4)          16k      76.22    72.41       66.97       71.87
+                            LLaMA2-13B          YaRN(s=4)          16k      72.37    68.97       63.27       68.20
+                                              CLEX(ms=16)          64k      58.27    53.69       51.48       54.48
+                                                Ours(s=4)          16k      79.40    76.21       71.65       75.75
+                 Table8: ComparativeperformanceanalysisofvariouscontextwindowextensionmethodsontheRULERbenchmark.
+                 Thescaling factor of CLEX is dynamic, "ms" denotes the maximum scaling factor, and we set the maximum scaling
+                 factor to 16 in accordance with the settings of (Chen et al., 2024).
+                 long documents, with our approach achieving the          B.2.3   Perplexity
+                 highest retrieval accuracy. The original LLaMA2          Perplexity is commonly employed to evaluate a
+                 model, due to its limited capacity for handling long     model’s language modeling capabilities, and we
+                 documents, fails to produce accurate answers when        tested the perplexity of different methods under
+                 the context length exceeds 4k tokens. The infe-          non-training conditions, with the results presented
+                 rior performance of CLEX may be attributed to the        in Table 10. However, perplexity often fails to re-
+                 introduction of new parameters for predicting the        flect a model’s actual performance on downstream
+                 scaling factor, which requires more training data to     tasks, as a model may exhibit a relatively low per-
+                 fit, thereby leading to sub-optimal performance in       plexity in non-training scenarios yet perform poorly
+                 scenarios with limited data.                             in real-world applications. In contrast to the de-
+                                                                          crease in perplexity, we are more concerned with
+                 B.2.2    Timecomplexity                                  the model’s performance on actual tasks.
+                 Considering the balance between efficiency and                                         Context Length
+                 performance, we also provide the time consump-               ModelSize      Method      8k        16k
+                 tion of different methods, as shown in Table 9. To                             PI      8.19      9.35
+                 facilitate comparison, we normalized the time con-                           YaRN      7.39      7.82
+                 sumption. In comparison to a fixed scaling factor,               7B          CLEX      7.30      7.87
+                 CLEXintroducesadditional parameters to predict                               Ours      7.12      7.72
+                 the scaling factor, which necessitates the recalcula-                          PI      7.02      8.23
+                 tion of positional encoding, thereby increasing the                          YaRN      6.06      7.77
+                 training and inference times.                                    7B          CLEX      6.08      7.58
+                       ModelSize      Method Train Test                                       Ours      5.91      7.39
+                                          PI        1        1           Table 10: Sliding window perplexity (S = 256) on PG19
+                            7B          YaRN        1        1            dataset.
+                                       CLEX        1.62    1.83
+                                        Ours        1        1
+                                          PI        1        1            B.3   Passkey Prompt
+                           13B          YaRN        1        1           Wefollowexperimental setup of Mohtashami and
+                                       CLEX        1.53    1.81           Jaggi (2023); Chen et al. (2023). We separately
+                                        Ours        1        1            employed our method with scaling factors of s=2
+                         Table 9: Time cost of diferent methods.          ands=4toextendthecontextwindowsofLLaMA2
+                                                                         7Band13Bto8kand16k,respectively. Figure 9
+                                                                          shows the prompt template.
+                                                                     7300
+                There is an important info hidden inside a lot
+                of irrelevant text.  Find it and memorize them.
+                I will quiz you about the important information
+                there.
+                The grass is green. The sky is blue. The sun
+                is yellow.  Here we go.   There and back again.
+                (repeat n times)
+                The pass key is 12345. Remember it. 12345 is the
+                pass key.
+                The grass is green. The sky is blue. The sun
+                is yellow.  Here we go.   There and back again.
+                (repeat m times)
+                What is the pass key? The pass key is
+                Figure 9: Prompt format for passkey retrieval. Here the
+                passkey 12345 is replaced with a random 5-digit numbers
+                during test and the prompt length varies with the value of n
+                and m.
+                                                              7301

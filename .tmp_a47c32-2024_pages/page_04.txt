@@ -1,0 +1,65 @@
+                                                                                                    timestep in order to use more timesteps over the sampling
+                                                                                                    process (see Fig. 3). In other words, our implicit model
+                                                                                                    can effectively “smooth out” the computation over more
+                                                                                                    timesteps. By contrast, with explicit models such as DiT,
+                                                                                                    the amount of computation directly determines the number
+                                                                                                    of timesteps, since a full forward pass is needed at each
+                                                                                                    timestep. Indeed, we find that when the amount of compute
+                                                                                                    is relatively limited, it is highly beneficial to smooth out the
+                                                                                                    compute among more timesteps than would be done with a
+                 Figure 3. Illustration of Transformer Block Forward Pass Allocation                traditional model. The effectiveness of smoothing is shown
+                 in FPDMandDiT.SinceDiThastoperformfullforwardpassesateach                          empirically in section Sec. 5.1.
+                 timestep, under limited compute, it can only denoise at a few timesteps
+                 with large gaps. FPDM achieves a more balanced distribution through
+                 smoothing, thereby reducing the discretization error. Additionally, FPDM           Reallocating Computation Across Timesteps                         Beyond
+                 offers the flexibility to adjust forward pass allocation per timestep with
+                 heuristics like Increasing and Decreasing. Refer to Section 3.3 for details.       smoothing out computation over timesteps, FPDM enables
+                                                                                                    one to vary the number of forward passes at each timestep,
+                 not, we provide an overview in the Supplementary Mate-                             thereby dynamically controlling the solving accuracy at dif-
+                 rial. Diffusion models learn to reverse a Markovian nois-                          ferent stages of the denoising process. This capability en-
+                 ing process in which a sample X ∼ q(X ) from a target                              ables the implementation of diverse heuristics. For example,
+                                                            0           0                           wecanallocateagreaternumberofiterationsatthestart(“de-
+                 data distribution q(X ) is noised over a series of timesteps
+                                            0                                                       creasing” heuristic) or the end (“increasing” heuristic) of the
+                 t ∈ [0,T]. The size of each step of this process is gov-
+                                                               T                                    diffusion process (see Fig. 3). Additionally, FPDM supports
+                 erned by a variance schedule {β }                   as q(X |X         ) =
+                          √                                  t t=0            t    t−1              adaptive allocations of forward passes; further discussions
+                 N(X; 1−βX ,βI). where each q(X |X                                   ) is a
+                        t           t   t−1     t                           t    t−1                about adaptive algorithms can be found in the supplementary
+                 Gaussian distribution. We learn the distribution q(X                  |X )
+                                                                                   t−1     t        material.
+                 using a network s (X            |X ) ≈ q(X          |X ), which in our
+                                       θ     t−1     t           t−1     t
+                 case is a fixed point denoising network. The generative
+                 process then begins with a sample from the noise distribu-                         Reusing Solutions.          Theconvergence speed of fixed point
+                 tion q(X ) and denoises it over a series of steps to obtain a
+                            T                                                                       solving meaningfully depends on the initial solution pro-
+                 sample from the target distribution q(X ).
+                                                                   0                                vided as input. A poor guess of the initial solution would
+                    Theprimarydrawbackofdiffusion models as a class of                              make the convergence slower. Considering each timestep
+                 generative models is that they are relatively slow to sample.                      independently, the usual approach would be to initialize the
+                 Asaresult, during sampling, it is very common to only use                          fixed-point iteration of each timestep using the output of
+                 a small subset of all diffusion timesteps and take correspond-                     the (explicit) layers. However, considering sequential fixed
+                 ingly larger sampling steps; for example, one might train                          point problems in the diffusion process, we can reuse the
+                 with 1000 timesteps and then sample images with as few as                          solution from the fixed point layer at the previous timestep
+                 N=5,10,or20timesteps.                                                              as the initial solution for the next timestep. Formally, we
+                    Naturally, one could replace the explicit denoising net-                                                                              ∗(t−1)
+                                                                                                    can initialize the iteration in Eq. (3) with x                rather than
+                 work inside a standard diffusion model with a fixed point                          with x(t) .
+                 denoising network, and make no other changes; this would                                   pre
+                 immediately reduce model size and memory usage, as dis-                                The intuition for this idea is that adjacent timesteps of
+                 cussed previously. However, we can further improve effi-                           the diffusion process only differ by a small amount of noise,
+                 ciency during sampling by exploiting the fact that we are                          so their fixed point problems should be similar. Hence, the
+                 solving a sequence of related fixed point problems across all                      solutions of these problems should be close, and the solution
+                 timesteps, instead of a single one. We present two opportu-                        of the previous timestep would be a good initialization for
+                 nities for improvement: smoothing/reallocating computation                         the current timestep. A similar idea was explored in [8],
+                 across timesteps and reusing solutions.                                            which used fixed point networks for optical flow estimation.
+                                                                                                    3.4. Stochastic Jacobian-Free Backpropagation
+                 Smoothing Computation Across Timesteps.                        The flexi-          The final unresolved aspect of our method is how to train
+                 bility afforded by fixed-point solving enables us to allocate                      the network, i.e. how to effectively backpropagate through
+                 computation between timesteps in a way that is not possible                        the fixed point solving layer. While early work on DEQs
+                 with traditional diffusion models. For a given computational                       usedexpensive(Jacobian-based)implicitdifferentiationtech-
+                 budget for sampling, we can reduce the the number of for-                          niques [5], recent work has found more success using ap-
+                 wardpasses (i.e. number of fixed point iterations) used per                        proximate and inexpensive (Jacobian-free) gradients [14].
+                                                                                               4

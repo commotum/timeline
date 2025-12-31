@@ -1,0 +1,75 @@
+                     3.3    Yet another RoPE extensioN (YaRN)                                      RoPE Features'           Resonance RoPE Features'
+                                                                                                  Rotation Angles                Rotation Angles
+                     YaRN(Pengetal.,2024)isthecurrent state-of-the-
+                     art RoPE scaling method for TSTL. It introduces
+                     the “NTK-by-parts” scaling for RoPE, which ap-
+                     plies different scaling strategies to each RoPE fea-
+                     ture according to its temporal wavelength.
+                        In a TSTL scenario with scaling factor s, YaRN
+                     scales the wavelength of the j-th RoPE feature λ
+                                                                                   j
+                         ˆ
+                     to λ and further fine-tune the model:
+                          j                                                                     Training Position Range       OOD Position Range
+                                     ˆ                                                       0             32            64            96           128
+                                    λ =(1−γ )sλ +γ λ ,
+                                      j             j     j     j  j                                               Token Position
+                     where γj is a piece-wise function depending on                       Figure 1: An illustration of RoPE’s rotation angles mθ
+                     its corresponding wavelength λ , and two hyperpa-                                                                                  6
+                                                            j                                                                               ˜
+                                                                                          andRESONANCEROPE’srotationanglesmθ inEqn.3
+                     rameters α and β:                                                                                                       6
+                                                                                          in a TSTL scenario with training max length 64 and test-
+                                      1,                 if λ < L/β                      ing max length 128. RoPE’s non-integer feature wave-
+                                                              j                          lengths create a feature gap between the RoPE features
+                                      
+                                      
+                                      0,                 if λ > L/α                      of the training and OOD testing positions, while RESO-
+                               γ =                             j
+                                 j    L/λ −α                                             NANCE ROPEreducesthisgapto0.
+                                              j
+                                      
+                                       β−α ,                 otherwise                                                                 d
+                                                                                         where i = 0,...,d − 1 and X ⊂ R is the set of
+                        Empirically, for the LLaMA family, Peng et al.                    feature vectors to which we apply a position embed-
+                     (2024) suggests using α = 1 and β = 32. This                         ding. Note that the formulation of the feature gap
+                     setting avoids value range extrapolation on post-                    is similar to the “embedded vector distance” metric
+                     critical dimensions, while reducing modifications                    proposed by Xiong et al. (2023). However, these
+                     to the original pre-critical dimensions.                             twometrics target totally different aspects of RoPE
+                        In addition to the “NTK-by-parts” RoPE scaling                    scaling methods. A more detailed comparison can
+                     strategy mentioned above, YaRN also comprises                        be found in Appendix B.
+                     a scaling strategy on the attention scores, which                       Existing RoPE scaling methods (Xiong et al.,
+                     reduces the change in the entropy of the attention                   2023; Peng et al., 2024) mainly focus on the post-
+                     score on longer sequences. We maintain the com-                      critical dimensions of RoPE, since the rotary angle
+                     plete design of YaRN in our experiments, but our                     mθ on these dimensions extrapolates on OOD
+                                                                                              j
+                     analysis will focus on its RoPE scaling strategy.                    positions, hence creating a feature gap. In this
+                                                                                          section, we argue that reducing RoPE’s feature
+                     4 ProposedMethod:RESONANCE ROPE                                      interpolation on the pre-critical dimensions is also
+                     In this section, we introduce RESONANCE ROPE,a                       beneficial for better length extrapolation.
+                     universal improvement for RoPE and RoPE-based                           Duetoanon-linear relationship between RoPE
+                                                                                          feature RΘ andthetokenpositionminEquation3,
+                     scaling methods to (further) improve their length                                m
+                     extrapolation performance.                                           the interpolation on RoPE features is potentially
+                        Suppose we abstract RoPE’s Equation 4, 5: for                     hard for the model to generalize to. We found
+                                  d                                d                      that such potentially hard interpolation appears on
+                     anyx∈R ,wedefinef(x,m)=R                           Wx.Ina
+                                                                   Θ,m                    the pre-critical dimensions [0 : 2c − 1], which
+                     TSTLscenario where we generalize an LLM from
+                                               ′                                          have wavelengths λ shorter than the pre-trained
+                     length L to length L , let us denote a scaled RoPE                                            j
+                                     ˜                                                    sequence length L. By default, the rotary base b
+                     functionbyf. ToperformwellonOODpositionsit
+                                                               ˜                          of RoPE features is an integer or a fraction, which
+                     should reduce the feature gap h(f) between token                                                               2j
+                     features seen during training and token features                     makestheir wavelength λj = 2πb d not an integer.
+                     after scaling that we can define for each i-th feature              As the position index m ∈ N increases, a phase
+                     as:                                                                  shift of ∆ϕ occurs for the rotary angle mθ after
+                                                                                                                                                 j
+                                                                                          each full rotation. This could potentially result in a
+                          ˜                               ˜              ˜
+                     h (f) = max             min        |f(x,m) −f(x,n) |,                large distribution gap between the RoPE features
+                       i         x∈X m∈{0,···,L−1}                  i             i
+                                                  ′                                       on positions seen during training and the OOD po-
+                                       n∈{L,···,L −1}                            (8)      sitions. This phenomenon is illustrated in Figure 1.
+                                                                                     589

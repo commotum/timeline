@@ -1,0 +1,677 @@
+                             Less is More: Recursive Reasoning with Tiny Networks
+                                                           Alexia Jolicoeur-Martineau
+                                                                                     ´
+                                                             SamsungSAILMontreal
+                                                              alexia.j@samsung.com
+                                      Abstract
+                   Hierarchical Reasoning Model (HRM) is a
+                   novel approach using two small neural net-
+                   worksrecursingatdifferentfrequencies. This
+                   biologicallyinspiredmethodbeatsLargeLan-
+                   guagemodels(LLMs)onhardpuzzletasks
+                   suchasSudoku,Maze,andARC-AGIwhile
+                   trained with small models (27M parameters)
+                   onsmalldata(∼1000examples). HRMholds
+                   greatpromiseforsolvinghardproblemswith
+                   small networks, but it is not yet well un-
+                   derstood and may be suboptimal. We pro-
+                   pose Tiny Recursive Model (TRM), a much
+                   simpler recursive reasoning approach that
+                   achieves significantly higher generalization
+                   thanHRM,whileusingasingletinynetwork
+                   with only 2 layers. With only 7M parameters,
+                   TRMobtains45%test-accuracyonARC-AGI-
+                   1 and 8% on ARC-AGI-2, higher than most
+                   LLMs(e.g.,DeepseekR1,o3-mini,Gemini2.5
+                   Pro) with less than 0.01% of the parameters.
+              1. Introduction
+              Whilepowerful,LargeLanguagemodels(LLMs)can
+              struggle on hard question-answer problems. Given
+        arXiv:2510.04871v1  [cs.LG]  6 Oct 2025thattheygeneratetheiranswerauto-regressively,there
+              is a high risk of error since a single incorrect token can
+              render an answer invalid. To improve their reliabil-           Figure 1. Tiny Recursion Model (TRM) recursively improves
+              ity, LLMs rely on Chain-of-thoughts (CoT) (Wei et al.,         its predicted answer y with a tiny network. It starts with the
+              2022) and Test-Time Compute(TTC)(Snelletal.,2024).             embeddedinputquestion x and initial embedded answer
+                                                                             y, and latent z. For up to N    =16improvements steps,
+              CoTsseektoemulatehumanreasoningbyhavingthe                                                 sup
+              LLMtosamplestep-by-stepreasoningtracespriorto                  it tries to improve its answer y. It does so by i) recursively
+              giving their answer. Doing so can improve accuracy,            updating n times its latent z given the question x, current
+              but CoTisexpensive, requires high-quality reasoning            answer y, and current latent z (recursive reasoning), and
+              data (which maynotbeavailable),andcanbebrittle                 then ii) updating its answer y given the current answer y
+                                                                             andcurrentlatentz. Thisrecursiveprocessallowsthemodel
+              since the generated reasoning may be wrong. To fur-            to progressively improve its answer (potentially address-
+              ther improvereliability, test-time compute can be used         ing any errors from its previous answer) in an extremely
+              byreporting the most commonansweroutof K orthe                 parameter-efficient manner while minimizing overfitting.
+              highest-reward answer (Snell et al., 2024).
+                                                                          1
+                                                      Recursive ReasoningwithTinyNetworks
+              However, this may not be enough. LLMs with CoT                  ers that achieves significantly higher generalization
+              andTTCarenotenoughtobeateveryproblem. While                     thanHRMonavarietyofproblems. Indoingso,we
+              LLMs have made significant progress on ARC-AGI                  improvethestate-of-the-art test accuracy on Sudoku-
+              (Chollet, 2019) since 2019, human-level accuracy still          Extreme from 55% to 87%, Maze-Hard from 75% to
+              has not been reached (6 years later, as of writing of           85%, ARC-AGI-1from40%to45%,andARC-AGI-2
+              this paper). Furthermore, LLMs struggle on the newer            from5%to8%.
+              ARC-AGI-2(e.g.,Gemini2.5Proonlyobtains4.9%test
+              accuracy with a high amount of TTC) (Chollet et al.,            2. Background
+              2025; ARCPrizeFoundation,2025b).
+              Analternativedirectionhasrecentlybeenproposedby                 HRMis described in Algorithm 2. We discuss the
+              Wangetal.(2025). Theyproposeanewwayforward                      details of the algorithm further below.
+              through their novel Hierarchical Reasoning Model                2.1. Structure and goal
+              (HRM),whichobtainshighaccuracyonpuzzletasks
+              where LLMs struggle to make a dent (e.g., Sudoku                The focus of HRM is supervised learning. Given an
+              solving, Maze pathfinding, and ARC-AGI). HRM is a               input, produce an output. Both input and output are
+              supervisedlearningmodelwithtwomainnovelties: 1)                 assumedtohaveshape[B,L](whentheshapediffers,
+              recursive hierarchical reasoning, and 2) deep supervision.      paddingtokenscanbeadded),where B isthebatch-
+              Recursive hierarchical reasoning consists of recurs-            size and L is the context-length.
+              ing multiple times through two small networks (fL at            HRM contains four learnable components: the in-
+              highfrequencyand fH atlowfrequency)topredictthe                 putembedding fI(·;θI), low-level recurrent network
+              answer. Each network generates a different latent fea-          fL(·;θL), high-level recurrent network fH(·;θH), and
+              ture: fL outputs zH and fH outputs zL. Both features            theoutputhead fO(·;θO). Oncetheinputisembedded,
+              (zL,zH) are used as input to the two networks. The              theshapebecomes[B,L,D]whereDistheembedding
+              authorsprovidesomebiologicalargumentsinfavorof                  size. Each network is a 4-layer Transformers architec-
+              recursingatdifferenthierarchiesbasedonthedifferent              ture (Vaswani et al., 2017), with RMSNorm (Zhang
+              temporalfrequencies at which the brains operate and             &Sennrich, 2019), no bias (Chowdhery et al., 2023),
+              hierarchical processing of sensory inputs.                      rotary embeddings (Su et al., 2024), and SwiGLU acti-
+              Deepsupervisionconsists of improving the answer                 vation function (Hendrycks & Gimpel, 2016; Shazeer,
+              throughmultiplesupervision steps while carrying the             2020).
+              two latent features as initialization for the improve-
+              mentsteps (after detaching them from the computa-               2.2. Recursion at two different frequencies
+              tional graph so that their gradients do not propagate).         GiventhehyperparametersusedbyWangetal.(2025)
+              This provide residual connections, which emulates               (n = 2 fL steps, 1 fH steps; done T = 2 times), a
+              very deep neural networks that are too memory ex-               forwardpassofHRMisdoneasfollows:
+              pensive to apply in one forward pass.
+                                                                                              ˜
+              AnindependentanalysisontheARC-AGIbenchmark                             x ← fI(x)
+              showedthatdeepsupervisionseemstobetheprimary                         zL ← fL(zL +zH +x) #withoutgradients
+              driver of the performance gains (ARC Prize Founda-                   zL ← fL(zL +zH +x) #withoutgradients
+              tion, 2025a). Using deep supervision doubled accuracy                z   ←f (z +z )             # without gradients
+              oversingle-step supervision (going from 19% to 39%                    H      H L       H
+              accuracy), while recursive hierarchical reasoning only               zL ← fL(zL +zH +x) #withoutgradients
+              slightly improved accuracy over a regular model with                 zL ← zL.detach()
+              asingle forward pass (going from 35.7% to 39.0% ac-                  zH ←zH.detach()
+              curacy). This suggests that reasoning across different               z ← f (z +z +x) #withgradients
+              supervision steps is worth it, but the recursion done                  L     L   L     H
+              in each supervision step is not particularly important.              zH ← fH(zL+zH)             # with gradients
+                                                                                     ˆ
+              In this work, we show that the benefit from recursive                  y ←argmax(fO(zH))
+              reasoning can be massively improved, making it much
+                                                                                      ˆ
+              more than incremental. We propose Tiny Recursive                whereyisthepredictedoutputanswer,zL andzH are
+              Model(TRM),animprovedandsimplifiedapproach                      either initialized embeddings or the embeddings of
+              using a much smaller tiny network with only 2 lay-              the previous deep supervision step (after detaching
+                                                                              themfromthecomputationalgraph). Ascanbeseen,
+                                                                           2
+                                                                Recursive ReasoningwithTinyNetworks
+                 def hrm(z, x, n=2, T=2): # hierarchical reasoning                         2.4. Deep supervision
+                     zH, zL = z
+                     with torch.no grad():                                                 Toimproveeffectivedepth,deepsupervisionisused.
+                        for i in range(nT − 2):                                            This consists of reusing the previous latent features
+                            zL = L net(zL, zH, x)
+                            if (i + 1) % T == 0:                                           (zH and zL) as initialization for the next forward pass.
+                                zH = H net(zH, zL)
+                     # 1−step grad                                                         This allows the model to reason over many iterations
+                     zL = L net(zL, zH, x)                                                 and improve its latent features (zL and zH) until it
+                     zH = H net(zH, zL)
+                     return (zH, zL), output head(zH), Q head(zH)                          (hopefully) converges to the correct solution. At most
+                 def ACT halt(q, y hat, y true):                                            N =16supervisionstepsareused.
+                                                                                              sup
+                     target halt = (y hat == y true)
+                     loss = 0.5∗binary cross entropy(q[0], target halt)
+                     return loss                                                           2.5. Adaptive computational time (ACT)
+                 def ACT continue(q, last step):                                           Withdeepsupervision,eachmini-batchofdatasam-
+                     if last step:
+                        target continue = sigmoid(q[0])                                    ples must be used for N               = 16 supervision steps
+                     else:                                                                                                  sup
+                        target continue = sigmoid(max(q[0], q[1])))                        before moving to the next mini-batch. This is expen-
+                     loss = 0.5∗binary cross entropy(q[1], target continue)                sive, and there is a balance to be reached between
+                     return loss                                                           optimizing a few data examples for many supervision
+                 # Deep Supervision                                                        steps versus optimizing many data examples with less
+                 for x input, y true in train dataloader:
+                     z = z init                                                            supervision steps. To reach a better balance, a halting
+                     for step in range(N sup): # deep supervision                          mechanismisincorporatedtodeterminewhetherthe
+                        x = input embedding(x input)
+                        z, y pred, q = hrm(z, x)                                           model should terminate early. It is learned through
+                        loss = softmax cross entropy(y pred, y true)
+                        # Adaptive computational time (ACT) using Q−learning               a Q-learning objective that requires passing the zH
+                        loss += ACT halt(q, y pred, y true)                                throughanadditionalheadandrunninganadditional
+                         , , q next = hrm(z, x) # extra forward pass
+                        loss += ACT continue(q next, step == N sup − 1)                    forwardpass(todetermineifhaltingnowratherthan
+                        z = z.detach()                                                     later would have been preferable). They call this
+                        loss.backward()
+                        opt.step()                                                         methodAdaptivecomputationaltime(ACT).Itisonly
+                        opt.zero grad()
+                        if q[0] > q[1]: # early−stopping                                   usedduringtraining,whilethefull N                      =16super-
+                            break                                                                                                            sup
+                                                                                           vision steps are done at test time to maximize down-
+                                                                                           stream performance. ACT greatly diminishes the time
+                 Figure 2. Pseudocode of Hierarchical Reasoning Models                     spent per example (on average spending less than 2
+                 (HRMs).                                                                   steps on the Sudoku-Extreme dataset rather than the
+                                                                                           full N       =16steps), allowing more coverage of the
+                                                                                                   sup
+                 aforwardpassofHRMconsistsofapplying6function                              dataset given a fixed number of training iterations.
+                 evaluations, where the first 4 function evaluations are
+                 detached from the computational graph and are not                         2.6. Deep supervision and 1-step gradient
+                 back-propagated through. The authors uses n = 2                                 approximationsreplacesBPTT
+                 with T = 2 in all experiments, but HRM can be gener-                      Deepsupervisionandthe1-stepgradientapproxima-
+                 alized by allowing for an arbitrary number of L steps                     tion provide a more biologically plausible and less
+                 (n) and recursions (T) as shown in Algorithm 2.                           computationally-expansive alternative to Backpropa-
+                 2.3. Fixed-point recursion with 1-step gradient                           gation Through Time (BPTT) (Werbos, 1974; Rumel-
+                      approximation                                                        hart et al., 1985; LeCun, 1985) for solving the temporal
+                                                                                           credit assignment (TCA) (Rumelhart et al., 1985; Wer-
+                 Assumingthat(zL, zH) reaches a fixed-point (z∗, z∗ )                      bos, 1988; Elman, 1990) problem (Lillicrap & Santoro,
+                 throughrecursing from both f and f ,                          L   H       2019). The implication is that HRM can learn what
+                                                        L         H
+                                      z∗ ≈ f (z∗ +z +x)                                    wouldnormallyrequire an extremely large network
+                                       L      L    L     H                                 without having to back-propagate through its entire
+                                     z∗ ≈ fH(zL +z∗ ),                                     depth. Given the hyperparameters used by Jang et al.
+                                       H                  H
+                 the Implicit Function Theorem (Krantz & Parks, 2002)                      (2023) in all their experiments, HRM effectively rea-
+                                                                                           sons over n          (n+1)TN            =4∗(2+1)∗2∗16=
+                 with the 1-step gradient approximation (Bai et al.,                                       layers             sup
+                 2019) is used to approximate the gradient by back-                        384layers of effective depth.
+                 propagating only the last fL and fH steps. This theo-
+                 rem is used to justify only tracking the gradients of
+                 the last two steps (out of 6), which greatly reduces
+                 memorydemands.
+                                                                                        3
+                                                    Recursive ReasoningwithTinyNetworks
+              2.7. SummaryofHRM                                           different from the much smaller n = 2 and T = 2 used
+              HRMleverages recursion from two networks at dif-            in every experiment of their paper, we observe the
+              ferent frequencies (high frequency versus low fre-          following:
+              quency) and deep supervision to learn to improve
+              its answer over multiple supervision steps (with ACT          1. the residual for zH is clearly well above 0 at every
+              to reduce time spent per data example). This enables             step
+              the model to imitate extremely large depth without
+              requiring backpropagation through all layers. This
+              approachobtainssignificantly higher performance on            2. the residual for zL only becomes closer to 0 after
+              hard question-answer tasks that regular supervised               manycycles,butitremainssignificantly above 0
+              modelsstrugglewith. However,thismethodisquite
+              complicated, relying a bit too heavily on uncertain
+              biological arguments and fixed-point theorems that            3. zL is very far from converged after one fL evalu-
+              are not guaranteed to be applicable. In the next sec-            ation at T cycles, which is when the fixed-point
+              tion, we discuss those issues and potential targets for          is assumed to be reached and the 1-step gradient
+              improvementsinHRM.                                               approximationisused
+              3. Target for improvements in Hierarchical                  Thus, while the application of the IFT theorem and
+                 ReasoningModels                                          1-step gradient approximation to HRM has some basis
+              In this section, we identify key targets for improve-       since the residuals do generally reduce over time, a
+              ments in HRM, which will be addressed by our pro-           fixed point is unlikely to be reached when the theorem
+              posedmethod,TinyRecursionModels(TRMs).                      is actually applied.
+                                                                          In the next section, we show that we can bypass the
+              3.1. Implicit Function Theorem (IFT) with 1-step            needfortheIFTtheoremand1-stepgradientapproxi-
+                  gradient approximation                                  mation, thus bypassing the issue entirely.
+              HRMonlyback-propagatesthroughthelast2ofthe6                 3.2. Twice the forward passes with Adaptive
+              recursions. The authors justify this by leveraging the           computationaltime(ACT)
+              Implicit Function Theorem (IFT) and one-step approx-
+              imation, which states that when a recurrent function        HRMusesAdaptivecomputationaltime(ACT)during
+              converges to a fixed point, backpropagation can be          training to optimize the time spent of each data sam-
+              applied in a single step at that equilibrium point.         ple. Without ACT, N      =16supervisionstepswould
+                                                                                                sup
+              There are concerns about applying this theorem to           bespentonthesamedatasample,whichishighlyin-
+              HRM. Most importantly, there is no guarantee that           efficient. They implement ACT through an additional
+              a fixed-point is reached. Deep equilibrium models           Q-learning objective, which decides when to halt and
+              normally do fixed-point iteration to solve for the fixed    movetoanewdatasampleratherthankeepiterating
+              pointz∗ = f(z∗) (Bai et al., 2019). However, in the case    on the same data. This allows much more efficient
+              of HRM,itisnotiteratingtothefixed-pointbutsimply            useoftimeespecially since the average number of su-
+              doingforwardpassesof f and f . Tomakematters                pervision steps during training is quite low with ACT
+                                          L      H                        (less than 2 steps on the Sudoku-Extreme dataset as
+              worse,HRMisonlydoing4recursionsbeforestopping               per their reported numbers).
+              to apply the one-step approximation. After its first
+              loop of two fL and 1 fH evaluations, it only apply a        However,ACTcomesatacost. Thiscostisnotdirectly
+              single fL evaluationbeforeassumingthatafixed-point          shownintheHRM’spaper,butitisshownintheirof-
+              is reached for both zL and zH (z∗ = fL(z∗ + zH + x)         ficial code. The Q-learning objective relies on a halting
+                    ∗         ∗    ∗            L         L               loss and a continue loss. The continue loss requires an
+              andzH = fH(zL+zH)). Then, the one-step gradient
+              approximation is applied to both latent variables in        extra forward pass through HRM (with all 6 function
+              succession.                                                 evaluations). This means that while ACT optimizes
+              The authors justify that a fixed-point is reached by        time more efficiently per sample, it requires 2 forward
+              depicting an example with n = 7 and T = 7 where             passes per optimization step. The exact formulation is
+              the forward residuals is reduced over time (Figure 3        showninAlgorithm2.
+              in Wang et al. (2025)). Even in this setting, which is      In the next section, we show that we can bypass the
+                                                                          needfortwoforwardpassesinACT.
+                                                                        4
+                                                              Recursive ReasoningwithTinyNetworks
+                 3.3. Hierarchical interpretation based on complex                        of 2 passes). Our approach is described in Algorithm 3
+                      biological arguments                                                andillustratedinFigure1. Wealsoprovideanablation
+                 The HRM’s authors justify the two latent variables                       in Table 1 on the Sudoku-Extreme dataset (a dataset
+                 and two networks operating at different hierarchies                      of difficult Sudokus with only 1K training examples,
+                 based on biological arguments, which are very far                        but 423K test examples). Below, we explain the key
+                 fromartificialneuralnetworks. Theyeventrytomatch                         componentsofTRMs.
+                 HRMtoactualbrainexperimentsonmice. Whilein-
+                 teresting, this sort of explanation makes it incredibly                  Table 1. Ablation of TRM on Sudoku-Extreme comparing %
+                 hard to parse out why HRM is designed the way it                         Test accuracy, effective depth per supervision step (T(n +
+                 is. Given the lack of ablation table in their paper, the                 1)nlayers), numberofForwardPasses(NFP)peroptimization
+                 over-reliance on biological arguments and fixed-point                    step, and number of parameters
+                 theorems(that are not perfectly applicable), it is hard                   Method                    Acc(%) Depth NFP #Params
+                 to determine what parts of HRM is helping what and                        HRM                          55.0       24       2      27M
+                 why. Furthermore, it is not clear why they use two                        TRM(T=3,n=6) 87.4                       42       1       5M
+                 latent features rather than other combinations of fea-                    w/ACT                        86.1       42       2       5M
+                 tures.                                                                    w/separate fH, fL            82.4       42       1      10M
+                 In the next section, we show that the recursive process                   noEMA                        79.9       42       1       5M
+                 can be greatly simplified and understood in a much                        w/4-layers, n = 3            79.5       48       1      10M
+                 simpler manner that does not require any biological                       w/self-attention             74.7       42       1       7M
+                 argument,fixed-point theorem, hierarchical interpre-                      w/T=2,n=2                    73.7       12       1       5M
+                 tation, nor using two networks. It also explains why 2                    w/1-stepgradient             56.5       42       1       5M
+                 is the optimal number of features (zL and zH).
+                                                                                          4.1. No fixed-point theorem required
+                 def latent recursion(x, y, z, n=6):                                      HRMassumesthattherecursionsconvergetoafixed-
+                    for i in range(n): # latent reasoning                                 pointforbothzL andzH inordertoleveragethe1-step
+                        z = net(x, y, z)                                                  gradient approximation (Bai et al., 2019). This allows
+                    y = net(y, z) # refine output answer
+                    return y, z                                                           the authors to justify only back-propagating through
+                 def deep recursion(x, y, z, n=6, T=3):                                   the last two function evaluations (1 fL and 1 fH). To
+                    # recursing T−1 times to improve y and z (no gradients needed)        bypass this theoretical requirement, we define a full
+                    with torch.no grad():
+                        for j in range(T−1):                                              recursion process as containing n evaluations of fL
+                           y, z = latent recursion(x, y, z, n)                            and1evaluationof f :
+                    # recursing once to improve y and z                                                              H
+                    y, z = latent recursion(x, y, z, n)
+                    return (y.detach(), z.detach()), output head(y), Q head(y)                                zL ← fL(zL +zH +x)
+                 # Deep Supervision                                                                              ...
+                 for x input, y true in train dataloader:
+                    y, z = y init, z init                                                                     zL ← fL(zL +zH +x)
+                    for step in range(N supervision):
+                        x = input embedding(x input)                                                          zH ← fH(zL+zH).
+                        (y, z), y hat, q hat = deep recursion(x, y, z)
+                        loss = softmax cross entropy(y hat, y true)                       Then, we simply back-propagate through the full re-
+                        loss += binary cross entropy(q hat, (y hat == y true))
+                        loss.backward()                                                   cursion process.
+                        opt.step()
+                        opt.zero grad()                                                   Throughdeepsupervision,themodelslearnstotake
+                        if q hat > 0: # early−stopping
+                           break                                                          any (zL,zH) and improve it through a full recursion
+                                                                                          process, hopefully making zH closer to the solution.
+                 Figure 3. Pseudocode of Tiny Recursion Models (TRMs).                    This means that by the design of the deep supervi-
+                                                                                          sion goal, running a few full recursion processes (even
+                 4. Tiny Recursion Models                                                 withoutgradients) is expected to bring us closer to the
+                                                                                          solution. We propose to run T −1 recursion processes
+                 In this section, we present Tiny Recursion Models                        withoutgradienttoimprove(zL,zH)beforerunning
+                 (TRMs). Contrary to HRM, TRM requires no com-                            onerecursionprocesswithbackpropagation.
+                 plex mathematical theorem, hierarchy, nor biological                     Thus, instead of using the 1-step gradient approxi-
+                 arguments. It generalizes better while requiring only                    mation, weapplyafullrecursionprocesscontaining
+                 asingletinynetwork(insteadoftwomedium-sizenet-                           n evaluations of fL and 1 evaluation of fH. This re-
+                 works)andasingleforwardpassfortheACT(instead                             movesentirelytheneedtoassumethatafixed-point
+                                                                                       5
+                                                     Recursive ReasoningwithTinyNetworks
+              is reached and the use of the IFT theorem with 1-step          While this is intuitive, we wanted to verify whether
+              gradient approximation. Yet, we can still leverage             using moreorlessfeaturescouldbehelpful. Results
+              multiple backpropagation-free recursion processes to           are showninTable2.
+              improve (zL,zH). With this approach, we obtain a               More features (> 2): We tested splitting z into dif-
+              massive boost in generalization on Sudoku-Extreme              ferent features by treating each of the n recursions as
+              (improvingTRMfrom56.5%to87.4%;seeTable1).                      producing a different z for i = 1,...,n. Then, each
+                                                                                                       i
+              4.2. Simpler reinterpretation of z     andz                    zi is carried across supervision steps. The approach
+                                                   H       L                 is described in Algorithm 5. In doing so, we found
+              HRMisinterpreted as doing hierarchical reasoning               performancetodrop. This is expected because, as dis-
+              over two latent features of different hierarchies due to       cussed, there is no apparent need for splitting z into
+              argumentsfrombiology. However,onemightwonder                   multiple parts. It does not have to be hierarchical.
+              whyusetwolatentfeatures instead of 1, 3, or more?              Single feature: Similarly, we tested the idea of taking
+              Anddowereallyneedtojustifytheseso-called”hier-                 a single feature by only carrying zH across supervi-
+              archical” features based on biology to make sense of           sion steps. The approach is described in Algorithm 4.
+              them? We propose a simple non-biological explana-              In doing so, we found performance to drop. This is
+              tion, which is more natural, and directly answers the          expected because, as discussed, it forces the model to
+              question of why there are 2 features.                          store the solution y within z.
+              The fact of the matter is: zH is simply the current            Thus, weexploredusingmoreorlesslatentvariables
+              (embedded)solution. Theembeddingisreversedby                   onSudoku-Extreme,butfoundthathavingonlyyand
+              applying the output head and rounding to the nearest           z lead to better test accuracy in addition to being the
+              token using the argmax operation. On the other hand,           simplest more natural approach.
+              zL is a latent feature that does not directly correspond
+              to a solution, but it can be transformed into a solution
+              byapplyingzH ← fH(x,zL,zH). Weshowanexample                    Table 2. TRM on Sudoku-Extreme comparing % Test accu-
+              on Sudoku-Extreme in Figure 6 to highlight the fact            racy whenusingmoreorlesslatentfeatures
+              that zH does correspond to the solution, but zL does                Method                 # of features   Acc(%)
+              not.                                                                TRMy,z(Ours)                 2           87.4
+              Oncethisisunderstood,hierarchyisnotneeded;there                     TRMmulti-scalez         n+1=7            77.6
+              is simply an input x, a proposed solution y (previously             TRMsinglez                   1           71.9
+              called zH), and a latent reasoning feature z (previously
+              called zL). Given the input question x, current solution
+              y, andcurrentlatentreasoningz,themodelrecursively              4.3. Single network
+              improvesitslatent z. Then, given the current latent z
+              andtheprevioussolutiony,themodelproposesanew                   HRMusestwonetworks,oneappliedfrequentlyasa
+              solution y (or stay at the current solution if its already     low-level module fH and one applied rarely as an high-
+              good).                                                         level module (fH). This requires twice the number of
+              Althoughthishasnodirectinfluenceonthealgorithm,                parameterscomparedtoregularsupervisedlearning
+              this re-interpretation is much simpler and natural. It         withasinglenetwork.
+              answersthequestionaboutwhytwofeatures: remem-                  Asmentionedpreviously, while fL iterates on the la-
+              bering in context the question x, previous reasoning           tent reasoning feature z (zL in HRM), the goal of fH
+              z, and previous answer y helps the model iterate on            is to update the solution y (zH in HRM) given the la-
+              the next reasoning z and then the next answer y. If            tent reasoning and current solution. Importantly, since
+              we were not passing the previous reasoning z, the              z ← fL(x+y+z)containsxbuty ← fH(y+z)does
+              modelwouldforget how it got to the previous solu-              notcontainsx,thetasktoachieve(iteratingonzversus
+              tion y (since z acts similarly as a chain-of-thought). If      using z to update y) is directly specified by the inclu-
+              wewerenotpassingtheprevioussolutiony,thenthe                   sion or lack of x in the inputs. Thus, we considered
+              modelwouldforgetwhatsolutionithadandwould                      the possibility that both networks could be replaced
+              be forced to store the solution y within z instead of          byasinglenetworkdoingbothtasks. Indoingso,we
+              usingitforlatentreasoning. Thus,weneedbothyand                 obtain better generalization on Sudoku-Extreme (im-
+              z separately, and there is no apparent reason why one          provingTRMfrom82.4%to87.4%;seeTable1)while
+              wouldneedtosplitzintomultiplefeatures.                         reducing the number of parameters by half. It turns
+                                                                             out that a single network is enough.
+                                                                          6
+                                                     Recursive ReasoningwithTinyNetworks
+              4.4. Less is more                                             4.6. No additional forward pass needed with ACT
+              Weattempted to increase capacity by increasing the            Aspreviouslymentioned,theimplementationofACT
+              number of layers in order to scale the model. Sur-            in HRM through Q-learning requires two forward
+              prisingly, we found that adding layers decreased gen-         passes, which slows down training. We propose a
+              eralization due to overfitting.     In doing the oppo-        simplesolution, whichistogetridofthecontinueloss
+              site, decreasing the number of layers while scaling           (fromtheQ-learning)andonlylearnahaltingproba-
+              the numberofrecursions(n)proportionally(to keep               bility through a Binary-Cross-Entropy loss of having
+              the amountofcomputeandemulateddepthapproxi-                   reachedthecorrectsolution. Byremovingthecontinue
+              matelythesame),wefoundthatusing2layers(instead                loss, we remove the need for the expensive second for-
+              of 4 layers) maximized generalization. In doing so, we        wardpass,whilestill being able to determine when to
+              obtain better generalization on Sudoku-Extreme (im-           halt with relatively good accuracy. We found no sig-
+              provingTRMfrom79.5%to87.4%;seeTable1)while                    nificant difference in generalization from this change
+              reducing the number of parameters by half (again).            (going from 86.1% to 87.4%; see Table 1).
+              It is quite surprising that smaller networks are bet-         4.7. Exponential Moving Average (EMA)
+              ter, but 2 layers seems to be the optimal choice. Bai
+              &Melas-Kyriazi(2024)alsoobservedoptimalperfor-                Onsmall data (such as Sudoku-Extreme and Maze-
+              mancefor2-layersinthecontextofdeepequilibrium                 Hard), HRMtendstooverfitquicklyandthendiverge.
+              diffusion models; however, they had similar perfor-           To reduce this problem and improves stability, we
+              mance to the bigger networks, while we instead ob-            integrate Exponential Moving Average (EMA) of the
+              serve better performance with 2 layers. This may ap-          weights, a commontechniqueinGANsanddiffusion
+              pear unusual, as with modern neural networks, gener-          modelstoimprovestability(Brocketal., 2018; Song &
+              alization tends to directly correlate with model sizes.       Ermon,2020). Wefindthatitpreventssharpcollapse
+              However, when data is too scarce and model size is            andleadstohighergeneralization(goingfrom79.9%
+              large, there can be an overfitting penalty (Kaplan et al.,    to 87.4%; see Table 1).
+              2020). This is likely an indication that there is too little
+              data. Thus, using tiny networks with deep recursion           4.8. Optimal the number of recursions
+              anddeepsupervisionappearstoallowustobypassa
+              lot of the overfitting.                                       Weexperimentedwithdifferentnumberofrecursions
+                                                                            by varying T and n and found that T = 3,n = 3
+              4.5. attention-free architecture for tasks with small         (equivalent to 48 recursions) in HRM and T = 3,n = 6
+                  fixed context length                                      in TRM(equivalentto42recursions)toleadtooptimal
+                                                                            generalization on Sudoku-Extreme. More recursions
+              Self-attention is particularly good for long-context          could be helpful for harder problems (we have not
+              lengths when L ≫ D since it only requires a matrix of         tested it, given our limited resources); however, in-
+              [D,3D]parameters,eventhoughitcanaccountforthe                 creasing either T or n incurs massive slowdowns. We
+              whole sequence. However, when focusing on tasks               showresults at different n and T for HRM and TRM
+              where L ≤ D,alinearlayerischeap,requiring only a              in Table 3. Note that TRM requires backpropagation
+              matrix of [L,L] parameters. Taking inspiration from           throughafull recursion process, thus increasing n too
+              the MLP-Mixer(Tolstikhin et al., 2021), we can replace        muchleadstoOutOfMemory(OOM)errors. How-
+              the self-attention layer with a multilayer perceptron         ever, this memory cost is well worth its price in gold.
+              (MLP)appliedonthesequencelength. UsinganMLP                   In the following section, we show our main results on
+              instead of self-attention, we obtain better generaliza-       multiple datasets comparing HRM, TRM, and LLMs.
+              tion on Sudoku-Extreme (improving from 74.7% to
+              87.4%; see Table 1). This worked well on Sudoku 9x9
+              grids, given the small and fixed context length; how-         5. Results
+              ever, we found this architecture to be suboptimal for         Following Wang et al. (2025), we test our approach
+              tasks with large context length, such as Maze-Hard            on the following datasets: Sudoku-Extreme (Wang
+              and ARC-AGI (both using 30x30 grids). We show                 et al., 2025), Maze-Hard (Wang et al., 2025), ARC-AGI-
+              results with and without self-attention for all experi-       1 (Chollet, 2019) and, ARC-AGI-2 (Chollet et al., 2025).
+              ments.                                                        Results are presented in Tables 4 and 5. Hyperparame-
+                                                                            ters are detailed in Section 6. Datasets are discussed
+                                                                            below.
+                                                                          7
+                                                   Recursive ReasoningwithTinyNetworks
+             Table 3. % Test accuracy on Sudoku-Extreme dataset. HRM     ity of the MLP on large 30x30 grids). TRM with self-
+             versus TRMmatchedatasimilareffectivedepthpersuper-          attention obtains 85.3% accuracy onMaze-Hard,44.6%
+             vision step (T(n+1)n      )                                 accuracy on ARC-AGI-1,and7.8%accuracyonARC-
+                                  layers                                 AGI-2with7Mparameters. Thisissignificantlyhigher
+                                HRM                  TRM                 than the 74.5%, 40.3%, and 5.0% obtained by HRM us-
+                            n = k, 4 layers     n = 2k, 2 layers         ing 4 times the number of parameters (27M).
+                 k   T    Depth     Acc(%)     Depth    Acc(%)
+                 1   1       9        46.4       7        63.2
+                 2   2      24        55.0       20       81.9           Table 4. % Test accuracy on Puzzle Benchmarks (Sudoku-
+                 3   3      48        61.6       42       87.4           ExtremeandMaze-Hard)
+                 4   4      80        59.5       72       84.2              Method               # Params Sudoku Maze
+                 6   3      84        62.3       78      OOM                         Chain-of-thought, pretrained
+                 3   6      96        58.8       84       85.8              DeepseekR1             671B        0.0      0.0
+                 6   6      168       57.5      156      OOM                Claude3.78K              ?         0.0      0.0
+                                                                            O3-mini-high             ?         0.0      0.0
+                                                                               Direct prediction, small-sample training
+              Sudoku-Extreme consists of extremely difficult Su-            Direct pred            27M         0.0      0.0
+              doku puzzles (Dillion, 2025; Palm et al., 2018; Park,         HRM                    27M         55.0    74.5
+              2018) (9x9 grid), for which only 1K training samples          TRM-Att(Ours)           7M         74.7    85.3
+              are used to test small-sample learning. Testing is done       TRM-MLP(Ours) 5M/19M1              87.4     0.0
+              on423Ksamples. Maze-Hardconsistsof30x30mazes
+              generated by the procedure by Lehnert et al. (2024)
+             whoseshortest path is of length above 110; both the         Table 5. % Test accuracy on ARC-AGI Benchmarks (2 tries)
+              training set and test set include 1000 mazes.                Method                # Params ARC-1 ARC-2
+             ARC-AGI-1andARC-AGI-2aregeometricpuzzlesin-                             Chain-of-thought, pretrained
+             volving monetaryprizes. Each puzzle is designed to            DeepseekR1               671B      15.8      1.3
+              beeasyforahuman,yethardforcurrentAImodels.                   Claude3.716K               ?       28.6      0.7
+              Eachpuzzletaskconsistsof2-3input–outputdemon-                o3-mini-high               ?       34.5      3.0
+              stration pairs and1-2testinputstobesolved. Thefinal          Gemini2.5Pro32K            ?       37.0      4.9
+              score is computed as the accuracy over all test inputs       Grok-4-thinking          1.7T      66.7     16.0
+              fromtwoattemptstoproducethecorrectoutputgrid.                Bespoke(Grok-4)          1.7T      79.6     29.4
+             The maximum grid size is 30x30. ARC-AGI-1 con-                    Direct prediction, small-sample training
+              tains 800 tasks, while ARC-AGI-2 contains 1120 tasks.        Direct pred              27M       21.0      0.0
+             We also augment our data with the 160 tasks from              HRM                      27M       40.3      5.0
+              the closely related ConceptARC dataset (Moskvichev           TRM-Att(Ours)            7M        44.6      7.8
+              et al., 2023). We provide results on the public evalua-      TRM-MLP(Ours)            19M       29.6      2.4
+              tion set for both ARC-AGI-1 and ARC-AGI-2.
+             While these datasets are small,           heavy data-
+              augmentation is used in order to improve gen-              6. Conclusion
+              eralization.  Sudoku-Extreme uses 1000 shuffling
+             (donewithoutbreakingtheSudokurules)augmenta-                WeproposeTinyRecursionModels(TRM),asimple
+              tions per data example. Maze-Hard uses 8 dihedral          recursivereasoningapproachthatachievesstronggen-
+              transformations per data example. ARC-AGI uses             eralization on hard tasks using a single tiny network
+             1000dataaugmentations(colorpermutation,dihedral-            recursing on its latent reasoning feature and progres-
+              group, and translations transformations) per data          sively improving its final answer. Contrary to the
+              example. The dihedral-group transformations consist        Hierarchical Reasoning Model (HRM), TRMrequires
+              of random 90-degree rotations, horizontal/vertical         no fixed-point theorem, no complex biological justi-
+              flips, and reflections.                                    fications, and no hierarchy. It significantly reduces
+              From the results, we see that TRM without self-            the numberofparametersbyhalvingthenumberof
+              attention obtains the best generalization on Sudoku-       layers and replacing the two networks with a single
+              Extreme(87.4%testaccuracy). Meanwhile, TRMwith             tiny network. It also simplifies the halting process,
+              self-attention generalizes better on the other tasks       removingtheneedfortheextraforwardpass. Over-
+             (probably due to inductive biases and the overcapac-           15MonSudokuand19MonMaze
+                                                                      8
+                                                  Recursive ReasoningwithTinyNetworks
+             all, TRM is much simpler than HRM, while achieving            gantraining for high fidelity natural image synthe-
+             better generalization.                                        sis. arXiv preprint arXiv:1809.11096, 2018.
+             Whileourapproachledtobettergeneralizationon4               Chollet, F.  On the measure of intelligence. arXiv
+             benchmarks,everychoicemadeisnotguaranteedto                   preprint arXiv:1911.01547, 2019.
+             beoptimaloneverydataset. Forexample,wefound
+             that replacing the self-attention with an MLP worked       Chollet, F., Knoop, M., Kamradt, G., Landers, B.,
+             extremelywellonSudoku-Extreme(improvingtestac-                and Pinkard, H.      Arc-agi-2: A new challenge
+             curacyby10%),butpoorlyonotherdatasets. Different              for frontier ai reasoning systems. arXiv preprint
+             problem settings may require different architectures          arXiv:2505.11831, 2025.
+             or number of parameters. Scaling laws are needed
+             to parametrize these networks optimally. Although          Chowdhery, A., Narang, S., Devlin, J., Bosma, M.,
+             wesimplified and improved on deep recursion, the              Mishra, G., Roberts, A., Barham, P., Chung, H. W.,
+             question of why recursion helps so much compared              Sutton, C., Gehrmann, S., et al. Palm: Scaling lan-
+             to using a larger and deeper network remains to be            guagemodelingwithpathways. JournalofMachine
+             explained; we suspect it has to do with overfitting, but      Learning Research, 24(240):1–113, 2023.
+             wehavenotheorytobackthisexplaination. Not all              Dillion, T. Tdoku: A fast sudoku solver and gener-
+             ourideasmadethecut;webrieflydiscusssomeofthe                  ator. https://t-dillon.github.io/tdoku/,
+             failed ideas that we tried but did not work in Section 6.     2025.
+             Currently, recursive reasoning models such as HRM
+             andTRMaresupervisedlearningmethodsratherthan               Elman,J.L. Findingstructureintime. Cognitivescience,
+             generative models. This means that given an input             14(2):179–211, 1990.
+             question, they can only provide a single deterministic
+             answer. In many settings, multiple answers exist for a     Fedus,W.,Zoph,B.,andShazeer,N. Switchtransform-
+             question. Thus, it would be interesting to extend TRM         ers: Scalingtotrillionparametermodelswithsimple
+             to generative tasks.                                          andefficient sparsity. Journal of Machine Learning Re-
+                                                                           search, 23(120):1–39, 2022.
+             Acknowledgements                                           Geng,Z.andKolter,J.Z. Torchdeq: A library for deep
+             ThankyouEmyGervaisforyourinvaluablesupport                    equilibrium models. arXiv preprint arXiv:2310.18605,
+             and extra push. This research was enabled in part             2023.
+             by computing resources, software, and technical as-
+             sistance provided by Mila and the Digital Research         Hendrycks,D.andGimpel,K. Gaussianerrorlinear
+             Alliance of Canada.                                           units (gelus). arXiv preprint arXiv:1606.08415, 2016.
+             References                                                 Jang, Y., Kim, D., and Ahn, S. Hierarchical graph
+                                                                           generation with k2-trees. In ICML 2023 Workshop on
+             ARCPrizeFoundation. TheHiddenDriversofHRM’s                   Structured Probabilistic Inference Generative Modeling,
+                Performance on ARC-AGI. https://arcprize.                  2023.
+                org/blog/hrm-analysis, 2025a. [Online; ac-              Kaplan, J., McCandlish, S., Henighan, T., Brown, T. B.,
+                cessed 2025-09-15].                                        Chess, B., Child, R., Gray, S., Radford, A., Wu, J.,
+             ARC Prize Foundation.         ARC-AGI Leaderboard.            andAmodei,D. Scaling laws for neural language
+                https://arcprize.org/leaderboard, 2025b.                   models. arXiv preprint arXiv:2001.08361, 2020.
+                [Online; accessed 2025-09-24].                          Kingma,D.P.andBa,J. Adam: Amethodforstochas-
+             Bai, S., Kolter, J. Z., and Koltun, V. Deep equilibrium       tic optimization.   arXiv preprint arXiv:1412.6980,
+                models. Advances in neural information processing          2014.
+                systems, 32, 2019.                                      Krantz, S. G. and Parks, H. R. The implicit function
+             Bai, X. and Melas-Kyriazi, L. Fixed point diffusion           theorem: history, theory, and applications. Springer
+                models. In Proceedings of the IEEE/CVF Conference          Science & Business Media, 2002.
+                on Computer Vision and Pattern Recognition, pp. 9430–   LeCun,Y. Uneprocedured’apprentissageponrreseau
+                9440, 2024.                                                a seuil asymetrique. Proceedings of cognitiva 85, pp.
+             Brock, A., Donahue, J., and Simonyan, K. Large scale          599–604, 1985.
+                                                                      9
+                                                  Recursive ReasoningwithTinyNetworks
+             Lehnert,L.,Sukhbaatar,S.,Su,D.,Zheng,Q.,Mcvay,P.,             all-mlp architecture for vision. Advances in neural
+                Rabbat, M., and Tian, Y. Beyond a*: Better planning        information processing systems, 34:24261–24272, 2021.
+                with transformers via search dynamics bootstrap-        Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J.,
+                ping. arXiv preprint arXiv:2402.14083, 2024.               Jones, L., Gomez, A. N., Kaiser, Ł., and Polosukhin,
+             Lillicrap, T. P. and Santoro, A.     Backpropagation          I. Attention is all you need. Advances in neural
+                throughtimeandthebrain. Currentopinioninneuro-             information processing systems, 30, 2017.
+                biology, 55:82–89, 2019.                                Wang, G., Li, J., Sun, Y., Chen, X., Liu, C., Wu, Y.,
+             Loshchilov, I. and Hutter, F. Decoupled weight decay          Lu, M., Song, S., and Yadkori, Y. A. Hierarchical
+                regularization. arXiv preprint arXiv:1711.05101, 2017.     reasoning model. arXiv preprint arXiv:2506.21734,
+             Moskvichev, A., Odouard, V. V., and Mitchell, M. The          2025.
+                conceptarc benchmark: Evaluating understanding          Wei, J., Wang, X., Schuurmans, D., Bosma, M., Xia, F.,
+                andgeneralization in the arc domain. arXiv preprint        Chi, E., Le, Q. V., Zhou, D., et al. Chain-of-thought
+                arXiv:2305.07141, 2023.                                    promptingelicits reasoning in large language mod-
+             Palm, R., Paquet, U., and Winther, O. Recurrent re-           els. Advances in neural information processing systems,
+                lational networks. Advances in neural information          35:24824–24837, 2022.
+                processing systems, 31, 2018.                           Werbos, P. Beyond regression: New tools for predic-
+             Park, K.       Can convolutional neural networks              tion and analysis in the behavioral sciences. PhD
+                crack sudoku puzzles? https://github.com/                  thesis, Committee on Applied Mathematics, Harvard
+                Kyubyong/sudoku,2018.                                      University, Cambridge, MA, 1974.
+             Prieto, L., Barsbey, M., Mediano, P. A., and Birdal, T.    Werbos,P.J. Generalization of backpropagation with
+                Grokking at the edge of numerical stability. arXiv         application to a recurrent gas market model. Neural
+                preprint arXiv:2501.04697, 2025.                           networks, 1(4):339–356, 1988.
+             Rumelhart, D. E., Hinton, G. E., and Williams, R. J.       Zhang, B. and Sennrich, R. Root mean square layer
+                Learning internal representations by error propaga-        normalization. Advances in Neural Information Pro-
+                tion. Technical report, 1985.                              cessing Systems, 32, 2019.
+             Shazeer, N. Glu variants improve transformer. arXiv
+                preprint arXiv:2002.05202, 2020.
+             Shazeer, N., Mirhoseini, A., Maziarz, K., Davis, A., Le,
+                Q., Hinton, G., and Dean, J. Outrageously large neu-
+                ral networks: Thesparsely-gatedmixture-of-experts
+                layer. arXiv preprint arXiv:1701.06538, 2017.
+             Snell, C., Lee, J., Xu, K., and Kumar, A.       Scaling
+                llm test-time compute optimally can be more effec-
+                tive than scaling model parameters. arXiv preprint
+                arXiv:2408.03314, 2024.
+             Song, Y. and Ermon, S. Improved techniques for train-
+                ing score-based generative models. Advances in
+                neural information processing systems, 33:12438–12448,
+                2020.
+             Su, J., Ahmed, M., Lu, Y., Pan, S., Bo, W., and Liu,
+                Y. Roformer: Enhanced transformer with rotary
+                position embedding. Neurocomputing, 568:127063,
+                2024.
+             Tolstikhin, I. O., Houlsby, N., Kolesnikov, A., Beyer,
+                L., Zhai, X., Unterthiner, T., Yung, J., Steiner, A.,
+                Keysers, D., Uszkoreit, J., et al. Mlp-mixer: An
+                                                                     10
+                                                  Recursive ReasoningwithTinyNetworks
+             Hyper-parametersandsetup                                  propagatingthroughthewholen+1recursionsmakes
+             All models are trained with the AdamW opti-               the most sense and works best.
+             mizer(Loshchilov & Hutter, 2017; Kingma & Ba, 2014)       WetriedremovingACTwiththeoptionofstopping
+             with β1 = 0.9, β2 = 0.95, small learning rate warm-       whenthesolutionisreached,butwefoundthatgen-
+             up(2Kiterations), batch-size 768, hidden-size of 512,     eralization dropped significantly. This can probably
+             N =16maxsupervisionsteps,andstable-maxloss                be attributed to the fact that the model is spending
+               sup                                                     too muchtimeonthesamedatasamplesratherthan
+             (Prieto et al., 2025) for improved stability. TRM uses an
+             Exponential Moving Average (EMA) of 0.999. HRM            focusing on learning on a wide range of data samples.
+             uses n = 2,T = 2 with two 4-layers networks, while        Wetriedweighttyingtheinputembeddingandout-
+             weusen=6,T=3withone2-layernetwork.                        put head, but this was too constraining and led to a
+             For Sudoku-Extreme and Maze-Hard, we train for 60k        massivegeneralization drop.
+             epochswithlearningrate 1e-4 and weight decay 1.0.         Wetried using TorchDEQ (Geng & Kolter, 2023) to
+             For ARC-AGI,wetrainfor100Kepochswithlearning              replace the recursion steps by fixed-point iteration as
+             rate 1e-4 (with 1e-2 learning rate for the embeddings)    done by Deep Equilibrium Models (Bai et al., 2019).
+             andweightdecay0.1. ThenumbersforDeepseekR1,               This wouldprovideabetterjustification for the 1-step
+             Claude 3.7 8K, O3-mini-high, Direct prediction, and       gradient approximation. However, this slowed down
+             HRMfromtheTable4and5aretakenfromWangetal.                 training due to the fixed-point iteration and led to
+             (2025). Both HRM and TRM add an embedding of              worse generalization. This highlights the fact that
+             shape [0,1,D] on Sudoku-Extreme and Maze-Hardto           converging to a fixed-point is not essential.
+             the input. For ARC-AGI, each puzzle (containing 2-3
+             training examples and 1-2 test examples) at each data-
+             augmentationisgivenaspecificembeddingofshape
+             [0,1,D] and, at test-time, the most common answer
+             out of the 1000 data augmentations is given as answer.
+             ExperimentsonSudoku-Extremewereranwith1L40S
+             with 40Gb of RAM for generally less than 36 hours.
+             ExperimentsonMaze-Hardwereranwith4L40Swith
+             40GbofRAMforlessthan24hours. Experimentson
+             ARC-AGI were ran for around 3 days with 4 H100
+             with80GbofRAM.
+             Ideas that failed
+             In this section, we quickly mention a few ideas that
+             did not work to prevent others from making the same
+             mistake.
+             We tried replacing the SwiGLU MLPs by SwiGLU
+             Mixture-of-Experts (MoEs) (Shazeer et al., 2017; Fedus
+             et al., 2022), but we found generalization to decrease
+             massively. MoEs clearly add too much unnecessary
+             capacity, just like increasing the number of layers does.
+             Instead of back-propagating through the whole n+1
+             recursions, we tried a compromise between HRM 1-
+             step gradient approximation, which back-propagates
+             through the last 2 recursions. We did so by decou-
+             pling n from the number of last recursions k that we
+             back-propagate through. For example, while n = 6
+             requires 7 steps with gradients in TRM, we can use
+             gradients for only the k = 4 last steps. However, we
+             foundthatthis did not help generalization in any way,
+             and it made the approach more complicated. Back-
+                                                                    11
+                                                           Recursive ReasoningwithTinyNetworks
+                Algorithmswithdifferentnumberoflatent                                ExampleonSudoku-Extreme
+                features
+                                                                                                                          8 3 1
+                                                                                                           9        6 8      7
+                def latent recursion(x, z, n=6):                                                                 3     5
+                   for i in range(n+1): # latent recursion                                                 6 8
+                       z = net(x, z)
+                   return z                                                                                            6        2
+                def deep recursion(x, z, n=6, T=3):                                                     7 4                     3
+                   # recursing T−1 times to improve z (no gradients needed)                                            9        4
+                   with torch.no grad():                                                                2           4        1
+                       for j in range(T−1):                                                             6           2        5 7
+                          z = latent recursion(x, z, n)
+                   # recursing once to improve z                                                                Input x
+                   z = latent recursion(x, z, n)
+                   return z.detach(), output head(y), Q head(y)                                         5 2 6 7 9 4 8 3 1
+                # Deep Supervision                                                                      3 9 1 2 6 8 4 7 5
+                for x input, y true in train dataloader:
+                   z = z init                                                                           4 8 7 3 1 5 2 9 6
+                   for step in range(N supervision):                                                    1 6 8 5 3 2 7 4 9
+                       x = input embedding(x input)                                                     9 3 5 4 7 6 1 8 2
+                       z, y hat, q hat = deep recursion(x, z)
+                       loss = softmax cross entropy(y hat, y true)                                      7 4 2 9 8 1 5 6 3
+                       loss += binary cross entropy(q hat, (y hat == y true))                           8 7 3 1 5 9 6 2 4
+                       z = z.detach()
+                       loss.backward()                                                                  2 5 9 6 4 7 3 1 8
+                       opt.step()                                                                       6 1 4 8 5 3 9 5 7
+                       opt.zero grad()
+                       if q[0] > 0: # early−stopping                                                           Outputy
+                          break
+                                                                                                        5 2 6 7 9 4 8 3 1
+                Figure 4. Pseudocode of TRM using a single-z with deep                                  3 9 1 2 6 8 4 7 5
+                supervision training in PyTorch.                                                        4 8 7 3 1 5 2 9 6
+                                                                                                        1 6 8 5 3 2 7 4 9
+                                                                                                        9 3 5 4 7 6 1 8 2
+                                                                                                        7 4 2 9 8 1 5 6 3
+                                                                                                        8 7 3 1 5 9 6 2 4
+                def latent recursion(x, y, z, n=6):                                                     2 5 9 6 4 7 3 1 8
+                   for i in range(n): # latent recursion
+                       z[i] = net(x, y, z[0], ... , z[n−1])                                             6 1 4 8 5 3 9 5 7
+                   y = net(y, z[0], ... , z[n−1]) # refine output answer
+                   return y, z                                                                  Tokenized zH (denoted y in TRM)
+                def deep recursion(x, y, z, n=6, T=3):                                                  5     5 4 9 4        6 3
+                   # recursing T−1 times to improve y and z (no gradients needed)                       4     3 1         4 6 5
+                   with torch.no grad():
+                       for j in range(T−1):                                                             4 8 4       3     6 6 4
+                          y, z = latent recursion(x, y, z, n)                                           9     6 5 3       5 4
+                   # recursing once to improve y and z
+                   y, z = latent recursion(x, y, z, n)                                                     3 5 4 3        5 4 4
+                   return (y.detach(), z.detach()), output head(y), Q head(y)                           6     3     3 3 5 8 8
+                # Deep Supervision                                                                      3 3 3 6 5         6 6 4
+                for x input, y true in train dataloader:                                                7 5      6     3 3 6 6
+                   y, z = y init, z init                                                                4 3 4 8        3 6 6 4
+                   for step in range(N supervision):
+                       x = input embedding(x input)                                              Tokenized z (denoted z in TRM)
+                       (y, z), y hat, q hat = deep recursion(x, y, z)                                          L
+                       loss = softmax cross entropy(y hat, y true)
+                       loss += binary cross entropy(q hat, (y hat == y true))
+                       loss.backward()                                               Figure 6. This Sudoku-Extreme example shows an input, ex-
+                       opt.step()                                                    pected output, and the tokenized z      andz (afterreversing
+                       opt.zero grad()                                                                                    H        L
+                       if q[0] > 0: # early−stopping                                 the embeddingandusingargmax)forapretrainedmodel.
+                          break                                                      This highlights the fact that z  corresponds to the predicted
+                                                                                                                    H
+                                                                                     response, while zL is a latent feature that cannot be decoded
+                Figure 5. Pseudocode of TRM using multi-scale z with deep            to a sensible output unless transformed into zH by fH.
+                supervision training in PyTorch.
+                                                                                 12

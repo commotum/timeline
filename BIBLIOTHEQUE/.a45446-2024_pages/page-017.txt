@@ -1,0 +1,40 @@
+                           positional vectors in four settings on samples with 8K tokens from RedPajama: (1) r = 4,α = 1, (2)
+                           r = 5,α = 1, (3) r = 4,α = 1.3, (4), r = 5,α = 1.3.
+                           Figure 9 presents the effective interpolation ratio in each layer. As the layer increases, the effective
+                           interpolation ratio decreases as the layer increases. When the interpolation ratio is equal to the
+                           expansion factor of the context window, i.e., r = 4, the effective interpolation ratio is unavoidably
+                           smaller than the expansion factor, leading to degraded performance. In addition, multiplying the
+                           interpolated positional vectors with a larger times e.g., α = 1.3, alleviates the decrease of effective
+                           interpolation ratio across layers. Thus, we suggest to properly increase the interpolation ratio r and
+                           times α.
+                           E PseudoCode
+                           E.1   Positional Vector Replacement
+                           For Positional Vector Replacement, we give the implementation with Pytorch code in Algorithm 1,
+                           which can be inserted after the output of the selected layer.
+                           Algorithm 1 PyTorch-style Pseudocode of Positional Vector Replacement
+                           h, p # hidden states, positional vectors
+                           T, layer, s, alpha # context window size, interpolation ratio, selected layer, scaling factor of positional
+                           vectors.
+                           h[:,4:] -= p[layer, 4:h.shape[1]].unsqueeze(0)
+                           # removing original positional vectors.
+                           interpolated = torch.nn.functional.interpolate(p[layer,  4:T].transpose(0,1).unsqueeze(0),  size
+                           =int(T*s), mode = ’linear’, align_corners=True).transpose(1,2)
+                           # Linear interpolation of positional vectors.
+                           h[:,4:] += alpha*interpolated[:,:h.shape[1]-4]
+                           # Replacing with new positional vectors.
+                           E.2   Attention Window Extension
+                           For attention window extension, we give the implementation with Flash-Attention-2 [33] in Algo-
+                           rithm 2.
+                           Algorithm 2 PyTorch-style Pseudocode of Attention Window Extension
+                           query, key, value, attn_output # queries, keys, values, and output in the attention model
+                           W,lambda,s#original window size, scaling factor of attention logits, window extension factor
+                           flash_attn_varlen_func # attention function in flash attention 2.
+                           new_window=W*s#extendedwindowsize
+                           attn_output = flash_attn_varlen_func( query, key*lambda, value, ..., window_size = (new_window,
+                           new_window))
+                           F ResultsofAdditionalLLMs
+                           Toensure a fair comparison of positional vectors across various attention mechanisms and positional
+                           encodings, we conducted continual pre-training using TinyLlama under consistent settings. However,
+                           TinyLlama is a relatively small language model with suboptimal performance and continual pre-
+                           training may result in positional vectors exhibiting properties distinct from those obtained through
+                                                                          17

@@ -1,0 +1,77 @@
+                                   eachoftheoutputsy fromtheirinputsx andallthen−1otherpairs(x ,y )                                    . Weemphasizethat
+                                                            i                        i                                      j    j j̸=i
+                                   wedonotusethespecific pair (x ,y ) to reconstruct y , which would otherwise lead to the encoder
+                                                                             i   i                     i
+                                   directly compressing the output y as a shortcut without learning program-related abstractions.
+                                                                             i
+                                   Whenreconstructing output y , we first sample latents z from the encoder q (z|x ,y ) for all j ̸= i.
+                                                                        i                               j                         ϕ      j    j
+                                   Wethenaggregate them by computing their mean                    1   P z,thenweperformlatentoptimization
+                                                                                                  n−1      j̸=i  j
+                                   using e.g. gradient ascent to obtain z′. Finally, we compute the negative log-likelihood of the right
+                                                                                  i                                 ′
+                                   output y using its corresponding input x and the refined latent z . In practice, we compute the cross-
+                                             i                                       i                              i
+                                   entropy loss of the decoder logits p (yˆ|x ,z′) and the labels y , which derives from maximizing the
+                                                                               θ   i   i   i                     i
+                                   likelihood of a categorical distribution. The full training pipeline is detailed in algorithm 2.
+                                   Specifically, we compute the reconstruction loss L                 and the KL loss L          between the approximate
+                                                                                                  rec                        KL
+                                   posterior and the prior:
+                                                         n                                                      n
+                                       L (ϕ,θ)=X−logp (y |x ,z′)                        (9)      L (ϕ)=XD (q (z|x,y)∥N(0,I)) (10)
+                                         rec                          θ   i   i  i                 KL                  KL    ϕ      i   i
+                                                        i=1                                                    i=1
+                                   Thedependenceofthereconstruction loss L (ϕ,θ) in ϕ arises from using the reparameterization
+                                                                                            rec
+                                   trick [Kingma, 2013] when sampling each latent z . Indeed, we first sample a normal random
+                                                                                                      j
+                                   vector ϵ ∼ N(0,I), then we infer the mean µ and diagonal covariance Σ using the encoder and
+                                             j                                                j                                   j
+                                   recompose the latent z = µ + ϵ · Σ . Then, z′ is used by the decoder to reconstruct the output.
+                                                                j      j      j     j            i
+                                   Note that we can decide whether to let the decoder gradient flow through the latent update. Indeed,
+                                   it is more computationally efficient to stop the gradient through the update, by changing line 10 of
+                                   algorithm 2 with z′ = z′ + α · g′, where g′ = ∇ P                          logp (y |x ,z)|          ′ , with x notating a
+                                                           i      i           i            i        z    j̸=i       θ   j   j     z=zi
+                                   stop-gradient on x.
+                                   Wedenote β the weighting factor that balances the reconstruction and KL terms [Burgess et al.,
+                                   2018], which gives the combined training objective:
+                                                                           L (ϕ,θ)=L (ϕ,θ)+βL (ϕ)                                                          (11)
+                                                                             total             rec               KL
+                                   Algorithm 2 LPN Training with Gradient Ascent Latent Optimization
+                                    1: Input: encoder parameters ϕ, decoder parameters θ
+                                    2: for t = 1,...,num_training_steps do
+                                    3:       Sample n input-output pairs (x ,y ) from the same program
+                                    4:       for i = 1,...,n do                     i   i                                        ▷ Can be done in parallel
+                                    5:            Sample z ∼ q (z|x ,y )                                           ▷ Using the reparameterization trick
+                                    6:       endfor          i      ϕ      i   i
+                                    7:       for i = 1,...,n do                                                                  ▷ Can be done in parallel
+                                                              P
+                                    8:            z′ =    1       n    z
+                                                   i     n−1      j=1 j
+                                                                  j̸=i
+                                    9:            for k = 1...K do P                                    ▷ Perform gradient ascent in the latent space
+                                                        ′      ′                n
+                                   10:                z =z +α·∇                 j=1logp (y |x ,z)|            ′ ▷ Optional stop-gradient on the update
+                                                        i      i          z                θ   j   j      z=z
+                                                                                j̸=i                          i
+                                   11:            endfor
+                                   12:            L =−logp (y |x ,z′)+β ·D (q (z|x ,y ) ∥ N(0,I))
+                                                    i             θ   i   i   i            KL ϕ         i   i
+                                   13:       endfor
+                                                      P
+                                   14:       L= 1        n    L                                                                   ▷ Total loss for all pairs
+                                                    n    i=1    i
+                                   15:       Update ϕ and θ via gradient descent on L
+                                   16: end for
+                                   This training procedure offers some freedom on the latent optimization, i.e. how to compute z′ from
+                                                                                                                                                        i
+                                   z . Training with gradient ascent latent optimization (as detailed in algorithm 2) incurs a significant
+                                    i
+                                   compute overhead due to the costly latent gradient computation through the decoder. Therefore,
+                                   although we may use a high compute budget at test-time, we propose to use a small number of
+                                   gradient ascent steps during training, ranging from 0 to 5 steps. Specifically, we call mean training
+                                   whenwetrainwithoutlatent optimization (i.e. 0 steps of gradient ascent), since in this case we use
+                                   the mean latent to make a prediction.
+                                                                                                 8

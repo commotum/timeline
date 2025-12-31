@@ -1,0 +1,292 @@
+                                                   FlashAttention-2:
+                  Faster Attention with Better Parallelism and Work Partitioning
+                                                                        1,2
+                                                               Tri Dao
+                                     1Department of Computer Science, Princeton University
+                                     2Department of Computer Science, Stanford University
+                                                        trid@cs.stanford.edu
+                                                             July 18, 2023
+                                                                Abstract
+                         Scaling Transformers to longer sequence lengths has been a major problem in the last several years,
+                      promising to improve performance in language modeling and high-resolution image understanding, as
+                      well as to unlock new applications in code, audio, and video generation. The attention layer is the
+                      main bottleneck in scaling to longer sequences, as its runtime and memory increase quadratically in
+                      the sequence length. FlashAttention [5] exploits the asymmetric GPU memory hierarchy to bring
+                      signiﬁcant memory saving (linear instead of quadratic) and runtime speedup (2-4× compared to optimized
+                      baselines), with no approximation. However, FlashAttention is still not nearly as fast as optimized
+                      matrix-multiply (GEMM) operations, reaching only 25-40% of the theoretical maximum FLOPs/s. We
+                      observe that the ineﬃciency is due to suboptimal work partitioning between diﬀerent thread blocks and
+                      warps on the GPU, causing either low-occupancy or unnecessary shared memory reads/writes. We propose
+                      FlashAttention-2, with better work partitioning to address these issues. In particular, we (1) tweak
+                      the algorithm to reduce the number of non-matmul FLOPs (2) parallelize the attention computation, even
+                      for a single head, across diﬀerent thread blocks to increase occupancy, and (3) within each thread block,
+                      distribute the work between warps to reduce communication through shared memory. These yield around
+                      2× speedup compared to FlashAttention, reaching 50-73% of the theoretical maximum FLOPs/s on
+                      A100 and getting close to the eﬃciency of GEMM operations. We empirically validate that when used
+                      end-to-end to train GPT-style models, FlashAttention-2 reaches training speed of up to 225 TFLOPs/s
+                      per A100 GPU (72% model FLOPs utilization).1
+                 1    Introduction
+                 Scaling up the context length of Transformers [18] is a challenge, since the attention layer at their heart
+                 has runtime and memory requirements quadratic in the input sequence length. Ideally, we would like to go
+                 beyond the standard 2k sequence length limit to train models to understand books, high resolution images,
+                 and long-form videos. Just within the last year, there have been several language models with much longer
+                 context than before: GPT-4 [12] with context length 32k, MosaicML’s MPT with context length 65k, and
+                 Anthropic’s Claude with context length 100k. Emerging use cases such as long document querying and story
+                 writing have demonstrated a need for models with such long context.
+                    To reduce the computational requirement of attention on such long context, there have been numerous
+                 methods proposed to approximate attention [2, 3, 4, 8, 9, 14, 19, 20]. Though these methods have seen
+                 some use cases, as far as we know, most large-scale training runs still use standard attention. Motivated by
+                 this, Dao et al. [5] proposed to reorder the attention computation and leverages classical techniques (tiling,
+                 recomputation) to signiﬁcantly speed it up and reduce memory usage from quadratic to linear in sequence
+                 length. This yields 2-4× wall-clock time speedup over optimized baselines, up to 10-20× memory saving,
+                   1FlashAttention-2 is available at https://github.com/Dao-AILab/flash-attention
+                                                                    1
+             with no approximation, and as a result FlashAttention has seen wide adoption in large-scale training and
+             inference of Transformers.
+                However, context length increases even more, FlashAttention is still not nearly as eﬃcient as other
+             primitives such as matrix-multiply (GEMM). In particular, while FlashAttention is already 2-4× faster
+             than a standard attention implementation, the forward pass only reaches 30-50% of the theoretical maximum
+             FLOPs/s of the device (Fig. 5), while the backward pass is even more challenging, reaching only 25-35%
+             of maximum throughput on A100 GPU (Fig. 6). In contrast, optimized GEMM can reach up to 80-90% of
+             the theoretical maximum device throughput. Through careful proﬁling, we observe that FlashAttention
+             still has suboptimal work partitioning between diﬀerent thread blocks and warps on the GPU, causing either
+             low-occupancy or unnecessary shared memory reads/writes.
+                Building on FlashAttention, we propose FlashAttention-2 with better parallelism and work
+             partitioning to address these challenges.
+               1. In Section 3.1, we tweak the algorithms to reduce the number of non-matmul FLOPs while not changing
+                 the output. While the non-matmul FLOPs only account for a small fraction of the total FLOPs, they
+                 take longer to perform as GPUs have specialized units for matrix multiply, and as a result the matmul
+                 throughput can be up to 16× higher than non-matmul throughput. It is thus important to reduce
+                 non-matmul FLOPs and spend as much time as possible doing matmul FLOPs.
+               2. We propose to parallelize both the forward pass and backward pass along the sequence length dimension,
+                 in addition to the batch and number of heads dimension. This increases occupancy (utilization of GPU
+                 resources) in the case where the sequences are long (and hence batch size is often small).
+               3. Even within one block of attention computation, we partition the work between diﬀerent warps of a
+                 thread block to reduce communication and shared memory reads/writes.
+                In Section 4, we empirically validate that FlashAttention-2 yields signiﬁcant speedup compared to
+             even FlashAttention. Benchmarks on diﬀerent settings (with or without causal mask, diﬀerent head
+             dimensions) show that FlashAttention-2 achieves around 2× speedup over FlashAttention, reaching
+             up to 73% of the theoretical max throughput in the forward pass, and up to 63% of the theoretical max
+             throughput in the backward pass. When used end-to-end to train GPT-style models, we reach training speed
+             of up to 225 TFLOPs/s per A100 GPU.
+             2   Background
+             We provide some background on the performance characteristics and execution model of GPUs. We also
+             describe the standard implementation of attention, as well as FlashAttention.
+             2.1  Hardware characteristics
+             GPUperformance characteristics. The GPU consists of compute elements (e.g., ﬂoating point arithmetic
+             units) and a memory hierarchy. Most modern GPUs contain specialized units to accelerate matrix multiply in
+             low-precision (e.g., Tensor Cores on Nvidia GPUs for FP16/BF16 matrix multiply). The memory hierarchy
+             comprise of high bandwidth memory (HBM), and on-chip SRAM (aka shared memory). As an example, the
+             A100 GPU has 40-80GB of high bandwidth memory (HBM) with bandwidth 1.5-2.0TB/s and 192KB of
+             on-chip SRAM per each of 108 streaming multiprocessors with bandwidth estimated around 19TB/s [6, 7].
+             As the L2 cache is not directly controllable by the programmer, we focus on the HBM and SRAM for the
+             purpose of this discussion.
+                Execution Model. GPUs have a massive number of threads to execute an operation (called a kernel).
+             Threads are organized into thread blocks, which are scheduled to run on streaming multiprocessors (SMs).
+             Within each thread blocks, threads are grouped into warps (a group of 32 threads). Threads within a warp
+             can communicate by fast shuﬄe instructions or cooperate to perform matrix multiply. Warps within a thread
+             block can communicate by reading from / writing to shared memory. Each kernel loads inputs from HBM to
+             registers and SRAM, computes, then writes outputs to HBM.
+                                                      2
+                  2.2    Standard Attention Implementation
+                  Given input sequences Q,K,V ∈ R#×3 where # is the sequence length and 3 is the head dimension, we want
+                  to compute the attention output O ∈ R#×3:
+                                        S = QK⊤ ∈ R#×#,      P=softmax(S) ∈ R#×#,        O=PV∈R#×3,
+                 where softmax is applied row-wise.2 For multi-head attention (MHA), this same computation is performed in
+                  parallel across many heads, and parallel over the batch dimension (number of input sequences in a batch).
+                     The backward pass of attention proceeds as follows. Let dO ∈ R#×3 be the gradient of O with respect to
+                  some loss function. Then by the chain rule (aka backpropagation):
+                                                           dV=P⊤dO∈R#×3
+                                                           dP=dOV⊤∈R#×#
+                                                           dS = dsoftmax(dP) ∈ R#×#
+                                                           dQ=dSK∈R#×3
+                                                          dK=QdS⊤ ∈R#×3,
+                 where dsoftmax is the gradient (backward pass) of softmax applied row-wise. One can work out that if ? =
+                  softmax(B) for some vector B and ?, then with output gradient 3?, the input gradient 3B = (diag(?)− ??⊤)3?.
+                     Standard attention implementations materialize the matrices S and P to HBM, which takes $(#2)
+                  memory. Often # ≫ 3 (typically # is on the order of 1k–8k and 3 is around 64–128). The standard attention
+                  implementation (1) calls the matrix multiply (GEMM) subroutine to multiply S = QK⊤, writes the result to
+                  HBM, then (2) loads § from HBM to compute softmax and write the result P to HBM, and ﬁnally (3) calls
+                  GEMMtogetO=PV. Asmostof the operations are bounded by memory bandwidth, the large number of
+                  memory accesses translates to slow wall-clock time. Moreover, the required memory is $(#2) due to having
+                  to materialize S and P. Moreover, one has to save P ∈ R#×# for the backward pass to compute the gradients.
+                  2.3    FlashAttention
+                 To speed up attention on hardware accelerators such as GPU, [5] proposes an algorithm to reduce the memory
+                  reads/writes while maintaining the same output (without approximation).
+                  2.3.1   Forward pass
+                  FlashAttention applies the classical technique of tiling to reduce memory IOs, by (1) loading blocks of
+                  inputs from HBM to SRAM, (2) computing attention with respect to that block, and then (3) updating the
+                  output without writing the large intermediate matrices S and P to HBM. As the softmax couples entire rows
+                  or blocks of row, online softmax [11, 13] can split the attention computation into blocks, and rescale the
+                  output of each block to ﬁnally get the right result (with no approximation). By signiﬁcantly reducing the
+                  amount of memory reads/writes, FlashAttention yields 2-4× wall-clock speedup over optimized baseline
+                  attention implementations.
+                     Wedescribe the online softmax technique [11] and how it is used in attention [13]. For simplicity, consider
+                                                                               (1)   (2)                     (1)  (2)     ×
+                  just one row block of the attention matrix S, of the form S        S    for some matrices S    , S   ∈ R A   2,
+                 where A and 2 are the row and column block sizes. We want to compute softmax of this row block and
+                  multiply with the value, of the form V(1) for some matrices V(1),V(2) ∈ R2×3. Standard softmax would
+                                                         V(2)
+                    2For clarity of exposition, we omit the scaling of QK⊤ (typically by 1/d), and optionally elementwise masking on S and/or
+                  dropout applied to P
+                                                                        3
+                    2.3.2    Backward pass
+                    In the backward pass, by re-computing the values of the attention matrices S and P once blocks of inputs
+                    Q,K,V are already loaded to SRAM, FlashAttention avoids having to store large intermediate values. By
+                    not having to save the large matrices S and P of size # × #, FlashAttention yields 10-20× memory saving
+                    depending on sequence length (memory required in linear in sequence length # instead of quadratic). The
+                    backward pass also achieves 2-4× wall-clock speedup due to reduce memory reads/writes.
+                        The backward pass applies tiling to the equations in Section 2.2. Though the backward pass is simpler
+                    than the forward pass conceptually (there is no softmax rescaling), the implementation is signiﬁcantly more
+                    involved. This is because there are more values to be kept in SRAM to perform 5 matrix multiples in the
+                    backward pass, compared to just 2 matrix multiples in the forward pass.
+                    3 FlashAttention-2: Algorithm, Parallelism, and Work Partition-
+                          ing
+                   Wedescribe the FlashAttention-2 algorithm, which includes several tweaks to FlashAttention to reduce
+                    the number of non-matmul FLOPs. We then describe how to parallelize the computation on diﬀerent thread
+                    blocks to make full use the GPU resources. Finally we describe we partition the work between diﬀerent warps
+                   within one thread block to reduce the amount of shared memory access. These improvements lead to 2-3×
+                    speedup as validated in Section 4.
+                    3.1     Algorithm
+                   We tweak the algorithm from FlashAttention to reduce the number of non-matmul FLOPs. This is
+                    because modern GPUs have specialized compute units (e.g., Tensor Cores on Nvidia GPUs) that makes
+                    matmul much faster. As an example, the A100 GPU has a max theoretical throughput of 312 TFLOPs/s of
+                    FP16/BF16 matmul, but only 19.5 TFLOPs/s of non-matmul FP32. Another way to think about this is that
+                    each non-matmul FLOP is 16× more expensive than a matmul FLOP. To maintain high throughput (e.g.,
+                    more than 50% of the maximum theoretical TFLOPs/s), we want to spend as much time on matmul FLOPs
+                    as possible.
+                    3.1.1    Forward pass
+                   Werevisit the online softmax trick as shown in Section 2.3 and make two minor tweaks to reduce non-matmul
+                    FLOPs:
+                       1. We do not have to rescale both terms of the output update by diag(ℓ(2))−1:
+                                                     O(2) = diag(ℓ(1)/ℓ(2))−1O(1) + diag(ℓ(2))−14S(2)−<(2)V(2).
+                          Wecan instead maintain an “un-scaled” version of O(2) and keep around the statistics ℓ(2):
+                                                               ˜(2)           (1) −1  (1)    S(2)−<(2)  (2)
+                                                               O =diag(ℓ ) O +4                      V .
+                                                                                         ˜(last)            (last) −1
+                          Only at the every end of the loop do we scale the ﬁnal O               by diag(ℓ       )   to get the right output.
+                       2. We do not have to save both the max <(9) and the sum of exponentials ℓ(9) for the backward pass. We
+                          only need to store the logsumexp !(9) = <(9) + log(ℓ(9)).
+                                                                                 5
+                         In the simple case of 2 blocks in Section 2.3, the online softmax trick now becomes:
+                                        (1)                (1)      
+                                     < =rowmax(S ) ∈R A
+                                        (1)               S(1)−<(1)       
+                                      ℓ     =rowsum(4               ) ∈ R A
+                                       ˜       S(1)−<(1)   (1)      ×3
+                                     O(1) = 4            V ∈R A
+                                     <(2) = max(<(1),rowmax(S(2))) = <
+                                      ℓ(2) = 4<(1)−<(2)ℓ(1) + rowsum(4S(2)−<(2)) = rowsum(4S(1)−<) + rowsum(4S(2)−<) = ℓ
+                                      ˜(2)            (2) −1 S(2)−<(2)
+                                      P     =diag(ℓ      )   4
+                                      ˜(2)            <(1)−<(2) ˜(1)       S(2)−<(2)  (2)     B(1)−<   (1)    B(2)−<    (2)
+                                     O =diag(4                  )O     +4           V =4             V +4            V
+                                        (2)           (2) −1˜(2)
+                                     O =diag(ℓ ) O                 =O.
+                         Wedescribe the full FlashAttention-2 forward pass in Algorithm 1.
+                     Algorithm 1 FlashAttention-2 forward pass
+                     Require: Matrices Q,K,V ∈ R#×3 in HBM, block sizes 2, A.
+                       1: Divide Q into ) = l # m blocks Q ,...,Q                of size  × 3 each, and divide K,V in to ) = l # m blocks
+                                              A                     1         )             A                                           2
+                                                                              A                                                              
+                                                     A                                                                                          2
+                          K ,...,K       and V ,...,V , of size  × 3 each.
+                            1         )          1         )             2
+                                       2                    2
+                       2: Divide the output O ∈ R#×3 into ) blocks O ,...,O                    of size  × 3 each, and divide the logsumexp !
+                                                                      A            8        )             A
+                                                                                             A
+                          into ) blocks ! ,..., !         of size  each.
+                                 A            8        )             A
+                                                        A
+                       3: for 1 ≤ 8 ≤ ) do
+                                          A
+                       4:    Load Q8 from HBM to on-chip SRAM.
+                                                      (0)                   ×3    (0)                    (0)                 
+                       5:    Onchip, initialize O         = (0) ×3 ∈ R A       , ℓ   = (0) ∈ R A,<           = (−∞) ∈ R A.
+                                                      8           A               8           A            8             A
+                       6:    for 1 ≤ 9 ≤ ) do
+                                             2
+                       7:       Load K9,V9 from HBM to on-chip SRAM.
+                                                         ( 9)       )       ×
+                       8:       Onchip, compute S           =Q8K ∈R A 2.
+                                                        8           9
+                                                           ( 9)            ( 9−1)              ( 9)            ˜(9)             ( 9)     ( 9)       ×
+                       9:       On chip, compute <             = max(<           , rowmax(S       )) ∈ R A, P         = exp(S       − < ) ∈ R A 2
+                                                           8               8                   8                  8             8        8
+                                                ( 9)    <9−1−<(9) (9−1)                ˜(9)       
+                               (pointwise), ℓ       =4 8        8 ℓ       +rowsum(P ) ∈ R A.
+                                                8                  8                     8
+                                                         ( 9)          <(9−1)−<(9)    ( 9−1)   ˜(9)
+                     10:        Onchip, compute O8           =diag(4 8          8  )O8      +P8 V9.
+                     11:     end for
+                                                                  () )      () )
+                     12:     Onchip, compute O8 = diag(ℓ 2 )−1O 2 .
+                                                                  8         8
+                                                            () )          () )
+                     13:     Onchip, compute !8 = < 2 +log(ℓ 2 ).
+                                                            8            8
+                     14:     Write O8 to HBM as the 8-th block of O.
+                     15:     Write !8 to HBM as the 8-th block of !.
+                     16: end for
+                     17: Return the output O and the logsumexp !.
+                     Causal masking. One common use case of attention is in auto-regressive language modeling, where we
+                     need to apply a causal mask to the attention matrix S (i.e., any entry S89 with 9 > 8 is set to −∞).
+                         1. As FlashAttention and FlashAttention-2 already operate by blocks, for any blocks where all
+                            the column indices are more than the row indices (approximately half of the blocks for large sequence
+                            length), we can skip the computation of that block. This leads to around 1.7-1.8× speedup compared
+                            to attention without the causal mask.
+                         2. We do not need to apply the causal mask for blocks whose row indices are guaranteed to be strictly less
+                            than the column indices. This means that for each row, we only need apply causal mask to 1 block
+                            (assuming square block).
+                                                                                       6
+                 Correctness, runtime, and memory requirement. As with FlashAttention, Algorithm 1 returns
+                 the correct output O = softmax(QK⊤)V (with no approximation), using $(#23) FLOPs and requires $(#)
+                 additional memory beyond inputs and output (to store the logsumexp !). The proof is almost the same as
+                 the proof of Dao et al. [5, Theorem 1], so we omit it here.
+                 3.1.2    Backward pass
+                 The backward pass of FlashAttention-2 is almost the same as that of FlashAttention. We make a
+                 minor tweak to only use the row-wise logsumexp ! instead of both the row-wise max and row-wise sum of
+                 exponentials in the softmax. We include the backward pass description in Algorithm 2 for completeness.
+                 Algorithm 2 FlashAttention-2 Backward Pass
+                 Require: Matrices Q,K,V,O,dO ∈ R#×3 in HBM, vector ! ∈ R# in HBM, block sizes 2, A.
+                   1: Divide Q into ) = l # m blocks Q ,...,Q      of size  × 3 each, and divide K,V in to ) = l # m blocks
+                                      A                 1       )           A                                   2
+                                                                A                                                   
+                                            A                                                                         2
+                     K ,...,K     and V ,...,V , of size  × 3 each.
+                       1       )        1       )           2
+                                2                2
+                   2: Divide O into ) blocks O ,...,O      of size  × 3 each, divide dO into ) blocks dO ,...,dO        of size
+                                      A          8      )           A                            A           8        )
+                                                         A                                                             A
+                       ×3 each, and divide ! into ) blocks ! ,...,!       of size  each.
+                       A                              A          8      )          A
+                                                                         A
+                   3: Initialize dQ = (0)    in HBM and divide it into ) blocks dQ ,...,dQ         of size  × 3 each. Divide
+                                         #×3                               A           1         )          A
+                                 #×3                                                             A
+                     dK,dV ∈ R        in to ) blocks dK ,...,dK      and dV ,...,dV , of size  × 3 each.
+                                            2            1        )         1        )            2
+                                                                   2                  2
+                   4: Compute  = rowsum(dO◦O) ∈ R3 (pointwise multiply), write  to HBM and divide it into ) blocks
+                                                                                                                       A
+                      1,...,) of size A each.
+                                A
+                   5: for 1 ≤ 9 ≤ ) do
+                                   2
+                   6:   Load K9,V9 from HBM to on-chip SRAM.
+                   7:   Initialize dK9 = (0)2×3,dV9 = (0)2×3 on SRAM.
+                   8:   for 1 ≤ 8 ≤ ) do
+                                     A
+                   9:     Load Q ,O ,dO ,dQ ,! , from HBM to on-chip SRAM.
+                                  8  8    8    8  8   8
+                                               ( 9)     )      ×
+                  10:     Onchip, compute S       =Q8K ∈R A 2.
+                                              8         9
+                                               ( 9)                   ×
+                  11:     Onchip, compute P       =exp(S89 − !8) ∈ R A    2.
+                                               8
+                  12:     Onchip, compute dV9 ← dV9 + (P(9))⊤dO8 ∈ R2×3.
+                                                              8
+                  
