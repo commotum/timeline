@@ -8,6 +8,16 @@
 6. **External Foundations & Cross-Disciplinary Context**
 7. **Misclassifications**
 
+Code map:
+
+Positional Encoding Improvement Proposal ↦ POS-ENCDR  
+Increasing Transformer’s Dimensions ↦ XFORM-DIM  
+Computation & Reasoning Mechanism Proposal ↦ COMP-REAS  
+Data, Benchmarks & Measurement ↦ DATA-BNCH  
+ML Foundations & Principles ↦ ML-FNDTNS  
+External Foundations & Cross-Disciplinary Context ↦ X-CONTEXT  
+Misclassifications ↦ MIS-CLASS
+
 ---
 
 # Positional Encoding Improvement Proposal
