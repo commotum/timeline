@@ -2,8 +2,8 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-DEFAULT_CSV="/home/jake/Developer/timeline/BIBLIOTHEQUE.csv"
-DEFAULT_OUT_DIR="/home/jake/Developer/timeline/BIBLIOTHEQUE"
+DEFAULT_CSV="/Users/jake/Developer/timeline/ARXIV/arXiv.csv"
+DEFAULT_OUT_DIR="/Users/jake/Developer/timeline/ARXIV"
 
 CSV_PATH="${CSV_PATH:-$DEFAULT_CSV}"
 OUT_DIR="${OUT_DIR:-$DEFAULT_OUT_DIR}"
@@ -16,7 +16,7 @@ fi
 csv_path="${1:-$CSV_PATH}"
 out_dir="${2:-$OUT_DIR}"
 
-LOG_FILE="${LOG_FILE:-$out_dir/download_bibliotheque.log}"
+LOG_FILE="${LOG_FILE:-$out_dir/download_arxiv.log}"
 QUIET="${QUIET:-1}"
 OVERWRITE="${OVERWRITE:-0}"
 MAX_FILES="${MAX_FILES:-0}"
@@ -43,8 +43,8 @@ usage() {
   cat <<USAGE
 Usage: $(basename "$0") [CSV_PATH] [OUT_DIR]
 
-Downloads/renames entries from a BIBLIOTHEQUE CSV into BIBLIOTHEQUE.
-- Local paths are renamed to ID-YEAR.
+Downloads/renames entries from an arXiv CSV into ARXIV.
+- Local paths are renamed to the paper title.
 - Remote URLs are downloaded with retries, backoff, and fallbacks.
 
 Defaults:
@@ -145,7 +145,7 @@ cleanup_tmp() {
   fi
   local files=()
   shopt -s nullglob
-  files=("$out_dir"/.bibliotheque.*.tmp)
+  files=("$out_dir"/.arxiv.*.tmp)
   shopt -u nullglob
   if (( ${#files[@]} > 0 )); then
     rm -f -- "${files[@]}" || true
@@ -277,7 +277,7 @@ download_with_fallbacks() {
     local ref="$2"
     local insecure="$3"
     local tmp=""
-    tmp="$(mktemp "${out_dir}/.bibliotheque.${label}.XXXXXX.tmp")"
+    tmp="$(mktemp "${out_dir}/.arxiv.${label}.XXXXXX.tmp")"
     curl_attempt "$url" "$tmp" "$ua" "$ref" "$insecure"
     exit_code=$curl_last_exit
     http_code=$curl_last_code
@@ -350,21 +350,21 @@ import sys
 path = sys.argv[1]
 with open(path, newline="") as handle:
     reader = csv.DictReader(handle)
-    required = {"id", "year", "url"}
+    required = {"title", "url"}
     fields = set(reader.fieldnames or [])
     missing = sorted(required - fields)
     if missing:
         print(f"CSV missing required columns: {', '.join(missing)}", file=sys.stderr)
         sys.exit(2)
     for row in reader:
-        row_id = (row.get("id") or "").strip()
+        title = (row.get("title") or "").strip()
         year = (row.get("year") or "").strip()
         url = (row.get("url") or "").strip()
-        if not (row_id or year or url):
+        if not (title or year or url):
             continue
         def clean(value: str) -> str:
             return value.replace("\t", " ").replace("\n", " ").replace("\r", " ")
-        print(clean(row_id), clean(year), clean(url), sep="\t")
+        print(clean(title), clean(year), clean(url), sep="\t")
 PY
 }
 
@@ -372,6 +372,21 @@ if [[ ! -f "$csv_path" ]]; then
   log_error "CSV not found: $csv_path"
   exit 1
 fi
+
+sanitize_filename() {
+  local name="$1"
+  name="${name//\\/-}"
+  name="${name//\//-}"
+  name="${name//:/-}"
+  name="${name//\*/-}"
+  name="${name//\?/-}"
+  name="${name//\"/-}"
+  name="${name//</-}"
+  name="${name//>/-}"
+  name="${name//|/-}"
+  name="$(printf '%s' "$name" | tr -s ' ' | sed -E 's/^ +| +$//g')"
+  printf '%s' "$name"
+}
 
 declare -A seen_names=()
 declare -a renamed=()
@@ -381,10 +396,10 @@ declare -a skipped=()
 line_num=0
 processed=0
 
-log_info "Starting BIBLIOTHEQUE download: $csv_path -> $out_dir"
+log_info "Starting arXiv download: $csv_path -> $out_dir"
 log_info "User-Agent: $curl_user_agent"
 
-while IFS=$'\t' read -r row_id year url; do
+while IFS=$'\t' read -r title year url; do
   line_num=$((line_num + 1))
   processed=$((processed + 1))
   if (( MAX_FILES > 0 && processed > MAX_FILES )); then
@@ -392,9 +407,9 @@ while IFS=$'\t' read -r row_id year url; do
     break
   fi
 
-  if [[ -z "$row_id" || -z "$year" ]]; then
-    failed+=("line $line_num | missing id/year")
-    log_warn "Skipping line $line_num: missing id/year"
+  if [[ -z "$title" ]]; then
+    failed+=("line $line_num | missing title")
+    log_warn "Skipping line $line_num: missing title"
     continue
   fi
   if [[ -z "$url" ]]; then
@@ -403,8 +418,12 @@ while IFS=$'\t' read -r row_id year url; do
     continue
   fi
 
-  row_id=$(printf '%s' "$row_id" | tr '[:upper:]' '[:lower:]')
-  name="${row_id}-${year}"
+  name="$(sanitize_filename "$title")"
+  if [[ -z "$name" ]]; then
+    failed+=("line $line_num | empty filename from title")
+    log_warn "Skipping line $line_num: empty filename from title"
+    continue
+  fi
 
   if [[ -n "${seen_names[$name]+x}" ]]; then
     skipped+=("$name")
