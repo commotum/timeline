@@ -151,7 +151,17 @@ cleanup_tmp() {
     rm -f -- "${files[@]}" || true
   fi
 }
-trap cleanup_tmp EXIT
+cleanup_seen() {
+  if [[ -n "${seen_file:-}" && -f "${seen_file}" ]]; then
+    rm -f -- "${seen_file}" || true
+  fi
+}
+
+cleanup_all() {
+  cleanup_tmp
+  cleanup_seen
+}
+trap cleanup_all EXIT
 
 origin_from_url() {
   local url="$1"
@@ -388,16 +398,18 @@ sanitize_filename() {
   printf '%s' "$name"
 }
 
-declare -A seen_names=()
 declare -a renamed=()
 declare -a downloaded=()
 declare -a failed=()
 declare -a skipped=()
 line_num=0
 processed=0
+seen_file=""
 
 log_info "Starting arXiv download: $csv_path -> $out_dir"
 log_info "User-Agent: $curl_user_agent"
+
+seen_file="$(mktemp "${out_dir}/.arxiv.seen.XXXXXX.tmp")"
 
 while IFS=$'\t' read -r title year url; do
   line_num=$((line_num + 1))
@@ -425,12 +437,12 @@ while IFS=$'\t' read -r title year url; do
     continue
   fi
 
-  if [[ -n "${seen_names[$name]+x}" ]]; then
+  if grep -Fqx -- "$name" "$seen_file"; then
     skipped+=("$name")
     log_warn "Duplicate entry for $name; skipping"
     continue
   fi
-  seen_names["$name"]=1
+  printf '%s\n' "$name" >> "$seen_file"
 
   if [[ "$url" =~ ^https?:// ]]; then
     ext="$(get_ext_from_path "$url")"
