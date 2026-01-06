@@ -1,17 +1,17 @@
-# PDF Classification Prompt
+# OCR Markdown Classification Prompt
 
-You are classifying a research paper PDF into exactly one class.
+You are classifying a research paper OCR markdown into exactly one class.
 
 Input:
-- PDF path: [PDF_ABS_PATH]
+- OCR markdown path: [SOURCE_MD_ABS_PATH]
 
 Output:
 - Write your final markdown to: [MD_ABS_PATH]
-- The runner will rename the file to: [FILE_STEM]-<CLASS_CODE>.md in [OUTPUT_FOLDER]
+- The runner will rename the file to: [FILE_STEM]_<CLASS_CODE>.md in [OUTPUT_FOLDER]
 
 Rules:
-1. Read the entire PDF thoroughly. Include appendices and references if they contain relevant clues.
-2. Use only evidence from the PDF. Do not infer beyond the text.
+1. Read the entire OCR markdown thoroughly. Include appendices and references if they contain relevant clues.
+2. Use only evidence from the OCR markdown. Do not infer beyond the text or consult any PDF.
 3. When citing evidence, quote verbatim and include the page number or section name.
 4. If a required detail is not explicitly stated, write "Not specified in the paper."
 5. Choose exactly one class code from the list below.
@@ -168,7 +168,7 @@ Papers in this category are candidates for removal or reassignment. This section
 ## Output Format (required)
 
 # <Paper Title> (<Year>)
-Source: <PDF filename or identifier>
+Source: <OCR markdown filename or identifier>
 
 ## Core reasons
 - <Reason 1>
