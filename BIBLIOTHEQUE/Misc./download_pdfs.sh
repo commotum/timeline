@@ -2,8 +2,8 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-DEFAULT_CSV="/home/jake/Developer/timeline/BIBLIOTHEQUE.csv"
-DEFAULT_OUT_DIR="/home/jake/Developer/timeline/BIBLIOTHEQUE"
+DEFAULT_CSV="/home/jake/Developer/timeline/BIBLIOTHEQUE/NEW.csv"
+DEFAULT_OUT_DIR="/home/jake/Developer/pdf2txt/pdf_in"
 
 CSV_PATH="${CSV_PATH:-$DEFAULT_CSV}"
 OUT_DIR="${OUT_DIR:-$DEFAULT_OUT_DIR}"
@@ -16,7 +16,7 @@ fi
 csv_path="${1:-$CSV_PATH}"
 out_dir="${2:-$OUT_DIR}"
 
-LOG_FILE="${LOG_FILE:-$out_dir/download_bibliotheque.log}"
+LOG_FILE="${LOG_FILE:-$out_dir/download_new.log}"
 QUIET="${QUIET:-1}"
 OVERWRITE="${OVERWRITE:-0}"
 MAX_FILES="${MAX_FILES:-0}"
@@ -43,8 +43,8 @@ usage() {
   cat <<USAGE
 Usage: $(basename "$0") [CSV_PATH] [OUT_DIR]
 
-Downloads/renames entries from a BIBLIOTHEQUE CSV into BIBLIOTHEQUE.
-- Local paths are renamed to ID-YEAR.
+Downloads/renames entries from a CSV into an output directory.
+- Local paths are renamed to the paper title.
 - Remote URLs are downloaded with retries, backoff, and fallbacks.
 
 Defaults:
@@ -145,13 +145,23 @@ cleanup_tmp() {
   fi
   local files=()
   shopt -s nullglob
-  files=("$out_dir"/.bibliotheque.*.tmp)
+  files=("$out_dir"/.download.*.tmp)
   shopt -u nullglob
   if (( ${#files[@]} > 0 )); then
     rm -f -- "${files[@]}" || true
   fi
 }
-trap cleanup_tmp EXIT
+cleanup_seen() {
+  if [[ -n "${seen_file:-}" && -f "${seen_file}" ]]; then
+    rm -f -- "${seen_file}" || true
+  fi
+}
+
+cleanup_all() {
+  cleanup_tmp
+  cleanup_seen
+}
+trap cleanup_all EXIT
 
 origin_from_url() {
   local url="$1"
@@ -277,7 +287,7 @@ download_with_fallbacks() {
     local ref="$2"
     local insecure="$3"
     local tmp=""
-    tmp="$(mktemp "${out_dir}/.bibliotheque.${label}.XXXXXX.tmp")"
+    tmp="$(mktemp "${out_dir}/.download.${label}.XXXXXX.tmp")"
     curl_attempt "$url" "$tmp" "$ua" "$ref" "$insecure"
     exit_code=$curl_last_exit
     http_code=$curl_last_code
@@ -350,21 +360,21 @@ import sys
 path = sys.argv[1]
 with open(path, newline="") as handle:
     reader = csv.DictReader(handle)
-    required = {"id", "year", "url"}
+    required = {"title", "url"}
     fields = set(reader.fieldnames or [])
     missing = sorted(required - fields)
     if missing:
         print(f"CSV missing required columns: {', '.join(missing)}", file=sys.stderr)
         sys.exit(2)
     for row in reader:
-        row_id = (row.get("id") or "").strip()
+        title = (row.get("title") or "").strip()
         year = (row.get("year") or "").strip()
         url = (row.get("url") or "").strip()
-        if not (row_id or year or url):
+        if not (title or year or url):
             continue
         def clean(value: str) -> str:
             return value.replace("\t", " ").replace("\n", " ").replace("\r", " ")
-        print(clean(row_id), clean(year), clean(url), sep="\t")
+        print(clean(title), clean(year), clean(url), sep="\t")
 PY
 }
 
@@ -373,18 +383,35 @@ if [[ ! -f "$csv_path" ]]; then
   exit 1
 fi
 
-declare -A seen_names=()
+sanitize_filename() {
+  local name="$1"
+  name="${name//\\/-}"
+  name="${name//\//-}"
+  name="${name//:/-}"
+  name="${name//\*/-}"
+  name="${name//\?/-}"
+  name="${name//\"/-}"
+  name="${name//</-}"
+  name="${name//>/-}"
+  name="${name//|/-}"
+  name="$(printf '%s' "$name" | tr -s ' ' | sed -E 's/^ +| +$//g')"
+  printf '%s' "$name"
+}
+
 declare -a renamed=()
 declare -a downloaded=()
 declare -a failed=()
 declare -a skipped=()
 line_num=0
 processed=0
+seen_file=""
 
-log_info "Starting BIBLIOTHEQUE download: $csv_path -> $out_dir"
+log_info "Starting download: $csv_path -> $out_dir"
 log_info "User-Agent: $curl_user_agent"
 
-while IFS=$'\t' read -r row_id year url; do
+seen_file="$(mktemp "${out_dir}/.download.seen.XXXXXX.tmp")"
+
+while IFS=$'\t' read -r title year url; do
   line_num=$((line_num + 1))
   processed=$((processed + 1))
   if (( MAX_FILES > 0 && processed > MAX_FILES )); then
@@ -392,9 +419,9 @@ while IFS=$'\t' read -r row_id year url; do
     break
   fi
 
-  if [[ -z "$row_id" || -z "$year" ]]; then
-    failed+=("line $line_num | missing id/year")
-    log_warn "Skipping line $line_num: missing id/year"
+  if [[ -z "$title" ]]; then
+    failed+=("line $line_num | missing title")
+    log_warn "Skipping line $line_num: missing title"
     continue
   fi
   if [[ -z "$url" ]]; then
@@ -403,15 +430,19 @@ while IFS=$'\t' read -r row_id year url; do
     continue
   fi
 
-  row_id=$(printf '%s' "$row_id" | tr '[:upper:]' '[:lower:]')
-  name="${row_id}-${year}"
+  name="$(sanitize_filename "$title")"
+  if [[ -z "$name" ]]; then
+    failed+=("line $line_num | empty filename from title")
+    log_warn "Skipping line $line_num: empty filename from title"
+    continue
+  fi
 
-  if [[ -n "${seen_names[$name]+x}" ]]; then
+  if grep -Fqx -- "$name" "$seen_file"; then
     skipped+=("$name")
     log_warn "Duplicate entry for $name; skipping"
     continue
   fi
-  seen_names["$name"]=1
+  printf '%s\n' "$name" >> "$seen_file"
 
   if [[ "$url" =~ ^https?:// ]]; then
     ext="$(get_ext_from_path "$url")"
