@@ -1,13 +1,13 @@
-# Neural Machine Translation by Jointly Learning to Align and Translate (2014)
-Source: 397f7b-2014.pdf
+# Neural Machine Translation by Jointly Learning to Align and Translate (Not specified in the paper.)
+Source: Neural Machine Translation by Jointly Learning to Align and Translate (Bahdanau, Cho & Bengio).md
 
 ## Core reasons
-- Identifies the fixed-length encoding bottleneck in encoder–decoder translation models and frames it as the key limitation to address.
-- Proposes a new computation mechanism that performs soft alignment/search over source positions during decoding to guide each generated target word.
+- Introduces a soft alignment/attention mechanism that (soft-)searches source positions for each target word, changing how computation happens during decoding.
+- Addresses the fixed-length context vector bottleneck by computing context vectors from a sequence of annotations per decoding step instead of a single vector.
 
 ## Evidence extracts
-- "Apotential issue with this encoder–decoder approach is that a neural network needs to be able to compress all the necessary information of a source sentence into a ﬁxed-length vector." (p. 1)
-- "In order to address this issue, we introduce an extension to the encoder–decoder model which learns to align and translate jointly." (p. 1)
+- "In this paper, we conjecture that the use of a fixed-length vector is a bottleneck in improving the performance of this basic encoder—decoder architecture, and propose to extend this by allowing a model to automatically (soft-)search for parts of a source sentence that are relevant to predicting a target word, without having to form these parts as a hard segment explicitly." (Abstract)
+- "We extended the basic encoder–decoder by letting a model (soft-)search for a set of input words, or their annotations computed by an encoder, when generating each target word. This frees the model from having to encode a whole source sentence into a fixed-length vector, and also lets the model focus only on information relevant to the generation of the next target word." (7 CONCLUSION)
 
 ## Classification
 Class name: Computation & Reasoning Mechanism Proposal
