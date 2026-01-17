@@ -18,6 +18,8 @@ Codex CLI and write outputs to the filesystem in a reliable, resumable way.
 - Require a strict output format so the runner can parse and validate results.
 - Include a single authoritative field to parse (for example, a class code).
 - Constrain the model to use only provided inputs and to quote evidence.
+- When data is missing, use field-specific phrasing (for example, "Year not
+  specified.") instead of a generic "Not specified in the paper."
 
 ## Codex CLI usage
 - Prefer `codex exec` for non-interactive runs; it streams progress to stderr and

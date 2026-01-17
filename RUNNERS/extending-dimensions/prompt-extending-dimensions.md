@@ -17,7 +17,8 @@ Rules:
    CLASS_*.md files.
 2. Quote the paper verbatim and include the section name or page number when
    available.
-3. If information is not explicitly stated, write "Not specified in the paper."
+3. If information is not explicitly stated, write a field-specific response
+   like "Year not specified." or "Authors not specified."
 4. Follow the output format below exactly. Include every section.
 5. Write the output to [MD_ABS_PATH] and save it. Do not include extra sections
    or commentary.
