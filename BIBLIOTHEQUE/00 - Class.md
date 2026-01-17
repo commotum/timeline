@@ -189,15 +189,14 @@ They inform *why* learning systems behave as they do or *what* they may be appro
 
 **Criteria:**
 
-1. The paper does **not satisfy the criteria** of any classification in this taxonomy.
-2. The paper was **not intentionally included** for cross-disciplinary context or conceptual grounding.
-3. Inclusion is best explained by **curation error**, **surface-level similarity**, or **misinterpretation** of relevance.
+1. The file is **not the intended paper** or **does not contain the paper content** (e.g., HTML wrapper, paywall stub, empty/garbled OCR).
+2. The content is **clearly unrelated to ML research** and does not fit classes 1-6, even as external context.
+3. Do **not** use this class solely because the source is a blog post, book chapter, tutorial, or other non-paper format; if the content fits a class, classify it by content (often **ML Foundations** or **External Foundations**).
 
 **Common Causes:**
 
-- Keyword overlap without substantive contribution
-- Tangential or incidental use of attention or Transformers
-- Purely applied results without methodological insight
+- Wrong link or unrelated document
+- Bibliographic placeholder or HTML wrapper instead of the paper
 - Accidental inclusion during broad literature collection
 
 **Interpretation:**

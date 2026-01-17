@@ -7,7 +7,7 @@ Input:
 
 Output:
 - Write your final markdown to: [MD_ABS_PATH]
-- The runner will rename the file to: [FILE_STEM]_<CLASS_CODE>.md in [OUTPUT_FOLDER]
+- The runner will rename the file to: CLASS_<CLASS_CODE>.md in [OUTPUT_FOLDER]
 
 Rules:
 1. Read the entire OCR markdown thoroughly. Include appendices and references if they contain relevant clues.
@@ -152,18 +152,17 @@ These papers are out of scope by design, not by error. They inform why learning 
 ### 7. Misclassifications
 
 Criteria:
-1. The paper does not satisfy the criteria of any classification in this taxonomy.
-2. The paper was not intentionally included for cross-disciplinary context or conceptual grounding.
-3. Inclusion is best explained by curation error, surface-level similarity, or misinterpretation of relevance.
+1. The file is not the intended paper or does not contain the paper content (e.g., HTML wrapper, paywall stub, empty/garbled OCR).
+2. The content is clearly unrelated to ML research and does not fit classes 1-6, even as external context.
+3. Do not use this class solely because the source is a blog post, book chapter, tutorial, or other non-paper format; if the content fits a class, classify it by content (often 5 or 6).
 
 Common Causes:
-- Keyword overlap without substantive contribution
-- Tangential or incidental use of attention or Transformers
-- Purely applied results without methodological insight
+- Wrong link or unrelated document
+- Bibliographic placeholder or HTML wrapper instead of the paper
 - Accidental inclusion during broad literature collection
 
 Interpretation:
-Papers in this category are candidates for removal or reassignment. This section exists to support taxonomy hygiene, not qualitative judgment.
+Entries in this category are candidates for removal or reassignment. This section exists to support taxonomy hygiene, not qualitative judgment.
 
 ## Output Format (required)
 

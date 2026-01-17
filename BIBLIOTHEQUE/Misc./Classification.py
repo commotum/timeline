@@ -412,8 +412,14 @@ def parse_class_code(md_abs_path):
 
 
 def find_existing_outputs(target_folder, file_stem):
-    pattern = os.path.join(target_folder, f"{file_stem}_*.md")
-    return [path for path in glob.glob(pattern) if os.path.isfile(path)]
+    patterns = [
+        os.path.join(target_folder, "CLASS_*.md"),
+        os.path.join(target_folder, f"{file_stem}_*.md"),
+    ]
+    matches = set()
+    for pattern in patterns:
+        matches.update(glob.glob(pattern))
+    return [path for path in matches if os.path.isfile(path)]
 
 
 def remove_existing_outputs(paths, log_path):
@@ -720,7 +726,7 @@ def main():
                         progress.update(file_stem, "failed")
                         continue
 
-                    final_name = f"{file_stem}_{class_code}.md"
+                    final_name = f"CLASS_{class_code}.md"
                     final_path = os.path.join(entry_folder, final_name)
                     if os.path.exists(final_path) and not overwrite:
                         log_event(
