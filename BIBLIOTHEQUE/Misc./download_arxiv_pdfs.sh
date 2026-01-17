@@ -2,8 +2,8 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-DEFAULT_CSV="/Users/jake/Developer/timeline/ARXIV/arXiv.csv"
-DEFAULT_OUT_DIR="/Users/jake/Developer/timeline/ARXIV"
+DEFAULT_CSV="/home/jake/Developer/timeline/BIBLIOTHEQUE/NEW.csv"
+DEFAULT_OUT_DIR="/home/jake/Developer/pdf2txt/pdf_in"
 
 CSV_PATH="${CSV_PATH:-$DEFAULT_CSV}"
 OUT_DIR="${OUT_DIR:-$DEFAULT_OUT_DIR}"
@@ -16,7 +16,7 @@ fi
 csv_path="${1:-$CSV_PATH}"
 out_dir="${2:-$OUT_DIR}"
 
-LOG_FILE="${LOG_FILE:-$out_dir/download_arxiv.log}"
+LOG_FILE="${LOG_FILE:-$out_dir/download_new.log}"
 QUIET="${QUIET:-1}"
 OVERWRITE="${OVERWRITE:-0}"
 MAX_FILES="${MAX_FILES:-0}"
@@ -43,7 +43,7 @@ usage() {
   cat <<USAGE
 Usage: $(basename "$0") [CSV_PATH] [OUT_DIR]
 
-Downloads/renames entries from an arXiv CSV into ARXIV.
+Downloads/renames entries from a CSV into an output directory.
 - Local paths are renamed to the paper title.
 - Remote URLs are downloaded with retries, backoff, and fallbacks.
 
@@ -145,7 +145,7 @@ cleanup_tmp() {
   fi
   local files=()
   shopt -s nullglob
-  files=("$out_dir"/.arxiv.*.tmp)
+  files=("$out_dir"/.download.*.tmp)
   shopt -u nullglob
   if (( ${#files[@]} > 0 )); then
     rm -f -- "${files[@]}" || true
@@ -287,7 +287,7 @@ download_with_fallbacks() {
     local ref="$2"
     local insecure="$3"
     local tmp=""
-    tmp="$(mktemp "${out_dir}/.arxiv.${label}.XXXXXX.tmp")"
+    tmp="$(mktemp "${out_dir}/.download.${label}.XXXXXX.tmp")"
     curl_attempt "$url" "$tmp" "$ua" "$ref" "$insecure"
     exit_code=$curl_last_exit
     http_code=$curl_last_code
@@ -406,10 +406,10 @@ line_num=0
 processed=0
 seen_file=""
 
-log_info "Starting arXiv download: $csv_path -> $out_dir"
+log_info "Starting download: $csv_path -> $out_dir"
 log_info "User-Agent: $curl_user_agent"
 
-seen_file="$(mktemp "${out_dir}/.arxiv.seen.XXXXXX.tmp")"
+seen_file="$(mktemp "${out_dir}/.download.seen.XXXXXX.tmp")"
 
 while IFS=$'\t' read -r title year url; do
   line_num=$((line_num + 1))
