@@ -1,6 +1,6 @@
-TARGET_FOLDER = "BIBLIOTHEQUE/OCR"
-CSV_PATH = "BIBLIOTHEQUE/UNCLASSIFIED.csv"
-PROMPT_PATH = "Classification-Prompt.md"
+TARGET_FOLDER = "NEW/Markdown"
+CSV_PATH = None
+PROMPT_PATH = "prompt-initial-classification.md"
 CODEX_CLI_CMD = "codex"
 DRY_RUN = False
 OVERWRITE_MD = False
@@ -181,6 +181,22 @@ def load_unclassified_filenames(csv_path, log_path):
         if not value:
             continue
         entries.append(strip_pdf_suffix(value))
+    return entries
+
+
+def load_folder_entries(target_folder, log_path):
+    entries = []
+    try:
+        for name in os.listdir(target_folder):
+            if name.startswith("."):
+                continue
+            path = os.path.join(target_folder, name)
+            if not os.path.isdir(path):
+                continue
+            entries.append(name)
+    except Exception as exc:
+        log_event(log_path, f"folder_scan_failed folder={target_folder} error={exc}")
+        return []
     return entries
 
 
@@ -465,7 +481,7 @@ def parse_args():
     parser.add_argument(
         "--csv",
         default=CSV_PATH,
-        help="CSV containing a filename column to classify.",
+        help="CSV containing a filename column to classify. Omit to scan folder.",
     )
     parser.add_argument(
         "--prompt-path",
@@ -518,10 +534,12 @@ def main():
         print(f"Prompt not found: {prompt_path}")
         return 1
 
-    csv_path = resolve_path(args.csv, [os.getcwd(), repo_root, script_dir])
-    if not os.path.exists(csv_path):
-        print(f"CSV not found: {csv_path}")
-        return 1
+    csv_path = None
+    if args.csv:
+        csv_path = resolve_path(args.csv, [os.getcwd(), repo_root, script_dir])
+        if not os.path.exists(csv_path):
+            print(f"CSV not found: {csv_path}")
+            return 1
 
     dry_run = DRY_RUN if args.dry_run is None else args.dry_run
     overwrite = OVERWRITE_MD if args.overwrite is None else args.overwrite
@@ -538,7 +556,10 @@ def main():
 
     log_event(
         log_path,
-        f"run_start folder={target_folder} csv={csv_path} dry_run={dry_run} overwrite={overwrite} sort_mode={sort_mode} workers={workers}",
+        "run_start "
+        f"folder={target_folder} "
+        f"csv={csv_path or 'none'} "
+        f"dry_run={dry_run} overwrite={overwrite} sort_mode={sort_mode} workers={workers}",
     )
 
     codex_cwd = os.path.abspath(CODEX_CWD) if CODEX_CWD else None
@@ -554,13 +575,19 @@ def main():
     state = load_state(state_path, log_path)
     completed = state.get("completed", {})
 
-    entries = load_unclassified_filenames(csv_path, log_path)
+    if csv_path:
+        entries = load_unclassified_filenames(csv_path, log_path)
+    else:
+        entries = load_folder_entries(target_folder, log_path)
     queue = sort_queue(entries, target_folder, sort_mode, log_path)
 
     total = len(queue)
     if total == 0:
-        print("No CSV entries found.")
-        log_event(log_path, "no_csv_entries_found")
+        print("No entries found.")
+        if csv_path:
+            log_event(log_path, "no_csv_entries_found")
+        else:
+            log_event(log_path, "no_folder_entries_found")
         log_event(log_path, "run_end")
         return 0
 
