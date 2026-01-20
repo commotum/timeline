@@ -3,6 +3,25 @@
 
 ### Abstract
 
+- No dominant method for tasks beyond 1D / proliferation of variants
+- In single-task settings, the encoding method is inconsequential
+
+- Improvements to RoPE come in two flavors:
+   - Extensions
+   - Compromises
+   
+- Majority of researchers take the trade:
+   - Abandon structural constraint
+   - Implement task-specific improvement
+
+
+
+
+
+
+
+While RoPE has become the dominant positional encoding method for 1D tasks, no equivalent 
+
 The absence of a singular favored method for extending 
 
 
@@ -24,7 +43,7 @@ The absence of a singular favored method for extending the positional encodings 
 Basically, I'm trying to say, when we extend to 2d, or to 3d, or to 4d, there's been many papers proposing modifications to RoPE, or using learned positional embeddings, but there hasn't been this consolidation around a single method like there has been for RoPE in 1D. I think it's because the transformer is so powerful, that if you only train on a single task, or if you fix the domain of the task, it can learn those relationships anyway. However, when you want to move onto multitask learners, there's where trouble arises. Do you see where I'm trying to go? Can you give me 5 options for that opening sentence? 
 
 
-To the cowboy scientist, the sheer variety of adaptations made to squeeze current positional encoding mechanisms into additional dimensions, and the clear absence of a de facto standard is nothing short of perplexing. 
+To the cowboy scientist, the sheer variety of adaptations made to squeeze current positional encoding mechanisms into additional dimensions, and the clear absence of a de facto standard is nothing short of perplexing. It appears
 
 
 , modifications, and optimizations made to positional encodings to squeeze them into ~ill fitting domains~ is nothing short of perplexing. 
