@@ -2,8 +2,8 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-DEFAULT_CSV="/home/jake/Developer/timeline/BIBLIOTHEQUE/NEW.csv"
-DEFAULT_OUT_DIR="/home/jake/Developer/pdf2txt/pdf_in"
+DEFAULT_CSV="/home/jake/Developer/timeline/NEW/NEW.csv"
+DEFAULT_OUT_DIR="/home/jake/Developer/timeline/NEW/Downloads"
 
 CSV_PATH="${CSV_PATH:-$DEFAULT_CSV}"
 OUT_DIR="${OUT_DIR:-$DEFAULT_OUT_DIR}"
