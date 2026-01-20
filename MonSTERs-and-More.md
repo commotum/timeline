@@ -3,6 +3,27 @@
 
 ### Abstract
 
+The absence of a singular favored method for extending 
+
+
+“The lack of a single, widely adopted scheme for extending positional encodings beyond 1D suggests that, in fixed domains, transformers can often internalize spatial structure without a canonical inductive bias—but that this brittleness shows up when we demand multitask, cross-domain generalization.”
+
+“That the community has not converged on a RoPE-like standard for 2D/3D/4D positional encoding is a sign that many extensions work ‘well enough’ in narrow settings, yet fail to provide the shared, transferable structure needed for multitask learning.”
+
+“The proliferation of incompatible 2D–4D RoPE variants and learned embeddings—without a clear winner—indicates that positional structure is frequently recoverable from task-specific data, but becomes a limiting factor once we move to general-purpose, multitask models.”
+
+“The absence of consensus on higher-dimensional positional encodings points to a mismatch between what suffices for single-task training and what is required for robust, compositional transfer across tasks and modalities.”
+
+“That no RoPE-equivalent has emerged for higher-dimensional inputs suggests that transformers can compensate for imperfect positional bias in constrained regimes, while revealing the need for a principled, shared encoding when scaling to multitask learners.”
+
+
+Can you help me polish this into a one sentence intro?
+
+The absence of a singular favored method for extending the positional encodings of transformer models to higher dimensions is an indicator that ....
+
+Basically, I'm trying to say, when we extend to 2d, or to 3d, or to 4d, there's been many papers proposing modifications to RoPE, or using learned positional embeddings, but there hasn't been this consolidation around a single method like there has been for RoPE in 1D. I think it's because the transformer is so powerful, that if you only train on a single task, or if you fix the domain of the task, it can learn those relationships anyway. However, when you want to move onto multitask learners, there's where trouble arises. Do you see where I'm trying to go? Can you give me 5 options for that opening sentence? 
+
+
 To the cowboy scientist, the sheer variety of adaptations made to squeeze current positional encoding mechanisms into additional dimensions, and the clear absence of a de facto standard is nothing short of perplexing. 
 
 

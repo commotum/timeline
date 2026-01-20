@@ -1,3 +1,25 @@
+## Task-Model Ratio OCR Prompt
+
+You are reviewing an OCR markdown extraction of a research paper.
+
+Input:
+- OCR markdown path: [SOURCE_MD_ABS_PATH]
+
+Output:
+- Write your final markdown to: [MD_ABS_PATH]
+
+Rules:
+1. Read the entire OCR markdown. Use only this text. Do not consult PDFs or
+   CLASS_*.md files.
+2. Quote the paper verbatim and include the section name or page number when
+   available.
+3. If information is not explicitly stated, write "Not specified in the paper."
+4. Follow the output format below exactly.
+5. Write the output to [MD_ABS_PATH] and save it. Do not include extra sections
+   or commentary.
+
+---
+
 ### Clarifying “Multi-Task” vs. Architecture Reuse (Capability-Focused)
 
 The term **“multi-task”** is often overloaded. In many papers, it refers to evaluating a single **architecture** across multiple tasks or datasets by training or fine-tuning **separate task-specific models**. In this case, the architecture is reused, but **task capability is fragmented across multiple trained model instances**.

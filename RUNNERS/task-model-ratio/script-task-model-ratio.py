@@ -1,11 +1,15 @@
-TARGET_FOLDER = "."
-FOLLOW_UP_MD_PATH = "/home/jake/Developer/4D/Notes/Vision/Follow-Up.md"
+TARGET_FOLDERS = [
+    "BIBLIOTHEQUE/01_POS-ENCDR",
+    "BIBLIOTHEQUE/02_XFORM-DIM",
+]
+PROMPT_PATH = "prompt-task-model-ratio.md"
+OUTPUT_FILENAME = "TASK_MODEL_RATIO.md"
 CODEX_CLI_CMD = "codex"
-FILE_EXT = ".pdf"
 DRY_RUN = False
+OVERWRITE_MD = False
 SORT_MODE = "alpha"
-PARALLEL_WORKERS = 5
-LOG_PATH = "codex_queue_follow_up.log"
+PARALLEL_WORKERS = 4
+LOG_PATH = "codex_task_model_ratio.log"
 CODEX_EXEC_ARGS = ["exec", "--full-auto"]  # Adjust Codex CLI mode/permissions here.
 CODEX_EXEC_TIMEOUT = 3600
 CODEX_CWD = None
@@ -23,19 +27,12 @@ import shlex
 import shutil
 import subprocess
 import sys
-import time
 import threading
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed, CancelledError
-from tqdm import tqdm
 
-PROMPT_TEMPLATE = (
-    "1. Read and review all files listed below thoroughly. Make sure each file's entire contents has been brought into the context.\n"
-    "[FILES_ABS_PATHS]\n"
-    "2. For each question outlined in [FOLLOW_UP_MD_PATH] determine the answer. Double check and verify your answer.\n"
-    "3. Copy your answer for the given question into [MD_ABS_PATH] be absolutely thorough. Save it.\n"
-    "4. Continue until you have answered all the questions\n"
-)
+from tqdm import tqdm
 
 LOG_LOCK = threading.Lock()
 
@@ -118,6 +115,19 @@ def find_git_root(start_path):
         current = parent
 
 
+def resolve_path(path, base_dirs):
+    if os.path.isabs(path):
+        return os.path.abspath(path)
+    for base in base_dirs:
+        if not base:
+            continue
+        candidate = os.path.abspath(os.path.join(base, path))
+        if os.path.exists(candidate):
+            return candidate
+    base = next((b for b in base_dirs if b), os.getcwd())
+    return os.path.abspath(os.path.join(base, path))
+
+
 def sanitize_log_text(text, max_chars):
     if not text:
         return ""
@@ -133,65 +143,77 @@ def quote_path(path):
     return path
 
 
-def format_file_list(file_paths):
-    return "\n".join(f"- {quote_path(path)}" for path in file_paths)
-
-
-def build_prompt(file_abs_paths, md_abs_path, follow_up_md_path):
-    prompt = PROMPT_TEMPLATE
-    prompt = prompt.replace("[FILES_ABS_PATHS]", format_file_list(file_abs_paths))
-    prompt = prompt.replace("[FOLLOW_UP_MD_PATH]", quote_path(follow_up_md_path))
-    prompt = prompt.replace("[MD_ABS_PATH]", quote_path(md_abs_path))
+def build_prompt(
+    template, source_md_abs_path, md_abs_path, file_stem, output_folder
+):
+    prompt = template
+    replacements = {
+        "[SOURCE_MD_ABS_PATH]": quote_path(source_md_abs_path),
+        "[MD_ABS_PATH]": quote_path(md_abs_path),
+        "[FILE_STEM]": file_stem,
+        "[OUTPUT_FOLDER]": quote_path(output_folder),
+    }
+    for key, value in replacements.items():
+        prompt = prompt.replace(key, value)
     return prompt
 
 
-def list_pdf_files(target_folder, file_ext):
+def safe_mtime(path):
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return 0
+
+
+def list_paper_entries(target_folders, output_name, log_path):
     entries = []
-    for name in os.listdir(target_folder):
-        if not name.lower().endswith(file_ext.lower()):
+    for class_folder in target_folders:
+        if not os.path.isdir(class_folder):
+            log_event(log_path, f"missing_target_folder path={class_folder}")
             continue
-        full_path = os.path.join(target_folder, name)
-        if os.path.isfile(full_path):
-            entries.append(name)
+        for name in os.listdir(class_folder):
+            paper_folder = os.path.join(class_folder, name)
+            if not os.path.isdir(paper_folder):
+                continue
+            file_stem = name
+            source_md = os.path.join(paper_folder, f"{file_stem}.md")
+            if not os.path.isfile(source_md):
+                log_event(
+                    log_path,
+                    f"missing_source_md folder={paper_folder} path={source_md}",
+                )
+                continue
+            output_md = os.path.join(paper_folder, output_name)
+            entries.append(
+                {
+                    "name": file_stem,
+                    "folder": paper_folder,
+                    "source_md": os.path.abspath(source_md),
+                    "output_md": os.path.abspath(output_md),
+                }
+            )
     return entries
 
 
-def list_related_files(target_folder, base_name):
-    related = []
-    for name in os.listdir(target_folder):
-        if os.path.splitext(name)[0] != base_name:
-            continue
-        full_path = os.path.join(target_folder, name)
-        if os.path.isfile(full_path):
-            related.append(os.path.abspath(full_path))
-    return sorted(related, key=lambda path: os.path.basename(path).lower())
-
-
-def sort_queue(entries, target_folder, sort_mode, log_path):
+def sort_queue(entries, sort_mode, log_path):
     mode = (sort_mode or "").strip().lower()
     if mode == "alpha":
-        return sorted(entries, key=lambda n: n.lower())
+        return sorted(entries, key=lambda e: e["name"].lower())
     if mode in ("mtime", "mtime-desc", "newest"):
         return sorted(
             entries,
-            key=lambda n: os.path.getmtime(os.path.join(target_folder, n)),
+            key=lambda e: safe_mtime(e["source_md"]),
             reverse=True,
         )
     if mode in ("mtime-asc", "oldest"):
-        return sorted(
-            entries,
-            key=lambda n: os.path.getmtime(os.path.join(target_folder, n)),
-        )
+        return sorted(entries, key=lambda e: safe_mtime(e["source_md"]))
     log_event(log_path, f"unknown_sort_mode mode={sort_mode} fallback=alpha")
-    return sorted(entries, key=lambda n: n.lower())
+    return sorted(entries, key=lambda e: e["name"].lower())
 
 
 def ensure_md_file(md_abs_path, dry_run, log_path):
     if dry_run:
-        log_event(
-            log_path,
-            f"dry_run_md_prepare path={md_abs_path}",
-        )
+        log_event(log_path, f"dry_run_md_prepare path={md_abs_path}")
         return True
     try:
         with open(md_abs_path, "w", encoding="utf-8") as handle:
@@ -202,11 +224,11 @@ def ensure_md_file(md_abs_path, dry_run, log_path):
         return False
 
 
-def make_temp_md_path(md_abs_path):
-    folder = os.path.dirname(md_abs_path)
-    base = os.path.basename(md_abs_path)
+def make_temp_md_path(output_path, output_name):
+    folder = os.path.dirname(output_path)
+    prefix = f".{output_name}.tmp."
     while True:
-        temp_name = f".{base}.tmp.{uuid.uuid4().hex}"
+        temp_name = f"{prefix}{uuid.uuid4().hex}"
         temp_path = os.path.join(folder, temp_name)
         if not os.path.exists(temp_path):
             return temp_path
@@ -231,28 +253,30 @@ def cleanup_temp_paths(temp_paths, log_path):
         temp_paths.discard(path)
 
 
-def cleanup_stale_temp_files(folder, log_path):
-    removed = 0
-    try:
-        for name in os.listdir(folder):
-            if not name.startswith("."):
-                continue
-            if ".md.tmp." not in name:
-                continue
-            path = os.path.join(folder, name)
-            if not os.path.isfile(path):
-                continue
-            try:
-                os.remove(path)
-                removed += 1
-                log_event(log_path, f"temp_removed path={path}")
-            except Exception as exc:
-                log_event(log_path, f"temp_remove_failed path={path} error={exc}")
-    except Exception as exc:
-        log_event(log_path, f"temp_cleanup_failed folder={folder} error={exc}")
-        return
-    if removed:
-        log_event(log_path, f"temp_cleanup_removed count={removed}")
+def cleanup_stale_temp_files(folders, output_name, log_path):
+    prefix = f".{output_name}.tmp."
+    for folder in folders:
+        if not os.path.isdir(folder):
+            continue
+        removed = 0
+        try:
+            for name in os.listdir(folder):
+                if not name.startswith(prefix):
+                    continue
+                path = os.path.join(folder, name)
+                if not os.path.isfile(path):
+                    continue
+                try:
+                    os.remove(path)
+                    removed += 1
+                    log_event(log_path, f"temp_removed path={path}")
+                except Exception as exc:
+                    log_event(log_path, f"temp_remove_failed path={path} error={exc}")
+        except Exception as exc:
+            log_event(log_path, f"temp_cleanup_failed folder={folder} error={exc}")
+            continue
+        if removed:
+            log_event(log_path, f"temp_cleanup_removed folder={folder} count={removed}")
 
 
 def build_codex_exec_command(codex_cmd, codex_cwd, add_dir, skip_git_check):
@@ -360,9 +384,17 @@ def md_has_content(md_abs_path):
         return False
 
 
-def process_pdf_task(
-    pdf_abs_path,
-    md_abs_path,
+def remove_existing_output(path, log_path):
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+            log_event(log_path, f"output_removed path={path}")
+    except Exception as exc:
+        log_event(log_path, f"output_remove_failed path={path} error={exc}")
+
+
+def process_task(
+    source_md_abs_path,
     prompt,
     codex_cmd,
     codex_cwd,
@@ -385,10 +417,23 @@ def process_pdf_task(
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Run Codex CLI for a queue of PDFs and related files."
+        description="Run Codex CLI for a queue of OCR markdown files."
     )
     parser.add_argument(
-        "--folder", default=TARGET_FOLDER, help="Folder with PDFs and related files."
+        "--folders",
+        nargs="*",
+        default=None,
+        help="One or more class folders to scan for paper subfolders.",
+    )
+    parser.add_argument(
+        "--prompt-path",
+        default=PROMPT_PATH,
+        help="Prompt template markdown file.",
+    )
+    parser.add_argument(
+        "--output-name",
+        default=OUTPUT_FILENAME,
+        help="Output markdown filename per paper folder.",
     )
     parser.add_argument(
         "--codex-cmd",
@@ -406,21 +451,44 @@ def parse_args():
         default=None,
         help="Number of parallel Codex jobs.",
     )
+    parser.add_argument(
+        "--skip-git-check",
+        action="store_true",
+        help="Skip Codex git repo check.",
+    )
     dry_group = parser.add_mutually_exclusive_group()
     dry_group.add_argument("--dry-run", dest="dry_run", action="store_true")
     dry_group.add_argument("--no-dry-run", dest="dry_run", action="store_false")
     parser.set_defaults(dry_run=None)
+    overwrite_group = parser.add_mutually_exclusive_group()
+    overwrite_group.add_argument("--overwrite", dest="overwrite", action="store_true")
+    overwrite_group.add_argument("--no-overwrite", dest="overwrite", action="store_false")
+    parser.set_defaults(overwrite=None)
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
-    target_folder = os.path.abspath(args.folder)
-    if not os.path.isdir(target_folder):
-        print(f"Target folder not found: {target_folder}")
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    repo_root = find_git_root(script_dir) or find_git_root(os.getcwd())
+    base_dirs = [os.getcwd(), script_dir, repo_root]
+
+    target_folders = args.folders if args.folders else TARGET_FOLDERS
+    resolved_folders = [resolve_path(path, base_dirs) for path in target_folders]
+
+    prompt_path = resolve_path(args.prompt_path, base_dirs)
+    if not os.path.exists(prompt_path):
+        print(f"Prompt not found: {prompt_path}")
         return 1
+    with open(prompt_path, "r", encoding="utf-8") as handle:
+        prompt_template = handle.read()
+
+    output_name = args.output_name or OUTPUT_FILENAME
+    if not output_name.lower().endswith(".md"):
+        output_name += ".md"
 
     dry_run = DRY_RUN if args.dry_run is None else args.dry_run
+    overwrite = OVERWRITE_MD if args.overwrite is None else args.overwrite
     sort_mode = SORT_MODE if args.sort_mode is None else args.sort_mode
     workers = PARALLEL_WORKERS if args.workers is None else args.workers
     if workers < 1:
@@ -429,39 +497,36 @@ def main():
 
     log_path = LOG_PATH
     if not os.path.isabs(log_path):
-        log_path = os.path.abspath(os.path.join(target_folder, log_path))
-    state_path = os.path.join(target_folder, ".codex_queue_follow_up_state.json")
+        log_path = os.path.abspath(os.path.join(script_dir, log_path))
+    state_path = os.path.join(script_dir, ".codex_task_model_ratio_state.json")
 
     log_event(
         log_path,
-        f"run_start folder={target_folder} dry_run={dry_run} sort_mode={sort_mode} workers={workers}",
+        "run_start "
+        f"folders={resolved_folders} dry_run={dry_run} overwrite={overwrite} "
+        f"sort_mode={sort_mode} workers={workers} output_name={output_name}",
     )
 
-    script_dir = os.path.dirname(os.path.abspath(__file__))
     codex_cwd = os.path.abspath(CODEX_CWD) if CODEX_CWD else None
     if codex_cwd is None:
-        codex_cwd = find_git_root(script_dir) or find_git_root(target_folder)
+        codex_cwd = repo_root
     if codex_cwd:
         log_event(log_path, f"codex_cwd path={codex_cwd}")
     else:
         log_event(log_path, "codex_cwd_missing")
-    add_dir = target_folder if CODEX_ADD_DIR else None
-    skip_git_check = CODEX_SKIP_GIT_CHECK
-
-    follow_up_md_path = os.path.abspath(FOLLOW_UP_MD_PATH)
-    if not os.path.exists(follow_up_md_path):
-        log_event(log_path, f"follow_up_missing path={follow_up_md_path}")
+    add_dir = repo_root if CODEX_ADD_DIR else None
+    skip_git_check = CODEX_SKIP_GIT_CHECK or args.skip_git_check
 
     state = load_state(state_path, log_path)
     completed = state.get("completed", {})
 
-    entries = list_pdf_files(target_folder, FILE_EXT)
-    queue = sort_queue(entries, target_folder, sort_mode, log_path)
+    entries = list_paper_entries(resolved_folders, output_name, log_path)
+    queue = sort_queue(entries, sort_mode, log_path)
 
     total = len(queue)
     if total == 0:
-        print("No PDF files found.")
-        log_event(log_path, "no_pdfs_found")
+        print("No OCR markdown files found.")
+        log_event(log_path, "no_entries_found")
         log_event(log_path, "run_end")
         return 0
 
@@ -474,75 +539,85 @@ def main():
 
     try:
         if CLEANUP_TEMP_ON_START and not dry_run:
-            cleanup_stale_temp_files(target_folder, log_path)
+            cleanup_stale_temp_files(
+                [entry["folder"] for entry in queue], output_name, log_path
+            )
 
         if not dry_run:
             executor = ThreadPoolExecutor(max_workers=workers)
 
-        for name in queue:
+        for entry in queue:
             if stop_event.is_set():
                 interrupted = True
                 break
-            pdf_abs_path = os.path.abspath(os.path.join(target_folder, name))
-            base_name = os.path.splitext(name)[0]
-            md_abs_path = os.path.splitext(pdf_abs_path)[0] + "_follow_up.md"
-            log_event(log_path, f"file_start pdf={pdf_abs_path} md={md_abs_path}")
 
-            if pdf_abs_path in completed and not os.path.exists(md_abs_path):
+            file_stem = entry["name"]
+            entry_folder = entry["folder"]
+            source_md_abs_path = entry["source_md"]
+            output_md_abs_path = entry["output_md"]
+
+            log_event(
+                log_path,
+                f"file_start source_md={source_md_abs_path} output_md={output_md_abs_path}",
+            )
+
+            if not overwrite and source_md_abs_path in completed:
+                log_event(log_path, f"skipped_state source_md={source_md_abs_path}")
+                progress.update(file_stem, "skipped")
+                continue
+
+            if not overwrite and os.path.exists(output_md_abs_path):
                 log_event(
                     log_path,
-                    f"state_missing_output pdf={pdf_abs_path} md={md_abs_path}",
+                    f"skipped_existing_output source_md={source_md_abs_path}",
                 )
-
-            if os.path.exists(md_abs_path):
-                log_event(log_path, f"skipped_existing_md pdf={pdf_abs_path}")
                 if not dry_run:
-                    completed[pdf_abs_path] = now_iso()
+                    completed[source_md_abs_path] = now_iso()
                     state["completed"] = completed
                     save_state(state_path, state, log_path)
-                progress.update(name, "skipped")
+                progress.update(file_stem, "skipped")
                 continue
 
-            related_files = list_related_files(target_folder, base_name)
-            if not related_files:
-                log_event(
-                    log_path,
-                    f"skipped_missing_related_files pdf={pdf_abs_path} base={base_name}",
-                )
-                progress.update(name, "missing")
-                continue
+            if overwrite and os.path.exists(output_md_abs_path) and not dry_run:
+                remove_existing_output(output_md_abs_path, log_path)
 
-            md_work_path = md_abs_path
+            md_work_path = make_temp_md_path(output_md_abs_path, output_name)
             if not dry_run:
-                md_work_path = make_temp_md_path(md_abs_path)
                 if not ensure_md_file(md_work_path, dry_run, log_path):
-                    log_event(log_path, f"skipped_md_prepare_failed pdf={pdf_abs_path}")
-                    progress.update(name, "failed")
+                    log_event(
+                        log_path,
+                        f"skipped_md_prepare_failed source_md={source_md_abs_path}",
+                    )
+                    progress.update(file_stem, "failed")
                     continue
                 temp_paths.add(md_work_path)
                 log_event(
                     log_path,
-                    f"md_work_created pdf={pdf_abs_path} md_work={md_work_path}",
+                    f"md_work_created source_md={source_md_abs_path} md_work={md_work_path}",
                 )
 
-            prompt = build_prompt(related_files, md_work_path, follow_up_md_path)
+            prompt = build_prompt(
+                prompt_template,
+                source_md_abs_path,
+                md_work_path,
+                file_stem,
+                entry_folder,
+            )
             log_event(
                 log_path,
-                f"prompt_generated pdf={pdf_abs_path} md_work={md_work_path} md_final={md_abs_path}",
+                f"prompt_generated source_md={source_md_abs_path} md_work={md_work_path}",
             )
 
             if dry_run:
                 progress_write(progress, "DRY RUN prompt:")
                 progress_write(progress, prompt)
-                log_event(log_path, f"dry_run_skip pdf={pdf_abs_path}")
-                progress.update(name, "dry-run")
+                log_event(log_path, f"dry_run_skip source_md={source_md_abs_path}")
+                progress.update(file_stem, "dry-run")
                 continue
 
-            # Adjust CODEX_EXEC_ARGS above to change how Codex runs (e.g., --full-auto).
             future = executor.submit(
-                process_pdf_task,
-                pdf_abs_path,
-                md_abs_path,
+                process_task,
+                source_md_abs_path,
                 prompt,
                 codex_cmd,
                 codex_cwd,
@@ -552,78 +627,70 @@ def main():
                 stop_event,
             )
             futures[future] = (
-                pdf_abs_path,
-                md_abs_path,
+                source_md_abs_path,
+                file_stem,
                 md_work_path,
-                name,
-                related_files,
+                output_md_abs_path,
             )
 
         if executor is not None:
             for future in as_completed(futures):
-                pdf_abs_path, md_abs_path, md_work_path, name, related_files = futures[
-                    future
-                ]
+                source_md_abs_path, file_stem, md_work_path, output_md_abs_path = (
+                    futures[future]
+                )
                 try:
                     success, error = future.result()
                 except CancelledError:
-                    log_event(log_path, f"codex_cancelled pdf={pdf_abs_path}")
+                    log_event(log_path, f"codex_cancelled source_md={source_md_abs_path}")
                     remove_temp_md(md_work_path, log_path)
                     temp_paths.discard(md_work_path)
-                    progress.update(name, "cancelled")
+                    progress.update(file_stem, "cancelled")
                     continue
                 except Exception as exc:
-                    log_event(log_path, f"codex_failure pdf={pdf_abs_path} error={exc}")
+                    log_event(
+                        log_path,
+                        f"codex_failure source_md={source_md_abs_path} error={exc}",
+                    )
                     remove_temp_md(md_work_path, log_path)
                     temp_paths.discard(md_work_path)
-                    progress.update(name, "failed")
+                    progress.update(file_stem, "failed")
                     continue
                 if success:
-                    if md_has_content(md_work_path):
-                        try:
-                            md_bytes = os.path.getsize(md_work_path)
-                        except OSError:
-                            md_bytes = 0
-                        if os.path.exists(md_abs_path):
-                            log_event(
-                                log_path,
-                                f"md_exists_skip_replace pdf={pdf_abs_path} md_final={md_abs_path}",
-                            )
-                            remove_temp_md(md_work_path, log_path)
-                            temp_paths.discard(md_work_path)
-                            progress.update(name, "skipped")
-                            continue
-                        try:
-                            os.replace(md_work_path, md_abs_path)
-                        except Exception as exc:
-                            log_event(
-                                log_path,
-                                f"md_replace_failed pdf={pdf_abs_path} error={exc}",
-                            )
-                            remove_temp_md(md_work_path, log_path)
-                            temp_paths.discard(md_work_path)
-                            progress.update(name, "failed")
-                            continue
-                        temp_paths.discard(md_work_path)
-                        log_event(
-                            log_path,
-                            f"md_written pdf={pdf_abs_path} bytes={md_bytes} md_final={md_abs_path}",
-                        )
-                        completed[pdf_abs_path] = now_iso()
-                        state["completed"] = completed
-                        save_state(state_path, state, log_path)
-                        progress.update(name, "done")
-                    else:
-                        log_event(log_path, f"md_empty pdf={pdf_abs_path}")
+                    if not md_has_content(md_work_path):
+                        log_event(log_path, f"md_empty source_md={source_md_abs_path}")
                         progress_write(
                             progress,
-                            f"  warning: output file is empty for {name} (see log)",
+                            f"  warning: output file is empty for {file_stem} (see log)",
                         )
                         remove_temp_md(md_work_path, log_path)
                         temp_paths.discard(md_work_path)
-                        progress.update(name, "empty")
+                        progress.update(file_stem, "empty")
+                        continue
+                    try:
+                        os.replace(md_work_path, output_md_abs_path)
+                    except Exception as exc:
+                        log_event(
+                            log_path,
+                            f"md_replace_failed source_md={source_md_abs_path} error={exc}",
+                        )
+                        remove_temp_md(md_work_path, log_path)
+                        temp_paths.discard(md_work_path)
+                        progress.update(file_stem, "failed")
+                        continue
+                    temp_paths.discard(md_work_path)
+                    log_event(
+                        log_path,
+                        f"md_written source_md={source_md_abs_path} md_final={output_md_abs_path}",
+                    )
+                    completed[source_md_abs_path] = now_iso()
+                    state["completed"] = completed
+                    save_state(state_path, state, log_path)
+                    progress.update(file_stem, "done")
                 else:
-                    log_event(log_path, f"codex_failure pdf={pdf_abs_path} error={error}")
+                    log_event(
+                        log_path,
+                        f"codex_failure source_md={source_md_abs_path} error={error}",
+                    )
                     remove_temp_md(md_work_path, log_path)
                     temp_paths.discard(md_work_path)
                     if error == "codex_missing":
@@ -632,16 +699,21 @@ def main():
                             "Codex CLI not found. Paste this prompt into Codex manually:",
                         )
                         prompt_final = build_prompt(
-                            related_files, md_abs_path, follow_up_md_path
+                            prompt_template,
+                            source_md_abs_path,
+                            output_md_abs_path,
+                            file_stem,
+                            os.path.dirname(output_md_abs_path),
                         )
                         progress_write(progress, prompt_final)
                         log_event(
-                            log_path, f"manual_prompt_printed pdf={pdf_abs_path}"
+                            log_path,
+                            f"manual_prompt_printed source_md={source_md_abs_path}",
                         )
                     status = "failed"
                     if error == "interrupted":
                         status = "interrupted"
-                    progress.update(name, status)
+                    progress.update(file_stem, status)
             executor.shutdown(wait=True)
             executor = None
     except KeyboardInterrupt:
@@ -660,6 +732,7 @@ def main():
         if progress is not None:
             progress.close()
         log_event(log_path, "run_end")
+
     if interrupted:
         return 1
     return 0
