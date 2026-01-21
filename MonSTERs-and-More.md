@@ -1,3 +1,9 @@
+# MonSTERs for N-Dimension Attention
+
+# MonSTERs are n-Dimensional Multi-Task Learners
+
+# MonSTER Models Are N-Dimensional Multitask Reasoners
+
 # MonSTERs & More
 ## Structural Encodings for Native 4-Dimension-Attention
 
