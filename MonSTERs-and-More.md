@@ -2,9 +2,9 @@
 
 At a high level, the baseline transformer interface assumes a static, fixed token vocabulary, a static, fixed attention-window, and a static, fixed set of positional encodings implicitly mapped to their tokens by index. This rigidity eases implementation, but curtails the dynamic responsiveness necessary for continual learning. 
 
-This paper introduces dynamic counterparts for each of these three static assumptions
+This paper introduces MonSTER Models, which replace each of these static assumptions with dynamic counterparts: a constructive-vocab mechanism, that mints typed, value-parameterized, and latent tokens; focused attention-threads that select task-relevant token subsets from a keyed, addressable token bank; and Minkowski SpaceTime Encoding Rotors (MonSTERs), a 4D generalization of RoPE that unifies 1D–4D positional structure in a single Lorentz-invariant scheme.
 
-This paper introduces MonSTER Models, which replace each of these static assumptions with dynamic counterparts: a constructive-vocab mechanism, that mints typed, value-parameterized, and latent tokens; a recursive working-memory module that selects task-relevant token subsets for modification within focused attention-threads; and Minkowski SpaceTime Encoding Rotors (MonSTERs), a 4D generalization of RoPE that unifies 1D–4D positional structure in a single Lorentz-invariant scheme, 
+
 
 something something, modifications and adaptations hide the benefits of unification?
 
