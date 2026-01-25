@@ -2,7 +2,13 @@
 
 At a high level, the baseline transformer interface assumes a static, fixed token vocabulary, a static, fixed attention-window, and uniform attentional treatment of the predetermined vocabulary, within the predetermined window, by a static, fixed set of positional encodings, implicitly mapped to their tokens by their index. 
 
-These three assumptions, highly interdependent and entangled by nature, generally preclude isolated modification, and as such, have enjoyed a relatively undisturbed existence, despite their individual faults. Indeed, any sane scientist with a desire for peace, happiness, or good health, is better served 
+These three assumptions, highly interdependent and entangled by nature, generally preclude isolated modification, and as such, have enjoyed a relatively undisturbed existence, despite their individual faults. Indeed, no sane scientist with a desire for peace, happiness, or good health, endeavors to unseat the Triumvirate, opting instead to labor in actually tractable fields.
+
+
+
+
+
+Indeed, any sane scientist with a desire for peace, happiness, or good health, is better served 
 
 Indeed, no sane scientist with a desire for peace, happiness, or good health, endeavors to unseat the Triumvirate, opting instead to labor in actually tractable fields.
 
