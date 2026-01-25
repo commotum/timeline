@@ -4,7 +4,10 @@ At a high level, the baseline transformer interface assumes a static, fixed toke
 
 This paper introduces dynamic counterparts for each of these three static assumptions: a vocab-expansion mechanism, or token-mint, to construct typed, value-parameterized, and latent tokens; focused attention-threads that select task-relevant token subsets from a keyed, addressable token bank; and Minkowski SpaceTime Encoding Rotors (MonSTERs), a 4D generalization of RoPE that unifies 1D–4D positional structure in a single Lorentz-invariant scheme.
 
-Distinct from multimodal systems, which typically orchestrate separate architectures or tokenization schemes for different data modalities (e.g., 1D text, 2D images, etc), these architectures employ a single, unified token and encoding interface that applies uniformly across dimensionalities, and therefore are deserving of their own ....
+Distinct from multimodal systems, which typically orchestrate separate architectures or tokenization schemes for different data modalities (e.g., 1D text, 2D images, etc), these architectures employ a single, unified token and encoding interface that applies uniformly across dimensionalities, and therefore are deserving of their own name. Accordingly, we call them, "MonSTER Models."
+
+
+
 
 
 we refer to these architectures as MonSTER Models. Rather than stitching together modality-specific components, MonSTER Models employ a single, unified token and encoding interface that applies uniformly across dimensionalities.
