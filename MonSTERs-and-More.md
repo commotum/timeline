@@ -1,6 +1,8 @@
 # MonSTER Models are Continual Multitask Learners
 
-At a high level, the baseline transformer interface assumes a static, fixed token vocabulary, a static, fixed attention-window, and a static, fixed set of positional encodings implicitly mapped to their tokens by index.
+At a high level, the baseline transformer interface assumes a static, fixed token vocabulary, a static, fixed attention-window, and a static, fixed set of positional encodings implicitly mapped to their tokens by index. This rigidity eases implementation, but curtails the dynamic responsiveness necessary for continual learning. 
+
+This paper introduces dynamic counterparts for each of these three static assumptions
 
 This paper introduces MonSTER Models, which replace each of these static assumptions with dynamic counterparts: a constructive-vocab mechanism, that mints typed, value-parameterized, and latent tokens; a recursive working-memory module that selects task-relevant token subsets for modification within focused attention-threads; and Minkowski SpaceTime Encoding Rotors (MonSTERs), a 4D generalization of RoPE that unifies 1D–4D positional structure in a single Lorentz-invariant scheme, 
 
@@ -13,6 +15,28 @@ Too many tokens, noise, relevance
 patches / catastrophic forgetting / vocab
    typed tokens / continual learning
 
+
+Yes — **the token pool / token bank belongs most naturally to the “attention-window” replacement**, because that’s the thing you’re making dynamic. The **implicit→explicit addressing** can either (a) live there too, or (b) be split so the working-memory provides the *pool* and MonSTERs provide the *addressing scheme*. Here are a few clean ways to do it.
+
+### Option A: Pool in working-memory, explicit addressing in MonSTERs (cleanest split)
+
+> …a recursive working-memory module that replaces the fixed context window with a persistent token bank, selecting a task-relevant working window for threaded attention and modification; and Minkowski SpaceTime Encoding Rotors (MonSTERs), a 4D generalization of RoPE that assigns tokens explicit ((t,x,y,z)) addresses, unifying 1D–4D structure under a single Lorentz-metric-preserving scheme.
+
+### Option B: Put “pool + explicit addressing” together in working-memory (MonSTERs just unify geometry)
+
+> …a recursive working-memory module that replaces the fixed context window with an explicitly addressed token bank, selecting a task-relevant working window for threaded attention and modification; and Minkowski SpaceTime Encoding Rotors (MonSTERs), a 4D generalization of RoPE that provides one coordinate scheme across 1D–4D inputs.
+
+### Option C: Make the context analogy explicit (“ordered window → unordered pool”)
+
+> …a recursive working-memory module that replaces the ordered context window with an unordered, addressable token pool, selecting a task-relevant working window for threaded attention and modification; and Minkowski SpaceTime Encoding Rotors (MonSTERs), a 4D generalization of RoPE that supplies a single 1D–4D coordinate system instead of modality-specific positional hacks.
+
+### Option D: Very tight (if you want the third clause short)
+
+> …a recursive working-memory module that replaces a fixed context window with an addressable token bank and a dynamic working window; and Minkowski SpaceTime Encoding Rotors (MonSTERs), a 4D RoPE generalization that unifies 1D–4D positional structure.
+
+If you want the triad to read more parallel, I’d also tighten the second clause slightly by dropping “subset” (it’s implied by “working window”):
+
+* **“…selects a task-relevant working window for threaded attention and modification”**
 
 
 
