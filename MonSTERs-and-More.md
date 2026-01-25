@@ -2,6 +2,24 @@
 
 At a high level, the baseline transformer interface assumes a static, fixed token vocabulary, a static, fixed attention-window, and a static, fixed set of positional encodings implicitly mapped to their tokens by index.
 
+
+something something, modifications and adaptations hide the benefits of unification?
+
+Can't see diagonal, new model per domain
+   MonSTERs - positional encoding
+Too many tokens, noise, relevance
+   Dynamic Attention / Working Memory / Focus
+patches / catastrophic forgetting / vocab
+   typed tokens / continual learning
+
+
+
+
+
+
+
+
+
 These three assumptions, highly interdependent and entangled by nature, generally preclude isolated modification, and as such, have enjoyed a relatively undisturbed existence. 
 
 Indeed, no sane scientist with a desire for peace, happiness, or good health, endeavors to sway the Triumvirate; such attempts are left to naive cowboy scientists who, unaware of the task's true nature, dive in headlong. 
