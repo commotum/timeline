@@ -1,8 +1,28 @@
 # MonSTER Models are Continual Multitask Learners
 
+At a high level, the baseline transformer interface assumes a static, fixed token vocabulary, a static, fixed attention-window, and a static, fixed set of positional encodings implicitly mapped to their tokens by index. 
+
+
+
+
 At a high level, the baseline transformer interface assumes a static, fixed token vocabulary, a static, fixed attention-window, and uniform attentional treatment of the predetermined vocabulary, within the predetermined window, by a static, fixed set of positional encodings, implicitly mapped to their tokens by index. 
 
+At a high level, the baseline transformer interface assumes a static, fixed token vocabulary, a static, fixed attention-window, and a predetermined attentional treatment over tokens within that window, modified only by a static, fixed set of positional encodings, implicitly mapped to their tokens by index. 
 
+
+
+and a predetermined attentional treatment over tokens within that window, modified only by a static, fixed set of positional encodings, implicitly mapped to their tokens by index. 
+
+
+
+At a high level, the baseline transformer interface assumes a predetermined, static, and fixed token vocabulary, a predetermined, static, and fixed attention-window, and a uniform attentional treatment of tokens within the window
+
+the predetermined vocabulary, within the predetermined window, by a static, fixed set of positional encodings, implicitly mapped to their tokens by index. 
+
+These three assumptions, highly interdependent and entangled by nature, generally preclude isolated modification, and as such, have enjoyed a relatively undisturbed existence. 
+
+
+ Indeed, no sane scientist with a desire for peace, happiness, or good health, endeavors to unseat the Triumvirate, opting instead to labor in actually tractable fields.
 
 1. positional encoding for higher dimensions remains unsolved (hence the proliferation of so many adaptations, and the absence of a clear/dominant method. RoPE is there for 1D, but for 2D researchers continue to use row-major flattening, learned encodings for a fixed  context area, and the most prominent method, axial RoPE, simply factorizes the 1D case by splitting the embedding into 2 independent arrays, one for x, and one for y, which means it can't see diagonals)
 
