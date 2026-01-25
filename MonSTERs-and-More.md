@@ -1,6 +1,7 @@
 # MonSTER Models are Continual Multitask Learners
 
-At a high level, the baseline transformer interface assumes a static, fixed token vocabulary, a static, fixed attention-window, and a static, fixed set of positional encodings implicitly mapped to their tokens by index. 
+At a high level, the baseline transformer interface assumes a static, fixed token vocabulary, a static, fixed attention-window, and a static, fixed set of positional encodings implicitly mapped to their tokens by index. These three assumptions, highly interdependent and entangled by nature, have generally precluded isolated modification, enjoying a relatively undisturbed existence. 
+
 
 
 
