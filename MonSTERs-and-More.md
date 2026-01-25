@@ -1,8 +1,38 @@
 # MonSTER Models are Continual Multitask Learners
 
-At a high level, the baseline transformer interface assumes a static, fixed token vocabulary, a static, fixed attention-window, and a static, fixed set of positional encodings implicitly mapped to their tokens by index. These three assumptions, highly interdependent and entangled by nature, have generally precluded isolated modification, enjoying a relatively undisturbed existence. 
+At a high level, the baseline transformer interface assumes a static, fixed token vocabulary, a static, fixed attention-window, and a static, fixed set of positional encodings implicitly mapped to their tokens by index.
+
+These three assumptions, highly interdependent and entangled by nature, generally preclude isolated modification, and as such, have enjoyed a relatively undisturbed existence. 
+
+Indeed, no sane scientist with a desire for peace, happiness, or good health, endeavors to sway the Triumvirate; such attempts are left to naive cowboy scientists who, unaware of the task's true nature, dive in headlong. 
+
+This paper outlines the series of painful, though eventually fruitful, realizations made by one such cowboy scientist, the author. First, a new positional encoding mechanism 
 
 
+
+ The challenge remains Leaving only cowboy scientists, naive and ignorant to the tasks full difficulty. 
+
+
+leaving the challenge to so-called cowboy scientists, naive and ignorant 
+
+
+
+
+In exchange for a battle-tested baseline, researchers incur a translation cost 
+
+
+who adopt these three 
+
+
+However, this baseline incurs a "translation tax," 
+
+
+
+These three assumptions, highly interdependent and entangled by nature, have generally precluded isolated modification, enjoying a relatively undisturbed existence. 
+
+Indeed, no sane scientist* with a desire for peace, happiness, or good health, endeavors to unseat the Triumvirate, opting instead to labor in actually tractable fields.
+
+opting instead to labor in the more tractable subspace of architectural patches
 
 
 
