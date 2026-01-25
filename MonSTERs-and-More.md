@@ -2,7 +2,18 @@
 
 At a high level, the baseline transformer interface assumes a static, fixed token vocabulary, a static, fixed attention-window, and a static, fixed set of positional encodings implicitly mapped to their tokens by index. This rigidity eases implementation, but curtails the dynamic responsiveness necessary for continual learning. 
 
-This paper introduces MonSTER Models, which replace each of these static assumptions with dynamic counterparts: a constructive-vocab mechanism, that mints typed, value-parameterized, and latent tokens; focused attention-threads that select task-relevant token subsets from a keyed, addressable token bank; and Minkowski SpaceTime Encoding Rotors (MonSTERs), a 4D generalization of RoPE that unifies 1D–4D positional structure in a single Lorentz-invariant scheme.
+This paper introduces dynamic counterparts for each of these three static assumptions: a vocab-expansion mechanism, or token-mint, to construct typed, value-parameterized, and latent tokens; focused attention-threads that select task-relevant token subsets from a keyed, addressable token bank; and Minkowski SpaceTime Encoding Rotors (MonSTERs), a 4D generalization of RoPE that unifies 1D–4D positional structure in a single Lorentz-invariant scheme.
+
+Distinct from multimodal systems, which typically orchestrate separate architectures or tokenization schemes for different data modalities (e.g., 1D text, 2D images, etc), these architectures employ a single, unified token and encoding interface that applies uniformly across dimensionalities, and therefore are deserving of their own ....
+
+
+we refer to these architectures as MonSTER Models. Rather than stitching together modality-specific components, MonSTER Models employ a single, unified token and encoding interface that applies uniformly across dimensionalities.
+
+To distinguish from multi-modal systems, which orchestrate models ....
+some for 2d, some for 1d
+name it monster models?
+
+This paper introduces MonSTER Models, which replace each of these static assumptions with dynamic counterparts
 
 
 
