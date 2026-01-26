@@ -6,6 +6,31 @@ This paper introduces dynamic counterparts for each of these three static assump
 
 Distinct from multimodal systems, which typically orchestrate separate architectures or encoding schemes for different data modalities (e.g., 1D text, 2D images, etc.), these architectures employ a single, unified token and encoding interface that applies uniformly across dimensionalities, and therefore are deserving of their own name. Accordingly, we call them MonSTER Models.
 
+Together, these changes turn the transformer from a static, task-bounded sequence model into a continually extensible learner: new skills can be *named* (via open‑vocabulary token synthesis), *stored and revised* (via a keyed token bank), and *selectively deployed* (via attention‑threads), all while a single MonSTER encoding provides a consistent notion of structure across sequences, grids, volumes, and trajectories. In this regime, tasks that are usually siloed into separate model families—ARC‑AGI-style grid reasoning, program synthesis, Sudoku, Rubik’s Cube manipulation, and Atari control—can be treated as different projections of the same interface, enabling transfer when structure overlaps and isolation when it does not. Rather than “one new model per domain,” MonSTER Models are built to accumulate competencies over time under a shared representational contract, retaining prior skills while incorporating new ones across both task diversity and dimensionality.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 a type/value token scheme that supports open-vocabulary synthesis of typed, value-parameterized, and latent tokens.
