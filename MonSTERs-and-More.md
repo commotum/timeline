@@ -1,14 +1,19 @@
 # MonSTER Models are Continual Multitask Learners
 
-At a high level, the baseline transformer interface assumes a static, fixed token vocabulary, a static, fixed attention-window, and a static, fixed set of positional encodings implicitly mapped to their tokens by index. This rigidity eases implementation, but curtails the dynamic responsiveness necessary for continual learning. 
+At a high level, the baseline transformer interface assumes a static, fixed token vocabulary, a static, fixed attention-window, and a static, fixed set of positional encodings implicitly mapped to their tokens by index. This rigidity eases implementation, but curtails the dynamic responsiveness necessary for continual learning.
 
-This paper introduces dynamic counterparts for each of these three static assumptions: a vocab-expansion mechanism, or token-mint, to construct typed, value-parameterized, and latent tokens; focused attention-threads that select task-relevant token subsets from a keyed, addressable token bank; and Minkowski SpaceTime Encoding Rotors (MonSTERs), a 4D generalization of RoPE that unifies 1D–4D positional structure in a single Lorentz-invariant scheme.
+This paper introduces dynamic counterparts for each of these three static assumptions:
+
+a typed, value‑parameterized, token scheme for open-vocabulary synthesis and construction of both latent and quantized unseen tokens; 
+
+
+focused attention-threads that select task-relevant token subsets from a keyed, addressable token bank; and Minkowski SpaceTime Encoding Rotors (MonSTERs), a 4D generalization of RoPE that unifies 1D–4D positional structure in a single Lorentz-invariant scheme.
 
 Distinct from multimodal systems, which typically orchestrate separate architectures or tokenization schemes for different data modalities (e.g., 1D text, 2D images, etc), these architectures employ a single, unified token and encoding interface that applies uniformly across dimensionalities, and therefore are deserving of their own name. Accordingly, we call them MonSTER Models.
 
 
 
-
+a type/value token scheme that supports open-vocabulary synthesis of typed, value-parameterized, and latent tokens.
 
 we refer to these architectures as MonSTER Models. Rather than stitching together modality-specific components, MonSTER Models employ a single, unified token and encoding interface that applies uniformly across dimensionalities.
 
