@@ -10,6 +10,7 @@ from pathlib import Path
 
 
 STEP_ORDER = [
+    "precheck",
     "download_pdfs",
     "extract",
     "initial_classification",
@@ -65,6 +66,11 @@ def ensure_path(path, label):
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Run the NEW pipeline: download, extract, classify, transfer."
+    )
+    parser.add_argument(
+        "--skip-precheck",
+        action="store_true",
+        help="Skip precheck.py.",
     )
     parser.add_argument(
         "--skip-download",
@@ -140,18 +146,22 @@ def main():
     runner_script = (
         repo_root / "RUNNERS" / "initial-classification" / "script-initial-classification.py"
     )
+    precheck_script = scripts_dir / "precheck.py"
 
     csv_path = new_root / "NEW.csv"
     downloads_dir = new_root / "Downloads"
     markdown_dir = new_root / "Markdown"
+    bib_csv_path = repo_root / "BIBLIOTHEQUE" / "BIBLIOTHEQUE.csv"
     pipeline_log = scripts_dir / "pipeline.log"
 
     try:
         ensure_path(download_script, "download script")
+        ensure_path(precheck_script, "precheck script")
         ensure_path(extract_script, "extract script")
         ensure_path(transfer_script, "transfer script")
         ensure_path(runner_script, "classification runner")
         ensure_path(csv_path, "NEW.csv")
+        ensure_path(bib_csv_path, "BIBLIOTHEQUE.csv")
         ensure_path(downloads_dir, "Downloads dir")
         ensure_path(markdown_dir, "Markdown dir")
     except FileNotFoundError as exc:
@@ -178,6 +188,19 @@ def main():
     if resume_from:
         resume_index = steps.index(resume_from)
         steps = steps[resume_index:]
+
+    if "precheck" in steps and not args.skip_precheck:
+        ok = run_step(
+            "precheck",
+            [sys.executable, str(precheck_script)],
+            cwd,
+            env,
+            args.continue_on_error,
+            pipeline_log,
+        )
+        all_ok = all_ok and ok
+    elif "precheck" in steps and args.skip_precheck:
+        log_event(pipeline_log, "precheck", "skipped", "reason=flag")
 
     if "download_pdfs" in steps and not args.skip_download:
         ok = run_step(
