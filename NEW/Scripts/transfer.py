@@ -151,6 +151,24 @@ def rows_equivalent(existing, target):
     return True
 
 
+def sort_bibliotheque_rows(rows):
+    def sort_key(row):
+        year_raw = (row.get("year") or "").strip()
+        try:
+            year_val = int(year_raw)
+        except ValueError:
+            year_val = 9999
+        class_raw = (row.get("class_id") or "").strip()
+        try:
+            class_val = int(class_raw)
+        except ValueError:
+            class_val = 999
+        title_val = (row.get("title") or "").strip().lower()
+        return (year_val, class_val, title_val)
+
+    return sorted(rows, key=sort_key)
+
+
 def write_csv_atomic(path, fieldnames, rows):
     path = Path(path)
     with tempfile.NamedTemporaryFile(
@@ -355,6 +373,14 @@ def main():
         except Exception as exc:
             print(f"Failed to update NEW.csv: {exc}")
             return 1
+
+    try:
+        updated_bib_rows = bib_rows + rows_to_append
+        sorted_bib_rows = sort_bibliotheque_rows(updated_bib_rows)
+        write_csv_atomic(bib_csv_path, bib_fields, sorted_bib_rows)
+    except Exception as exc:
+        print(f"Failed to sort BIBLIOTHEQUE.csv: {exc}")
+        return 1
 
     print(f"Transferred {len(moved_indices)} folders into BIBLIOTHEQUE.")
     if moved_indices and len(moved_indices) != len(actions):
