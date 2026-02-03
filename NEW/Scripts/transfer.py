@@ -193,7 +193,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    repo_root = Path(__file__).resolve().parent.parent
+    repo_root = Path(__file__).resolve().parents[2]
     new_root = repo_root / "NEW"
     new_markdown = new_root / "Markdown"
     new_csv_path = new_root / "NEW.csv"

@@ -5,7 +5,7 @@ Quick reference for what lives here and how it is organized.
 ## Top level
 - `BIBLIOTHEQUE.csv` is the master index of papers and their classification.
 - `00 - Class.md` documents the class criteria and the code map used in the CSV.
-- `download_pdfs.sh` is a helper script for fetching PDFs (see the script for details).
+- `NEW/Scripts/download_pdfs.sh` is a helper script for fetching PDFs (see the script for details).
 - `01_POS-ENCDR/` Positional Encoding Improvement Proposal (class_id 1).
 - `02_XFORM-DIM/` Increasing Transformer Dimensions (class_id 2).
 - `03_COMP-REAS/` Computation and Reasoning Mechanism Proposal (class_id 3).
