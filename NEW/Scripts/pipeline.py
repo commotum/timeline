@@ -256,12 +256,17 @@ def ingest_local(local_dir, local_csv, downloads_dir, new_csv, log_path):
         pdf.rename(dest)
         moved += 1
 
-    if appended:
-        try:
-            write_csv_atomic(new_csv, new_fields, new_rows)
-        except Exception as exc:
-            log_event(log_path, "ingest_local", "failed", f"new_csv_write_error={exc}")
-            return False
+    try:
+        write_csv_atomic(new_csv, new_fields, new_rows)
+    except Exception as exc:
+        log_event(log_path, "ingest_local", "failed", f"new_csv_write_error={exc}")
+        return False
+
+    try:
+        write_csv_atomic(local_csv, local_fields, [])
+    except Exception as exc:
+        log_event(log_path, "ingest_local", "failed", f"local_csv_clear_error={exc}")
+        return False
 
     log_event(
         log_path,
