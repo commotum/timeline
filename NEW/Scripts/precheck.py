@@ -322,9 +322,12 @@ def main():
 
     if downloads_dir.exists():
         expected = {sanitize_title((row.get("title") or "").strip()) for row in new_rows}
+        ignore_files = {"download_new.log"}
         extra_files = []
         for item in downloads_dir.iterdir():
             if not item.is_file():
+                continue
+            if item.name.startswith(".") or item.name in ignore_files:
                 continue
             if item.stem not in expected:
                 extra_files.append(item.name)

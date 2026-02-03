@@ -82,6 +82,7 @@ def run_cmd(cmd, cwd: Path, extra_env=None):
     env = os.environ.copy()
     if extra_env:
         env.update(extra_env)
+    env.pop("VIRTUAL_ENV", None)
     subprocess.run(cmd, cwd=str(cwd), env=env, check=True)
 
 
