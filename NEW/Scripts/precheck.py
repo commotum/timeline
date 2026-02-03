@@ -56,7 +56,7 @@ def main():
     args = parse_args()
 
     script_dir = Path(__file__).resolve().parent
-    repo_root = script_dir.parents[2]
+    repo_root = script_dir.parents[1]
     new_root = repo_root / "NEW"
     bib_root = repo_root / "BIBLIOTHEQUE"
 
