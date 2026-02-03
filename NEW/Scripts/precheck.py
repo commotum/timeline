@@ -38,6 +38,31 @@ def write_duplicates(path, rows):
             writer.writerow(row)
 
 
+def write_csv_atomic(path, fieldnames, rows):
+    path = Path(path)
+    temp_path = path.with_suffix(path.suffix + ".tmp")
+    with temp_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+    temp_path.replace(path)
+
+
+def strip_url_suffix(value):
+    cleaned = value.strip()
+    if "?" in cleaned:
+        cleaned = cleaned.split("?", 1)[0]
+    if "#" in cleaned:
+        cleaned = cleaned.split("#", 1)[0]
+    return cleaned
+
+
+def has_pdf_extension(value):
+    cleaned = strip_url_suffix(value)
+    return cleaned.lower().endswith(".pdf")
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Precheck NEW.csv for duplicates already in BIBLIOTHEQUE.csv."
@@ -72,10 +97,40 @@ def main():
         return 1
 
     try:
-        new_rows = load_rows(new_csv, ["year", "title", "url"])
+        with new_csv.open("r", encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader(handle)
+            new_fields = reader.fieldnames or []
+            if not new_fields:
+                raise ValueError(f"NEW.csv missing header ({new_csv})")
+            missing = [f for f in ("year", "title", "url") if f not in new_fields]
+            if missing:
+                raise ValueError(
+                    f"NEW.csv missing columns: {', '.join(missing)} ({new_csv})"
+                )
+            new_rows = list(reader)
+    except Exception as exc:
+        print(f"[precheck] failed to read NEW.csv: {exc}")
+        return 1
+
+    invalid_urls = []
+    for idx, row in enumerate(new_rows, start=2):
+        url = (row.get("url") or "").strip()
+        if not url:
+            continue
+        if not has_pdf_extension(url):
+            title = (row.get("title") or "").strip()
+            invalid_urls.append((idx, title, url))
+
+    if invalid_urls:
+        print("[precheck] NEW.csv entries without .pdf URL extension:")
+        for line_no, title, url in invalid_urls:
+            print(f"  - line {line_no}: {title} | {url}")
+        return 1
+
+    try:
         bib_rows = load_rows(bib_csv, ["year", "title", "url"])
     except Exception as exc:
-        print(f"[precheck] failed to read CSVs: {exc}")
+        print(f"[precheck] failed to read BIBLIOTHEQUE.csv: {exc}")
         return 1
 
     by_url, by_title = index_bib(bib_rows)
@@ -83,6 +138,7 @@ def main():
     duplicates = []
     seen_pairs = set()
     duplicate_count = 0
+    duplicate_new_indices = set()
 
     for new_idx, new_row in enumerate(new_rows):
         new_url = (new_row.get("url") or "").strip()
@@ -107,6 +163,7 @@ def main():
                     "url": new_url,
                 }
             )
+            duplicate_new_indices.add(new_idx)
             bib_row = bib_rows[bib_idx]
             duplicates.append(
                 {
@@ -123,6 +180,17 @@ def main():
         print(
             f"[precheck] found {duplicate_count} duplicate match(es); wrote {out_csv}"
         )
+        remaining_rows = [
+            row for idx, row in enumerate(new_rows) if idx not in duplicate_new_indices
+        ]
+        try:
+            write_csv_atomic(new_csv, new_fields, remaining_rows)
+            print(
+                f"[precheck] removed {len(duplicate_new_indices)} duplicate NEW row(s) from {new_csv}"
+            )
+        except Exception as exc:
+            print(f"[precheck] failed to update NEW.csv: {exc}")
+            return 1
     else:
         if out_csv.exists():
             out_csv.unlink()
