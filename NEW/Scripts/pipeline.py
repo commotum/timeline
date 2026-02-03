@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import csv
 import datetime
 import os
 import re
@@ -12,6 +13,7 @@ from pathlib import Path
 STEP_ORDER = [
     "precheck",
     "download_pdfs",
+    "ingest_local",
     "extract",
     "initial_classification",
     "transfer",
@@ -78,6 +80,11 @@ def parse_args():
         help="Skip download_pdfs.sh.",
     )
     parser.add_argument(
+        "--skip-ingest-local",
+        action="store_true",
+        help="Skip ingesting NEW/Local PDFs and LOCAL.csv.",
+    )
+    parser.add_argument(
         "--skip-extract",
         action="store_true",
         help="Skip extract.py.",
@@ -132,6 +139,139 @@ def detect_resume_step(log_path, steps):
     return None
 
 
+def sanitize_title(value):
+    sanitized = value
+    for ch in ["\\", "/", ":", "*", "?", "\"", "<", ">", "|"]:
+        sanitized = sanitized.replace(ch, "-")
+    sanitized = re.sub(r"\s+", " ", sanitized).strip()
+    return sanitized
+
+
+def load_csv_rows(path):
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        fieldnames = reader.fieldnames or []
+        rows = list(reader)
+    return fieldnames, rows
+
+
+def write_csv_atomic(path, fieldnames, rows):
+    temp_path = path.with_suffix(path.suffix + ".tmp")
+    with temp_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+    temp_path.replace(path)
+
+
+def ingest_local(local_dir, local_csv, downloads_dir, new_csv, log_path):
+    if not local_dir.exists() or not local_csv.exists():
+        log_event(log_path, "ingest_local", "skipped", "reason=missing_local")
+        return True
+
+    try:
+        local_fields, local_rows = load_csv_rows(local_csv)
+    except Exception as exc:
+        log_event(log_path, "ingest_local", "failed", f"local_csv_error={exc}")
+        return False
+
+    if not local_rows:
+        log_event(log_path, "ingest_local", "skipped", "reason=empty_local_csv")
+        return True
+
+    try:
+        new_fields, new_rows = load_csv_rows(new_csv)
+    except Exception as exc:
+        log_event(log_path, "ingest_local", "failed", f"new_csv_error={exc}")
+        return False
+
+    if not new_fields:
+        log_event(log_path, "ingest_local", "failed", "new_csv_missing_header")
+        return False
+
+    required = {"year", "title", "url"}
+    if not required.issubset(set(local_fields)):
+        log_event(log_path, "ingest_local", "failed", "local_csv_missing_columns")
+        return False
+
+    downloads_dir.mkdir(parents=True, exist_ok=True)
+
+    existing_titles = {
+        (row.get("title") or "").strip().lower() for row in new_rows if row.get("title")
+    }
+    existing_urls = {
+        (row.get("url") or "").strip().lower() for row in new_rows if row.get("url")
+    }
+
+    pdf_map = {}
+    pdf_dupes = set()
+    for item in local_dir.iterdir():
+        if not item.is_file() or item.suffix.lower() != ".pdf":
+            continue
+        key = item.stem.lower()
+        if key in pdf_map:
+            pdf_dupes.add(key)
+        else:
+            pdf_map[key] = item
+
+    if pdf_dupes:
+        log_event(log_path, "ingest_local", "failed", "duplicate_local_pdfs")
+        return False
+
+    appended = 0
+    moved = 0
+    skipped_moves = 0
+    missing_files = 0
+
+    for row in local_rows:
+        title = (row.get("title") or "").strip()
+        url = (row.get("url") or "").strip()
+        year = (row.get("year") or "").strip()
+        if not title:
+            continue
+        title_key = title.lower()
+        url_key = url.lower() if url else ""
+
+        if title_key in existing_titles or (url_key and url_key in existing_urls):
+            existing_titles.add(title_key)
+            if url_key:
+                existing_urls.add(url_key)
+        else:
+            new_rows.append({"year": year, "title": title, "url": url})
+            appended += 1
+            existing_titles.add(title_key)
+            if url_key:
+                existing_urls.add(url_key)
+
+        expected_name = sanitize_title(title)
+        pdf = pdf_map.get(expected_name.lower())
+        if not pdf:
+            missing_files += 1
+            continue
+        dest = downloads_dir / f"{expected_name}.pdf"
+        if dest.exists():
+            skipped_moves += 1
+            continue
+        pdf.rename(dest)
+        moved += 1
+
+    if appended:
+        try:
+            write_csv_atomic(new_csv, new_fields, new_rows)
+        except Exception as exc:
+            log_event(log_path, "ingest_local", "failed", f"new_csv_write_error={exc}")
+            return False
+
+    log_event(
+        log_path,
+        "ingest_local",
+        "done",
+        f"appended={appended} moved={moved} skipped_moves={skipped_moves} missing_files={missing_files}",
+    )
+    return True
+
+
 def main():
     args = parse_args()
 
@@ -151,6 +291,8 @@ def main():
     csv_path = new_root / "NEW.csv"
     downloads_dir = new_root / "Downloads"
     markdown_dir = new_root / "Markdown"
+    local_dir = new_root / "Local"
+    local_csv = local_dir / "LOCAL.csv"
     bib_csv_path = repo_root / "BIBLIOTHEQUE" / "BIBLIOTHEQUE.csv"
     pipeline_log = scripts_dir / "pipeline.log"
 
@@ -214,6 +356,18 @@ def main():
         all_ok = all_ok and ok
     elif "download_pdfs" in steps and args.skip_download:
         log_event(pipeline_log, "download_pdfs", "skipped", "reason=flag")
+
+    if "ingest_local" in steps and not args.skip_ingest_local:
+        ok = ingest_local(
+            local_dir,
+            local_csv,
+            downloads_dir,
+            csv_path,
+            pipeline_log,
+        )
+        all_ok = all_ok and ok
+    elif "ingest_local" in steps and args.skip_ingest_local:
+        log_event(pipeline_log, "ingest_local", "skipped", "reason=flag")
 
     if "extract" in steps and not args.skip_extract:
         ok = run_step(
