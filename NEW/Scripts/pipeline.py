@@ -17,6 +17,8 @@ STEP_ORDER = [
     "extract",
     "initial_classification",
     "transfer",
+    "extending_dimensions",
+    "task_model_ratio",
 ]
 
 
@@ -98,6 +100,16 @@ def parse_args():
         "--skip-transfer",
         action="store_true",
         help="Skip transfer.py.",
+    )
+    parser.add_argument(
+        "--skip-extending-dimensions",
+        action="store_true",
+        help="Skip the extending-dimensions runner.",
+    )
+    parser.add_argument(
+        "--skip-task-model-ratio",
+        action="store_true",
+        help="Skip the task-model-ratio runner.",
     )
     parser.add_argument(
         "--dry-run",
@@ -292,6 +304,12 @@ def main():
         repo_root / "RUNNERS" / "initial-classification" / "script-initial-classification.py"
     )
     precheck_script = scripts_dir / "precheck.py"
+    extending_script = (
+        repo_root / "RUNNERS" / "extending-dimensions" / "script-extending-dimensions.py"
+    )
+    task_ratio_script = (
+        repo_root / "RUNNERS" / "task-model-ratio" / "script-task-model-ratio.py"
+    )
 
     csv_path = new_root / "NEW.csv"
     downloads_dir = new_root / "Downloads"
@@ -307,6 +325,8 @@ def main():
         ensure_path(extract_script, "extract script")
         ensure_path(transfer_script, "transfer script")
         ensure_path(runner_script, "classification runner")
+        ensure_path(extending_script, "extending dimensions runner")
+        ensure_path(task_ratio_script, "task model ratio runner")
         ensure_path(csv_path, "NEW.csv")
         ensure_path(bib_csv_path, "BIBLIOTHEQUE.csv")
         ensure_path(downloads_dir, "Downloads dir")
@@ -425,6 +445,38 @@ def main():
         all_ok = all_ok and ok
     elif "transfer" in steps and args.skip_transfer:
         log_event(pipeline_log, "transfer", "skipped", "reason=flag")
+
+    if "extending_dimensions" in steps and not args.skip_extending_dimensions:
+        cmd = ["uv", "run", "python", str(extending_script)]
+        if args.dry_run:
+            cmd.append("--dry-run")
+        ok = run_step(
+            "extending_dimensions",
+            cmd,
+            cwd,
+            env,
+            args.continue_on_error,
+            pipeline_log,
+        )
+        all_ok = all_ok and ok
+    elif "extending_dimensions" in steps and args.skip_extending_dimensions:
+        log_event(pipeline_log, "extending_dimensions", "skipped", "reason=flag")
+
+    if "task_model_ratio" in steps and not args.skip_task_model_ratio:
+        cmd = ["uv", "run", "python", str(task_ratio_script)]
+        if args.dry_run:
+            cmd.append("--dry-run")
+        ok = run_step(
+            "task_model_ratio",
+            cmd,
+            cwd,
+            env,
+            args.continue_on_error,
+            pipeline_log,
+        )
+        all_ok = all_ok and ok
+    elif "task_model_ratio" in steps and args.skip_task_model_ratio:
+        log_event(pipeline_log, "task_model_ratio", "skipped", "reason=flag")
 
     if not all_ok:
         log_event(pipeline_log, "pipeline", "completed", "status=errors")
