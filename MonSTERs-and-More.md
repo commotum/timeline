@@ -1,4 +1,6 @@
-# MonSTER Models are Continual Multitask Learners
+# MonSTER Models are Domain-Agnostic Multitask Learners
+
+## Abstract 1
 
 At a high level, the baseline transformer interface assumes a static, fixed token vocabulary, a static, fixed attention-window, and a static, fixed set of positional encodings implicitly mapped to their tokens by index. This rigidity eases implementation, but curtails the dynamic responsiveness necessary for continual learning.
 
@@ -8,10 +10,21 @@ Distinct from multimodal systems, which typically orchestrate separate architect
 
 Together, these changes turn the transformer from a static, task-bounded sequence model into a continually extensible learner: new skills can be *named* (via open‑vocabulary token synthesis), *stored and revised* (via a keyed token bank), and *selectively deployed* (via attention‑threads), all while a single MonSTER encoding provides a consistent notion of structure across sequences, grids, volumes, and trajectories. In this regime, tasks that are usually siloed into separate model families—ARC‑AGI-style grid reasoning, program synthesis, Sudoku, Rubik’s Cube manipulation, and Atari control—can be treated as different projections of the same interface, enabling transfer when structure overlaps and isolation when it does not. Rather than “one new model per domain,” MonSTER Models are built to accumulate competencies over time under a shared representational contract, retaining prior skills while incorporating new ones across both task diversity and dimensionality.
 
+## Abstract 2
 
+Machine learning systems are typically designed around domain-specific input representations and positional encodings, resulting in models that excel within narrow regimes but fail to generalize coherently across domains with different dimensional structure. We demonstrate that MonSTER models — Transformers equipped with a unified spacetime positional encoding — learn to perform a wide range of tasks across text, vision, spatial reasoning, and embodied environments without task-specific architectures or domain-specific inductive biases. When trained on a sufficiently diverse corpus of naturally occurring spatiotemporal data, MonSTER models acquire competencies including language understanding and generation, visual recognition, multi-step spatial reasoning, game playing, and abstract problem solving in a zero-shot setting.
 
+The capacity of the model and the expressiveness of its positional representation are essential to successful domain-agnostic multitask learning, with performance improving predictably as both are scaled. Our largest model achieves state-of-the-art results across a broad suite of benchmarks spanning linguistic, visual, and spatiotemporal reasoning tasks, including near-ceiling performance on the ARC-AGI evaluation, while remaining a single unified model trained under a common objective. Qualitative analysis reveals coherent internal representations of space, time, and causality that support flexible generalization across domains previously treated as separate problem classes.
 
+These results suggest that imposing a shared geometric structure over positional information provides a viable path toward general-purpose learning systems that infer tasks from their naturally occurring demonstrations, independent of domain or modality.
 
+## Abstract 3
+
+Machine learning systems for language, vision, and control are typically approached using domain-specific architectures and positional encodings trained on task-specific datasets. We demonstrate that MonSTER models begin to learn a wide range of tasks across domains without any domain-specific supervision when trained using a unified spacetime positional encoding on a sufficiently diverse corpus of naturally occurring data. When conditioned on appropriate task contexts, MonSTER models perform language understanding and generation, visual recognition, spatial and spatiotemporal reasoning, game playing, and abstract problem solving in a zero-shot setting.
+
+The capacity of the model and the structure of the positional encoding are essential to successful domain-agnostic multitask learning, and increasing either improves performance predictably across tasks. Our largest model is a single Transformer trained under a common objective that achieves state-of-the-art results on a broad suite of benchmarks spanning linguistic, visual, and spatiotemporal domains, including near-ceiling performance on the ARC-AGI evaluation, while still underfitting the full diversity of its training data. Samples from the model reflect these improvements and exhibit coherent reasoning over space, time, and causality.
+
+These findings suggest a promising path toward building general-purpose learning systems that learn to perform tasks from their naturally occurring demonstrations, independent of domain or modality.
 
 
 
