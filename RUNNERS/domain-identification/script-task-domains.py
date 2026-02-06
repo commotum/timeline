@@ -8,6 +8,8 @@ PROMPT_PATH = "prompt-task-domains.md"
 REFERENCE_PATH = "reference-task-classification.md"
 OUTPUT_MD_FILENAME = "TASK-DOMAINS.md"
 OUTPUT_CSV_FILENAME = "TASK-DOMAINS.csv"
+EXTENDING_DIMENSIONS_FILENAME = "EXTENDING_DIMENSIONS.md"
+TASK_MODEL_RATIO_FILENAME = "TASK_MODEL_RATIO.md"
 CODEX_CLI_CMD = "codex"
 DRY_RUN = False
 OVERWRITE_MD = False
@@ -156,6 +158,8 @@ def build_prompt(
     file_stem,
     output_folder,
     reference_abs_path,
+    extending_dimensions_abs_path,
+    task_model_ratio_abs_path,
 ):
     prompt = template
     replacements = {
@@ -165,6 +169,10 @@ def build_prompt(
         "[FILE_STEM]": file_stem,
         "[OUTPUT_FOLDER]": quote_path(output_folder),
         "[REFERENCE_ABS_PATH]": quote_path(reference_abs_path),
+        "[EXTENDING_DIMENSIONS_MD_ABS_PATH]": quote_path(
+            extending_dimensions_abs_path
+        ),
+        "[TASK_MODEL_RATIO_MD_ABS_PATH]": quote_path(task_model_ratio_abs_path),
     }
     for key, value in replacements.items():
         prompt = prompt.replace(key, value)
@@ -178,7 +186,14 @@ def safe_mtime(path):
         return 0
 
 
-def list_paper_entries(target_folders, output_md_name, output_csv_name, log_path):
+def list_paper_entries(
+    target_folders,
+    output_md_name,
+    output_csv_name,
+    extending_dimensions_name,
+    task_model_ratio_name,
+    log_path,
+):
     entries = []
     for class_folder in target_folders:
         if not os.path.isdir(class_folder):
@@ -198,6 +213,10 @@ def list_paper_entries(target_folders, output_md_name, output_csv_name, log_path
                 continue
             output_md = os.path.join(paper_folder, output_md_name)
             output_csv = os.path.join(paper_folder, output_csv_name)
+            extending_dimensions_md = os.path.join(
+                paper_folder, extending_dimensions_name
+            )
+            task_model_ratio_md = os.path.join(paper_folder, task_model_ratio_name)
             entries.append(
                 {
                     "name": file_stem,
@@ -205,6 +224,10 @@ def list_paper_entries(target_folders, output_md_name, output_csv_name, log_path
                     "source_md": os.path.abspath(source_md),
                     "output_md": os.path.abspath(output_md),
                     "output_csv": os.path.abspath(output_csv),
+                    "extending_dimensions_md": os.path.abspath(
+                        extending_dimensions_md
+                    ),
+                    "task_model_ratio_md": os.path.abspath(task_model_ratio_md),
                 }
             )
     return entries
@@ -556,7 +579,12 @@ def main():
     completed = state.get("completed", {})
 
     entries = list_paper_entries(
-        resolved_folders, output_md_name, output_csv_name, log_path
+        resolved_folders,
+        output_md_name,
+        output_csv_name,
+        EXTENDING_DIMENSIONS_FILENAME,
+        TASK_MODEL_RATIO_FILENAME,
+        log_path,
     )
     queue = sort_queue(entries, sort_mode, log_path)
 
@@ -595,6 +623,8 @@ def main():
             source_md_abs_path = entry["source_md"]
             output_md_abs_path = entry["output_md"]
             output_csv_abs_path = entry["output_csv"]
+            extending_dimensions_abs_path = entry["extending_dimensions_md"]
+            task_model_ratio_abs_path = entry["task_model_ratio_md"]
 
             log_event(
                 log_path,
@@ -659,6 +689,8 @@ def main():
                 file_stem,
                 entry_folder,
                 reference_path,
+                extending_dimensions_abs_path,
+                task_model_ratio_abs_path,
             )
             log_event(
                 log_path,
@@ -787,14 +819,16 @@ def main():
                             "Codex CLI not found. Paste this prompt into Codex manually:",
                         )
                         prompt_final = build_prompt(
-                            prompt_template,
-                            source_md_abs_path,
-                            output_md_abs_path,
-                            output_csv_abs_path,
-                            file_stem,
-                            os.path.dirname(output_md_abs_path),
-                            reference_path,
-                        )
+                        prompt_template,
+                        source_md_abs_path,
+                        output_md_abs_path,
+                        output_csv_abs_path,
+                        file_stem,
+                        os.path.dirname(output_md_abs_path),
+                        reference_path,
+                        extending_dimensions_abs_path,
+                        task_model_ratio_abs_path,
+                    )
                         progress_write(progress, prompt_final)
                         log_event(
                             log_path,
