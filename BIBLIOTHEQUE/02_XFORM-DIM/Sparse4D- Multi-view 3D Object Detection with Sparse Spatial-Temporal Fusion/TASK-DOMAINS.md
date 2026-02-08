@@ -1,0 +1,25 @@
+# Sparse4D: Multi-view 3D Object Detection with Sparse Spatial-Temporal Fusion (Year not specified in the paper)
+Source: Sparse4D- Multi-view 3D Object Detection with Sparse Spatial-Temporal Fusion.md
+
+## Task Table
+| Task | Input | In Dimension | In Dynamics | Attention Dynamic | State Dynamic | Output | Out Dimension | Out Dynamics |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 3D object detection | Multi-view camera images over recent T frames | 3D (x, y, z) or (x, y, t) (inferred) | Capped (inferred) | Dynamic (inferred) | Constructed (inferred) | 3D bounding boxes with classification confidences | 3D (x, y, z) or (x, y, t) (inferred) | Capped (inferred) |
+| 3D multi-object tracking | Historical trajectories and current objects (tracking-by-detection) | 4D (x, y, z, t) (inferred) | Capped (inferred) | Dynamic (inferred) | Constructed (inferred) | Associated object trajectories and track identities | 4D (x, y, z, t) (inferred) | Capped (inferred) |
+
+## Summary
+The paper covers two tasks in the same modality family: multi-view 3D object detection and an extension to 3D multi-object tracking. Inputs are multi-view image streams with temporal context (recent T frames), and outputs are 3D detections plus temporally associated tracks. Based on the described sparse 4D keypoint sampling, hierarchical fusion, and tracking-by-detection matching, the task profile is spatiotemporal with capped interfaces, dynamic attention behavior, and constructed state (all inferred from the methodology text).
+
+## Evidence
+### Task: 3D object detection
+- "Bird-eye-view (BEV) based methods have made great progress recently in multi-view 3D detection task." (Section Abstract)
+- "Figure 2. Overall architecture of Sparse4D. Taking multi-view images as input, we first extract multi-timestamp/view/scale feature maps with the image feature encoder." (Section 3.1, Figure 2 caption)
+- "Given N view input images at time t, the image encoder extracts multi-view multi-scale feature maps as  $I_t = \{I_{t,n,s} | 1 \le s \le S, 1 \le n \le N\}$ . To exploit temporal context, we extract image feature of recent T frames as image feature queue  $I = \{I_t\}_{t=t_s}^{t_0}$ , where  $t_s = t_0 - (T-1)$ ." (Section 3.1. Overall Framework)
+- "Then, the decoder predicts detection results in an iteratively refinement fashion, which contains a series of refinement modules and a classification head for predicting final classification confidences in the end. Each refinement module takes image feature queue I, 3D anchor boxes  $B \in \mathbb{R}^{M \times 11}$  and corresponding instance features  $F \in \mathbb{R}^{M \times C}$  as inputs, then outputs refined 3D boxes with updated instance features." (Section 3.1. Overall Framework)
+- Inference: In Dimension/Out Dimension are marked 3D because the method consumes time-indexed multi-view images and outputs 3D anchors/boxes; In/Out Dynamics are marked capped because the interface uses bounded structures such as recent T frames and M anchors; Attention Dynamic is marked dynamic because sampling/fusion locations and weights are instance-conditioned; State Dynamic is marked constructed because iterative refinement maintains and updates anchor/instance features. (Supported by Section 3.1 and Section 3.2 text above.)
+
+### Task: 3D multi-object tracking
+- "On the challenging benchmark nuScenes dataset, Sparse4D outperforms all existing sparse based algorithms and most BEV-based algorithms on 3D detection task, and also performs well on tracking task." (Section 1. Introduction)
+- "For the 3D detection task, evaluation metrics include mean Average Precision (mAP), mean Average Error of Translation (mATE), Scale (mASE), Orientation (mAOE), Velocity (mAVE), Attribute (mAAE) and nuScenes Detection Score (NDS), where NDS is a weighted average of other metrics. For the object tracking task, Average Multi-Object Tracking Accuracy (AMOTA), Average Multi-Object Tracking Precision (AMOTP) and Recall are the three main evaluation metrics." (Section 4.1. Datasets and Metrics)
+- "Based on the tracking-by-detection framework [6], Sparse4D is easily extended to a tracker. We use the instance features and bounding boxes output by the last refinement module to extract identity features, and use a lightweight sub-network to estimate the correlation matrix between historical trajectories and current objects. Then, the matching relationship between the historical trajectory and the current object will be obtained using the Hungarian matching algorithm." (Section 4.5. Extend to 3D Object Tracking)
+- Inference: In/Out Dimension are marked 4D because the tracker explicitly matches historical trajectories with current objects over time; In/Out Dynamics are marked capped because tracking operates on bounded current detections/trajectories per frame; Attention Dynamic is marked dynamic because correlations and Hungarian matching are computed at runtime; State Dynamic is marked constructed because historical trajectories and identity features are maintained as task state. (Supported by Section 4.5 text above.)

@@ -1,0 +1,19 @@
+# ScatterFormer: Efficient Voxel Transformer with Scattered Linear Attention (Year not specified in the paper)
+Source: ScatterFormer- Efficient Voxel Transformer with Scattered Linear Attention.md
+
+## Task Table
+| Task | Input | In Dimension | In Dynamics | Attention Dynamic | State Dynamic | Output | Out Dimension | Out Dynamics |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 3D object detection | Single-frame or multi-frame LiDAR point clouds (voxelized into windowed voxel sequences) | 3D (x, y, z); 4D (x, y, z, t) (inferred) | Capped (inferred) | Static (inferred) | Direct (inferred) | 3D bounding-box detections | 3D (x, y, z) | Capped (inferred) |
+
+## Summary
+The paper covers a single task: 3D object detection from LiDAR point clouds. Inputs are primarily 3D spatial point clouds, with additional multi-frame evaluations indicating a spatiotemporal 4D input setting (inferred) under the same detection intent. The voxelized/windowed processing is variable-length per window but bounded by predefined voxel and window settings, supporting Capped dynamics (inferred). The attention is Static (inferred) and the state behavior is Direct (inferred) based on the feed-forward perception-to-detection pipeline.
+
+## Evidence
+### Task: 3D object detection
+- "Keywords: 3D Object Detection  $\cdot$  Voxel Transformer" (Title/Keywords)
+- "In the field of 3D object detection, the use of point clouds has become increasingly popular, especially for providing accurate and reliable perception results in autonomous systems." (Section 1 Introduction)
+- "It begins with the input point clouds, which are voxelized and transformed into high-dimensional embeddings using a VFE layer [60]." (Section 3 Method)
+- "To complement existing detection heads, ScatterFormer generates dense BEV feature maps from sparse voxel representations by placing them back to their spatial locations and filling the unoccupied positions with zeros." (Section 3.4 Detection Head and Loss)
+- "We introduced ScatterFormer, an innovative architecture designed for 3D object detection using point clouds, specifically targeting the challenges associated with processing sparse and unevenly distributed data from LiDAR sensors." (Section 5 Conclusion)
+- Inference: In Dimension includes 4D (x, y, z, t) (inferred) because the paper reports multi-frame settings for the same detector ("our model achieves 76.0 and 76.7 level 2 mAPH on 3 and 4 frame settings, respectively, outperforming previous multiframe methods by a margin of 1.1."; Section 4.3 Comparison with State-of-the-Arts). In Dynamics is labeled Capped (inferred) because the paper reports variable-length voxel sequences ("the number of features grouped by windows can vary significantly"; Section 1 Introduction) while also fixing voxel and window granularity ("To construct ScatterFormer, we set the voxel size to (0.32m, 0.32m, 0.1875m) for the Waymo dataset and (0.3m, 0.3m, 8m) for the NuScenes dataset. The window sizes  $(S_w, S_h)$  for the two datasets are set to (12, 12) and (20, 20), respectively."; Section 4.2 Implementation Details), indicating bounded variability rather than invariant or unbounded streams. Attention Dynamic is labeled Static (inferred) because SLA "treats the voxels of the entire scene into a single sequence and processes them directly without padding voxels." (Section 1 Introduction), with no described runtime policy that chooses external information sources. State Dynamic is labeled Direct (inferred) because the architecture is a direct perception-to-detection pipeline over current input scenes (Section 3 Method), with no persistent external memory/state described beyond transient internal activations. Out Dynamics is labeled Capped (inferred) because output prediction is produced from dense BEV maps laid out on predefined spatial locations (Section 3.4 Detection Head and Loss), giving bounded output support per scene.
