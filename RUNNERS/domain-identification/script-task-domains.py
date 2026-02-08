@@ -1,6 +1,6 @@
 TARGET_FOLDERS = [
-    "/home/jake/Developer/timeline/BIBLIOTHEQUE/01_POS-ENCDR",
-    # "BIBLIOTHEQUE/02_XFORM-DIM",
+    # "/home/jake/Developer/timeline/BIBLIOTHEQUE/01_POS-ENCDR",
+    "/home/jake/Developer/timeline/BIBLIOTHEQUE/02_XFORM-DIM",
     # "BIBLIOTHEQUE/03_COMP-REAS",
     # "BIBLIOTHEQUE/05_ML-FNDTNS",
 ]
