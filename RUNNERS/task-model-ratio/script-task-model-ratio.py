@@ -1,6 +1,8 @@
 TARGET_FOLDERS = [
     "BIBLIOTHEQUE/01_POS-ENCDR",
     "BIBLIOTHEQUE/02_XFORM-DIM",
+    "/home/jake/Developer/timeline/BIBLIOTHEQUE/03_COMP-REAS",
+    "/home/jake/Developer/timeline/BIBLIOTHEQUE/05_ML-FNDTNS",
 ]
 PROMPT_PATH = "prompt-task-model-ratio.md"
 OUTPUT_FILENAME = "TASK_MODEL_RATIO.md"
