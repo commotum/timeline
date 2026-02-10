@@ -1,0 +1,173 @@
+# Positional Encoding: Uncertain / Low Confidence
+
+Count: 169
+
+- `BIBLIOTHEQUE/03_COMP-REAS/A Machine Learning Approach That Beats Large Rubik's Cubes` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/A Neurosymbolic Approach to Abstraction and Reasoning` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Adaptive Attention Span in Transformers` | pe_label=relative_position | confidence=low | evidence=44:where $\mathbf{W}_k$ and $\mathbf{W}_q$ are the "key" and "query" matrices, and $\mathbf{p}_{t-r}$ is the relative position embedding. The attention weights ...
+- `BIBLIOTHEQUE/03_COMP-REAS/Adaptive Patch Selection for ViTs via Reinforcement Learning` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/ARC-AGI Without Pretraining (CompressARC)` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/ARC-NCA- Towards Developmental Solutions to the Abstraction and Reasoning Corpus` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/ArcMemo- Abstract Reasoning Composition with Lifelong LLM Memory` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Beyond Brute Force- A Neuro-Symbolic Architecture for Compositional Reasoning in ARC-AGI-2` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Combining Induction and Transduction for Abstract Reasoning` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/ConceptMoE- Adaptive Token-to-Concept Compression for Implicit Compute Allocation` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/DeeBERT- Dynamic Early Exiting for Accelerating BERT Inference` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/DeepSeek-R1- Incentivizing Reasoning Capability in LLMs via Reinforcement Learning` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Depth-Adaptive Transformers` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/DiffSAT- Differential MaxSAT Layer for SAT Solving` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Don't throw the baby out with the bathwater- How and why deep learning for ARC` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Efficient Evolutionary Program Synthesis` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/End-to-End Test-Time Training for Long Context` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Evolutionary Test-Time Compute` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Fixed Point Diffusion Models (FPDM)` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Formal Mathematics Statement Curriculum Learning` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/From Parrots to Von Neumanns- How Evolutionary Test-Time Compute Achieved SOTA on ARC-AGI` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Generative Language Modeling for Automated Theorem Proving` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Graph of Thoughts (GoT)` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Hierarchical Reasoning Model (HRM)` | pe_label=rope | confidence=low | evidence=180:Both the low-level and high-level recurrent modules $f_L$ and $f_H$ are implemented using encoderonly Transformer <sup>52</sup> blocks with identical archite...
+- `BIBLIOTHEQUE/03_COMP-REAS/Improving MoE Compute Efficiency by Composing Weight and Data Sparsity` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Language Agent Tree Search (LATS)` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Learning Explanatory Rules from Noisy Data` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/MaskGIT- Masked Generative Image Transformer` | pe_label=learned_absolute | confidence=low | evidence=128:All models in this work have the same configuration: 24 layers, 8 attention heads, 768 embedding dimensions and 3072 hidden dimensions. Our models use learna...
+- `BIBLIOTHEQUE/03_COMP-REAS/MemoryLLM- Plug-n-Play Interpretable Feed-Forward Memory for Transformers` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Nested Learning- The Illusion of Deep Learning Architecture` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Nystromformer- A Nystrom-Based Algorithm for Approximating Self-Attention` | pe_label=other_variant | confidence=low | evidence=37:Linearized Softmax. In (Blanc and Rendle 2018), an adaptive sampled softmax with a kernel based sampling was shown to speed up training. It involves sampling...
+- `BIBLIOTHEQUE/03_COMP-REAS/Olympiad-level formal mathematical reasoning with large language models (AlphaProof)` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Plan-and-Solve Prompting` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/PonderNet- Learning to Ponder` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Precise Zero-Shot Dense Retrieval without Relevance Labels` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Product of Experts with LLMs- Boosting Performance on ARC Is a Matter of Perspective` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/ProofWriter- Generating Implications, Proofs, and Abductive Statements over Natural Language` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/ReAct- Synergizing Reasoning and Acting in Language Models` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/REALM- Retrieval-Augmented Language Model Pre-Training` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Reasoning with Language Model is Planning with World Model (RAP)` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Recursive Language Models` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Reflection System for the Abstraction and Reasoning Corpus` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Reflexion- Language Agents with Verbal Reinforcement Learning` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Relational recurrent neural networks` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Resonant Sparse Geometry Networks` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Rethinking Attention with Performers` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Scaling LLM Test-Time Compute Optimally can be More Effective than Scaling Model Parameters` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Searching Latent Program Spaces` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Self-Consistency Improves Chain of Thought Reasoning in Language Models` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Self-Improving Language Models for Evolutionary Program Synthesis- A Case Study on ARC-AGI (SOAR)` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Self-Refine- Iterative Refinement with Self-Feedback` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/STaR- Self-Taught Reasoner (Bootstrapping Reasoning With Reasoning)` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Synthesizing Visual Concepts as Vision-Language Programs` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Test-Time Learning for Large Language Models (TLM - TTL)` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Test-Time Training on Nearest Neighbors for Large Language Models` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/The Surprising Effectiveness of Test-Time Training for Few-Shot Learning` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Toolformer- Language Models Can Teach Themselves to Use Tools` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Towards Efficient Neurally-Guided Program Induction for ARC-AGI` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Training Iterative Refinement Algorithms with Implicit Differentiation` | pe_label=learned_absolute | confidence=low | evidence=127:**SLATE** SLATE uses a discrete VAE [50] to compress an input image into a grid of discrete tokens. These tokens index into a codebook of latent code-vectors...
+- `BIBLIOTHEQUE/03_COMP-REAS/Tree of Thoughts (ToT)- Deliberate Problem Solving with Large Language Models` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/03_COMP-REAS/Vector Symbolic Algebras for the Abstraction and Reasoning Corpus` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/A Generalist Agent (Gato)` | pe_label=learned_absolute | confidence=low | evidence=62:- Tokens belonging to image patches for any time-step are embedded using a single ResNet (He et al., 2016a) block to obtain a vector per patch. For image pat...
+- `BIBLIOTHEQUE/05_ML-FNDTNS/ALBEF- Align Before Fuse` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Asynchronous Methods for Deep Reinforcement Learning (A3C)` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Attention Is All You Need` | pe_label=sinusoidal_absolute | confidence=low | evidence=269:In Table 3 rows (B), we observe that reducing the attention key size $d_k$ hurts model quality. This suggests that determining compatibility is not easy and ...
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Average-Hard Attention Transformers Are Threshold Circuits` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/BEiT- BERT Pre-Training of Image Transformers` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/BERT- Pre-training of Deep Bidirectional Transformers for Language Understanding` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Better & Faster Large Language Models via Multi-token Prediction` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/BLIP- Bootstrapping Language-Image Pre-training` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/BLIP-2- Bootstrapping Language-Image Pre-training with Frozen Models` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/CamPoint- Boosting Point Cloud Segmentation with Virtual Camera` | pe_label=other_variant | confidence=low | evidence=15:Local features aggregation and global information perception are the fundamental to point cloud segmentation. However, existing works often fall short in eff...
+- `BIBLIOTHEQUE/05_ML-FNDTNS/CoCa- Contrastive Captioners` | pe_label=other_variant | confidence=low | evidence=98:CoCa for Video Action Recognition. We use a simple approach to enable a learned CoCa model for video action recognition tasks. We first take multiple frames ...
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Deep Reinforcement Learning with Double Q-learning (Double DQN)` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Dense Passage Retrieval for Open-Domain Question Answering` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Density Adaptive Attention is All You Need- Robust Parameter-Efficient Fine-Tuning Across Multiple Modalities` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/DiffusionDet- Diffusion Model for Object Detection` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Do Latent Tokens Think- A Causal and Adversarial Analysis of Chain-of-Continuous-Thought` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Efficient Large-Scale Language Model Training on GPU Clusters Using Megatron-LM` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/FlashAttention-2- Faster Attention with Better Parallelism and Work Partitioning` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/From Kepler to Newton- Inductive Biases Guide Learned World Models in Transformers` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Gemini- A Family of Highly Capable Multimodal Models` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Generating Long Sequences with Sparse Transformers` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Generative Verifiers- Reward Modeling as Next-Token Prediction` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/GLIDE- Towards Photorealistic Image Generation and Editing with Text-Guided Diffusion Models` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/GPipe- Efficient Training of Giant Neural Networks using Pipeline Parallelism` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/GPT-4o System Card` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Grokking Modular Arithmetic` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Grokking- Generalization Beyond Overfitting on Small Algorithmic Datasets` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Hierarchical Text-Conditional Image Generation with CLIP Latents` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/High-Resolution Image Synthesis with Latent Diffusion Models` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/How Can Self-Attention Networks Recognize Dyck-n Languages-` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Human-level Control through Deep Reinforcement Learning (DQN)` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Image as a Foreign Language- BEiT Pretraining for All Vision and Vision-Language Tasks` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Improving Image Generation with Better Captions` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Improving Language Understanding by Generative Pre-Training` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/In-context Learning and Induction Heads` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Jacobian-Free Backpropagation for Implicit Networks (JFB)` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Jukebox- A Generative Model for Music` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Language Models are Few-Shot Learners` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Language Models are Unsupervised Multitask Learners` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Learning Modular Exponentiation with Transformers` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Learning to summarize from human feedback` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Learning Transferable Visual Models From Natural Language Supervision` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Let's Verify Step by Step` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Likelihood-Based Reward Designs for General LLM Reasoning` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/LoRA- Low-Rank Adaptation of Large Language Models` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Mano- Restriking Manifold Optimization for LLM Training` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Masked Autoencoders Are Scalable Vision Learners (MAE)` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Mastering diverse control tasks through world models (DreamerV3)` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Megatron-LM- Training Multi-Billion Parameter Language Models Using Model Parallelism` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Mini-ARC- Solving Abstraction and Reasoning Puzzles with Small Transformer Models` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Multi-Game Decision Transformers` | pe_label=learned_absolute | confidence=low | evidence=75:Inspired by the simplicity and effectiveness of transformer architectures for processing images [19], we divide each observation image into a collection of M...
+- `BIBLIOTHEQUE/05_ML-FNDTNS/On neural scaling and the quanta hypothesis` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Open3DIS- Open-Vocabulary 3D Instance Segmentation with 2D Mask Guidance` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/OSCAR- Object-Semantics Aligned Pre-training for Vision-Language Tasks` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Parameter-Efficient Transfer Learning for NLP` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Policy Distillation` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Predictability and Surprise in Large Generative Models` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Prefix-Tuning- Optimizing Continuous Prompts for Generation` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/QLoRA- Efficient Finetuning of Quantized LLMs` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/R-PRM- Reasoning-Driven Process Reward Modeling` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Reinforcement Learning via Self-Distillation` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Release Strategies and the Social Impacts of Language Models` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Repeated Examples Help Learn Arithmetic` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Rethinking Visual Intelligence- Insights from Video Pretraining` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Scaling and evaluating sparse autoencoders` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Scaling Embedding Layers in Language Models` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Scaling Instructable Agents Across Many Simulated Worlds (SIMA)` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Scaling Laws and Interpretability of Learning from Repeated Data` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Scaling Laws for Autoregressive Generative Modeling` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Scaling Laws for Neural Language Models` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Scaling Transformer-Based Novel View Synthesis with Models Token Disentanglement and Synthetic Data` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Scaling Up Vision-Language Learning With Noisy Text Supervision (ALIGN)` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Segment Anything` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/SegPoint- Segment Any Point Cloud via Large Language Model` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Shaping capabilities with token-level data filtering` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Sharpness-Aware Minimization for Efficiently Improving Generalization (SAM)` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Sigmoid Loss for Language Image Pre-Training` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Simultaneous Instance Pooling & Bag Selection for MIL using ViTs` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Spherical Mask- Coarse-to-Fine 3D Point Cloud Instance Segmentation with Spherical Representation` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Stabilizing Equilibrium Models by Jacobian Regularization` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Streaming 4D Panoptic Segmentation via Dual Threads` | pe_label=other_variant | confidence=low | evidence=93:memory update to maintain spatial-temporal information of geometric and motion features, ego-pose future alignment to cancel ego-motion, and dynamic object f...
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Supervising strong learners by amplifying weak experts` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Synthetic pretraining` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/TableLoRA- Low-rank Adaptation on Table Structure Understanding for Large Language Models` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Teaching Transformers Modular Arithmetic at Scale` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Test-time Adaptation of Tiny Recursive Models` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/The Capacity for Moral Self-Correction in Large Language Models` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/The Hyperfitting Phenomenon- Sharpening and Stabilizing LLMs for Open-Ended Text Generation` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/The Lessons of Developing Process Reward Models...` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/The Power of Scale for Parameter-Efficient Prompt Tuning` | pe_label=sinusoidal_absolute | confidence=low | evidence=232:As prompt tuning works in the continuous embedding space rather than the discrete token space, interpreting prompts becomes more difficult. To test the inter...
+- `BIBLIOTHEQUE/05_ML-FNDTNS/The Quantization Model of Neural Scaling` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Toy Models of Superposition` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Training Compute-Optimal Large Language Models (Chinchilla)` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Training data-efficient image transformers & distillation through attention` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Training language models to follow instructions with human feedback (InstructGPT - RLHF pipeline)` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Trust Region Policy Optimization (TRPO)` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/UNITER- Universal Image-Text Representation Learning` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Unsupervised Neural Machine Translation with Generative Language Models Only` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Value-Based Pre-Training with Downstream Feedback` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/VideoCLIP- Contrastive Pretraining for Zero-Shot Video-Text Understanding` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Visual Instruction Tuning` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Vokenization- Improving Language Understanding with Contextualized, Visual-Grounded Supervision` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Weak-to-Strong Generalization- Eliciting Strong Capabilities With Weak Supervision` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/What matters when building vision-language models- (Idefics2)` | pe_label=relative_position | confidence=low | evidence=134:<sup>&</sup>lt;sup>2</sup>Since SigLIP is trained with a fixed resolution, the positional embeddings can be interpreted both as absolute or relative position...
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Zephyr- Direct Distillation of LM Alignment` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/ZeRO- Memory Optimizations Toward Training Trillion Parameter Models` | pe_label=unclear | confidence=low | evidence=
