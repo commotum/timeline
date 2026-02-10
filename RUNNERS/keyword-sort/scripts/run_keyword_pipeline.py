@@ -17,8 +17,9 @@ from typing import Dict, Iterable, List, Set, Tuple
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parent.parent
-OUT_DIR = SCRIPT_DIR
+WORK_DIR = SCRIPT_DIR.parent
+REPO_ROOT = WORK_DIR.parent.parent
+OUT_DIR = WORK_DIR
 
 TARGET_CLASS_DIRS = [
     REPO_ROOT / "BIBLIOTHEQUE" / "03_COMP-REAS",

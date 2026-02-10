@@ -21,8 +21,9 @@ from pathlib import Path
 from typing import Dict, List, Sequence, Tuple
 
 
-ROOT = Path(__file__).resolve().parent
-PIPELINE_PATH = ROOT / "run_keyword_pipeline.py"
+SCRIPT_DIR = Path(__file__).resolve().parent
+ROOT = SCRIPT_DIR.parent
+PIPELINE_PATH = SCRIPT_DIR / "run_keyword_pipeline.py"
 
 STEP1_CSV = ROOT / "transformer_screen_results.csv"
 STEP2_CSV = ROOT / "transformer_task_dimensions_results.csv"
