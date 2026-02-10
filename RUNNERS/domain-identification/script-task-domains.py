@@ -1,8 +1,8 @@
 TARGET_FOLDERS = [
-    # "/home/jake/Developer/timeline/BIBLIOTHEQUE/01_POS-ENCDR",
+    "/home/jake/Developer/timeline/BIBLIOTHEQUE/01_POS-ENCDR",
     "/home/jake/Developer/timeline/BIBLIOTHEQUE/02_XFORM-DIM",
-    # "BIBLIOTHEQUE/03_COMP-REAS",
-    # "BIBLIOTHEQUE/05_ML-FNDTNS",
+    "BIBLIOTHEQUE/03_COMP-REAS",
+    "BIBLIOTHEQUE/05_ML-FNDTNS",
 ]
 PROMPT_PATH = "prompt-task-domains.md"
 REFERENCE_PATH = "reference-task-classification.md"
