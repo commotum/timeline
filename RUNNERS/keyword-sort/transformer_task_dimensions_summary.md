@@ -1,5 +1,6 @@
 # Transformer Task Dimensions Summary
 
+Final post-refinement counts (from transformer_task_dimensions_results.csv):
 Transformer papers from step 1: 229
 
 Final labels:
@@ -13,12 +14,5 @@ Dimension source usage:
 - task_csv_primary: 227
 - task_md_fallback: 1
 
-Files generated:
+Canonical file:
 - transformer_task_dimensions_results.csv
-- transformer_paper_dirs.txt
-- transformer_ocr_files.txt
-- transformer_taskdomain_csv_files.txt
-- transformer_taskdomain_md_files.txt
-- transformer_missing_ocr.txt
-- hits_dim_1d.tsv / hits_dim_2d.tsv / hits_dim_3d.tsv / hits_dim_4d.tsv
-- hits_taskdomains_dim.tsv
