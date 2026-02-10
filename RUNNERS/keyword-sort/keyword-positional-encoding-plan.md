@@ -140,6 +140,57 @@ For each paper, compute scores:
 
 Then apply label rules (below).
 
+### Stage 3.5: Inheritance Recovery for Remaining `unclear`
+After Pass 4, run a second-stage recovery pass only on papers still labeled `unclear`.
+
+Purpose:
+- Recover PE labels for papers that do not restate PE explicitly but clearly inherit from known backbones or are wrappers around base models.
+
+#### 3.5A) Paper-type split
+Assign each unclear paper one type:
+- `backbone_derived` (explicitly built on a named base model/backbone)
+- `method_wrapper` (reasoning/agent/training/runtime method applied to an existing model)
+- `infra_system` (optimization/systems paper; usually PE-agnostic)
+- `unknown`
+
+#### 3.5B) Inheritance cue patterns
+Search for phrases like:
+- `initialized from`
+- `pretrained ... backbone`
+- `frozen backbone`
+- `we use <MODEL>`
+- `based on <MODEL>`
+- `adopt ... architecture`
+- `using CLIP/ViT/BERT/GPT/T5/LLaMA/...`
+
+Require at least one model/backbone identity plus one inheritance cue.
+
+#### 3.5C) Backbone-to-PE prior map (use only when explicit PE is absent)
+- `ViT`, `DeiT`, `CLIP ViT` -> usually `learned_absolute` (vision side)
+- `Swin` -> usually `relative_position`
+- `BERT`, `GPT-2` -> usually `learned_absolute`
+- `T5` -> `relative_position` (bias style)
+- `LLaMA`, `RoFormer` -> `rope`
+- `MAE` -> `sinusoidal_absolute` (2D fixed)
+
+If a paper clearly combines text + vision backbones with different defaults:
+- label `mixed` and list components.
+
+#### 3.5D) Wrapper/system handling rules
+- If paper is a wrapper over an explicit base LM/VLM and does not modify PE:
+  - set PE by inheritance
+  - set `pe_source = inherited_backbone`
+- If paper is infra-only and has no model-level PE claims:
+  - keep `unclear` or set `not_applicable` (optional policy)
+  - set `pe_source = unknown_or_na`
+
+#### 3.5E) Confidence policy for Stage 3.5
+- `high`: explicit PE in paper text
+- `medium`: inherited from explicitly named backbone
+- `low`: weak inferred inheritance
+
+Stage 3.5 should never overwrite a `high`-confidence explicit label.
+
 ## Label Decision Rules
 
 ### Rule 1: `axial_rope`
@@ -191,13 +242,14 @@ Create:
 Suggested CSV schema:
 
 ```csv
-paper_dir,dimension_label,pe_label,pe_components,stage_scope,confidence,ocr_evidence_lines,taskfile_evidence_lines,notes
+paper_dir,dimension_label,pe_label,pe_components,pe_source,stage_scope,confidence,ocr_evidence_lines,taskfile_evidence_lines,notes
 ```
 
 Where:
 - `dimension_label` is from step-2 output (`2D_only`/`3D_only`/`4D_only`/`multi-D`)
 - `pe_label` is one of the labels above
 - `pe_components` can store multiple methods like `axial_rope;relative_position;learned_absolute`
+- `pe_source` in `{explicit,inherited_backbone,method_wrapper,unknown_or_na}`
 - `stage_scope` in `{pretrain,finetune,both,unspecified}`
 
 ## Confidence Definition
@@ -240,13 +292,14 @@ done < RUNNERS/keyword-sort/pe_candidate_paper_dirs.txt > RUNNERS/keyword-sort/p
 For rows labeled `unclear` or `low` confidence:
 - inspect only top 3 strongest hit windows per paper.
 - do not read entire files unless still unresolved.
+- In Stage 3.5, inspect only top backbone-inheritance lines (not full papers) before assigning inherited labels.
 
 ## Quality Checks
 - No `pe_label` assigned without at least one OCR evidence line.
 - `mixed` requires explicit evidence for at least two PE families.
 - Papers with only baseline PE mentions are not mislabeled.
 - At least 10% random spot-check across non-unclear labels.
+- Stage 3.5 inferred labels must include explicit inheritance evidence and set `pe_source` accordingly.
 
 ## Expected Outcome
 A high-precision map of PE methods across Transformer papers focused on 2D+ tasks, enabling direct analysis of PE heterogeneity and lack of consensus.
-
