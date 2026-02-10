@@ -74,12 +74,14 @@ def append_note(row: Dict[str, str], note: str) -> None:
 
 @dataclass
 class RefinementRules:
+    stage1_force_yes_titles: List[str] = field(default_factory=list)
     stage1_force_no_titles: List[str] = field(default_factory=list)
     stage2_force_1d_titles: List[str] = field(default_factory=list)
     stage3_pe_overrides: Dict[str, Dict[str, str]] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, object]:
         return {
+            "stage1_force_yes_titles": sorted(set(self.stage1_force_yes_titles)),
             "stage1_force_no_titles": sorted(set(self.stage1_force_no_titles)),
             "stage2_force_1d_titles": sorted(set(self.stage2_force_1d_titles)),
             "stage3_pe_overrides": self.stage3_pe_overrides,
@@ -88,6 +90,7 @@ class RefinementRules:
     @classmethod
     def from_dict(cls, d: Dict[str, object]) -> "RefinementRules":
         return cls(
+            stage1_force_yes_titles=list(d.get("stage1_force_yes_titles", []) or []),
             stage1_force_no_titles=list(d.get("stage1_force_no_titles", []) or []),
             stage2_force_1d_titles=list(d.get("stage2_force_1d_titles", []) or []),
             stage3_pe_overrides=dict(d.get("stage3_pe_overrides", {}) or {}),
@@ -115,7 +118,11 @@ RL_TITLE_RE = re.compile(
     re.IGNORECASE,
 )
 TRANSFORMER_TITLE_RE = re.compile(
-    r"\b(transformer|attention|vit|swin|roformer|bert|gpt|llama|performer)\b",
+    r"\b(transformer|vision transformer|vit|vits|swin|roformer|bert|gpt|llama|performer|flashattention|llm|llms|large language model|large language models|deepseek|language agents?|long-context)\b",
+    re.IGNORECASE,
+)
+NON_TRANSFORMER_LM_TITLE_RE = re.compile(
+    r"\b(neural probabilistic language model|recurrent neural network based language model)\b",
     re.IGNORECASE,
 )
 
@@ -126,10 +133,27 @@ def apply_stage1_overrides(rules: RefinementRules) -> int:
     if "notes" not in fieldnames:
         fieldnames.append("notes")
 
+    force_yes = set(rules.stage1_force_yes_titles)
     force = set(rules.stage1_force_no_titles)
+
+    for row in rows:
+        t = title_from_row(row)
+        if t not in force_yes:
+            continue
+        if row.get("label") != "transformer_yes":
+            row["label"] = "transformer_yes"
+            row["confidence"] = "high"
+            ev = (row.get("evidence_lines") or "").strip()
+            marker = "title_override_force_transformer_yes"
+            row["evidence_lines"] = (ev + " | " + marker).strip(" | ")
+            changed += 1
+        append_note(row, "title_override_force_transformer_yes")
+
     for row in rows:
         t = title_from_row(row)
         if t not in force:
+            continue
+        if t in force_yes:
             continue
         if row.get("label") != "transformer_no":
             row["label"] = "transformer_no"
@@ -148,24 +172,53 @@ def audit_stage1_titles(rules: RefinementRules) -> List[Dict[str, str]]:
     _, rows = load_csv(STEP1_CSV)
     issues: List[Dict[str, str]] = []
 
+    forced_yes = set(rules.stage1_force_yes_titles)
     forced = set(rules.stage1_force_no_titles)
     for row in rows:
-        label = (row.get("label") or "").strip()
-        if label not in {"transformer_yes", "hybrid_transformer_yes"}:
-            continue
         title = title_from_row(row)
         low = title.lower()
-        if title in forced:
-            continue
-        if RL_TITLE_RE.search(low) and not TRANSFORMER_TITLE_RE.search(low):
+        label = (row.get("label") or "").strip()
+        try:
+            a_hits = int((row.get("A_hits") or "0").strip() or 0)
+        except Exception:
+            a_hits = 0
+        try:
+            b_hits = int((row.get("B_hits") or "0").strip() or 0)
+        except Exception:
+            b_hits = 0
+
+        if (
+            label in {"transformer_yes", "hybrid_transformer_yes"}
+            and title not in forced
+            and RL_TITLE_RE.search(low)
+            and not TRANSFORMER_TITLE_RE.search(low)
+            and a_hits == 0
+            and b_hits == 0
+        ):
             issues.append(
                 {
+                    "kind": "force_no",
                     "title": title,
                     "paper_dir": row.get("paper_dir", ""),
                     "cause": "title looks RL-only but classified as transformer",
                     "evidence": row.get("evidence_lines", ""),
                 }
             )
+            continue
+
+        if label in {"transformer_no", "uncertain"} and title not in forced_yes:
+            if TRANSFORMER_TITLE_RE.search(low) and not NON_TRANSFORMER_LM_TITLE_RE.search(
+                low
+            ):
+                issues.append(
+                    {
+                        "kind": "force_yes",
+                        "title": title,
+                        "paper_dir": row.get("paper_dir", ""),
+                        "cause": "title has explicit transformer/LLM cues but is not in transformer set",
+                        "evidence": row.get("evidence_lines", ""),
+                    }
+                )
     return issues
 
 
@@ -179,9 +232,18 @@ LLM_TITLE_RE = re.compile(
     re.IGNORECASE,
 )
 SPATIAL_TITLE_RE = re.compile(
-    r"\b(vision|image|video|point cloud|3d|4d|segment|segmentation|detection|arc|maze|sudoku|multimodal|vlm|clip|autonomous driving)\b",
+    r"\b(vision|image|video|point cloud|3d|4d|segment|segmentation|detection|arc[- ]?agi|maze|sudoku|multimodal|vlm|clip|autonomous driving)\b|^arc",
     re.IGNORECASE,
 )
+
+
+def parse_dims_cell(value: str) -> set[str]:
+    out: set[str] = set()
+    for tok in (value or "").split(";"):
+        t = tok.strip()
+        if t:
+            out.add(t)
+    return out
 
 
 def apply_stage2_overrides(rules: RefinementRules) -> int:
@@ -194,6 +256,11 @@ def apply_stage2_overrides(rules: RefinementRules) -> int:
     for row in rows:
         title = title_from_row(row)
         if title not in force:
+            continue
+        task_csv_dims = parse_dims_cell(row.get("task_csv_dims", ""))
+        # Respect TASK-DOMAINS.csv as primary evidence: do not downcast 2D+/multi-D to 1D by title.
+        if any(d in {"2D", "3D", "4D"} for d in task_csv_dims):
+            append_note(row, "title_override_force_1d_skipped_due_task_csv")
             continue
         if row.get("final_label") != "1D_only":
             row["final_label"] = "1D_only"
@@ -218,6 +285,10 @@ def audit_stage2_titles(rules: RefinementRules) -> List[Dict[str, str]]:
         title = title_from_row(row)
         if title in forced:
             continue
+        task_csv_dims = parse_dims_cell(row.get("task_csv_dims", ""))
+        if any(d in {"2D", "3D", "4D"} for d in task_csv_dims):
+            # Primary task-domain CSV already indicates 2D+ evidence.
+            continue
         low = title.lower()
         if LLM_TITLE_RE.search(low) and not SPATIAL_TITLE_RE.search(low):
             issues.append(
@@ -237,11 +308,29 @@ def audit_stage2_titles(rules: RefinementRules) -> List[Dict[str, str]]:
 
 
 KNOWN_PE_TITLE_PRIORS: Dict[str, Dict[str, str]] = {
+    "ALBEF- Align Before Fuse": {
+        "pe_label": "learned_absolute",
+        "pe_components": "learned_absolute",
+        "confidence": "medium",
+        "notes": "title_prior_clip_vit_bert_family",
+    },
     "BEiT- BERT Pre-Training of Image Transformers": {
         "pe_label": "learned_absolute",
         "pe_components": "learned_absolute",
         "confidence": "medium",
         "notes": "title_prior_backbone_beit",
+    },
+    "BLIP- Bootstrapping Language-Image Pre-training": {
+        "pe_label": "learned_absolute",
+        "pe_components": "learned_absolute",
+        "confidence": "medium",
+        "notes": "title_prior_clip_vit_bert_family",
+    },
+    "BLIP-2- Bootstrapping Language-Image Pre-training with Frozen Models": {
+        "pe_label": "learned_absolute",
+        "pe_components": "learned_absolute",
+        "confidence": "medium",
+        "notes": "title_prior_clip_vit_bert_family",
     },
     "Image as a Foreign Language- BEiT Pretraining for All Vision and Vision-Language Tasks": {
         "pe_label": "learned_absolute",
@@ -249,11 +338,35 @@ KNOWN_PE_TITLE_PRIORS: Dict[str, Dict[str, str]] = {
         "confidence": "medium",
         "notes": "title_prior_backbone_beit",
     },
+    "Learning Transferable Visual Models From Natural Language Supervision": {
+        "pe_label": "learned_absolute",
+        "pe_components": "learned_absolute",
+        "confidence": "medium",
+        "notes": "title_prior_clip_vit_family",
+    },
     "Masked Autoencoders Are Scalable Vision Learners (MAE)": {
         "pe_label": "sinusoidal_absolute",
         "pe_components": "sinusoidal_absolute",
         "confidence": "high",
         "notes": "title_prior_backbone_mae",
+    },
+    "Scaling Up Vision-Language Learning With Noisy Text Supervision (ALIGN)": {
+        "pe_label": "learned_absolute",
+        "pe_components": "learned_absolute",
+        "confidence": "low",
+        "notes": "title_prior_align_text_encoder",
+    },
+    "Sigmoid Loss for Language Image Pre-Training": {
+        "pe_label": "learned_absolute",
+        "pe_components": "learned_absolute",
+        "confidence": "medium",
+        "notes": "title_prior_siglip_vit_family",
+    },
+    "Training data-efficient image transformers & distillation through attention": {
+        "pe_label": "learned_absolute",
+        "pe_components": "learned_absolute",
+        "confidence": "medium",
+        "notes": "title_prior_deit_vit_family",
     },
 }
 
@@ -319,13 +432,27 @@ def run_stage1_loop(mod, rules: RefinementRules, max_iters: int, report: List[st
         new_titles = []
         for it in issues:
             t = it["title"]
-            if t not in rules.stage1_force_no_titles:
-                rules.stage1_force_no_titles.append(t)
-                new_titles.append(it)
+            if it.get("kind") == "force_yes":
+                if t in rules.stage1_force_no_titles:
+                    rules.stage1_force_no_titles.remove(t)
+                if t not in rules.stage1_force_yes_titles:
+                    rules.stage1_force_yes_titles.append(t)
+                    new_titles.append(it)
+            else:
+                if t in rules.stage1_force_yes_titles:
+                    rules.stage1_force_yes_titles.remove(t)
+                if t not in rules.stage1_force_no_titles:
+                    rules.stage1_force_no_titles.append(t)
+                    new_titles.append(it)
         for it in new_titles:
-            report.append(
-                f"  - Added override: `{it['title']}` -> transformer_no. Cause: {it['cause']}. Evidence: {it['evidence'][:180]}"
-            )
+            if it.get("kind") == "force_yes":
+                report.append(
+                    f"  - Added override: `{it['title']}` -> transformer_yes. Cause: {it['cause']}. Evidence: {it['evidence'][:180]}"
+                )
+            else:
+                report.append(
+                    f"  - Added override: `{it['title']}` -> transformer_no. Cause: {it['cause']}. Evidence: {it['evidence'][:180]}"
+                )
         if not new_titles:
             report.append("  - No new overrides to add; stopping.")
             break
@@ -402,6 +529,10 @@ def final_counts(report: List[str]) -> None:
 def main(max_iters_per_stage: int = 4) -> None:
     mod = load_pipeline_module()
     rules = RefinementRules.load(RULES_JSON)
+    # Keep overrides consistent: force-yes wins over force-no for the same title.
+    rules.stage1_force_no_titles = sorted(
+        set(rules.stage1_force_no_titles) - set(rules.stage1_force_yes_titles)
+    )
     report: List[str] = [
         "# Iterative Refinement Report",
         "",

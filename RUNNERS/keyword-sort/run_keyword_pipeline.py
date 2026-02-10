@@ -150,7 +150,7 @@ def window_text(lines: List[str], line_no: int, radius: int = 2) -> str:
 
 
 A_RE = re.compile(
-    r"\b(transformers?|vision transformer|encoder[- ]only transformer|decoder[- ]only transformer|encoder[- ]decoder transformer|vit\b|gpt\b|bert\b|roformer|swin transformer)\b",
+    r"\b(transformers?|vision transformer|encoder[- ]only transformer|decoder[- ]only transformer|encoder[- ]decoder transformer|vit\b|gpt\b|(?<!\*)bert\b|roformer|swin transformer|llms?\b|large language models?)\b",
     flags=re.IGNORECASE,
 )
 B_RE = re.compile(
@@ -173,6 +173,12 @@ CONTEXT_RE = re.compile(
 
 BASELINE_RE = re.compile(
     r"\b(baseline|related work|prior work|compared with|comparison)\b",
+    flags=re.IGNORECASE,
+)
+
+QBERT_RE = re.compile(r"\bq\s*\\?\*\s*bert\b|\bqbert\b", flags=re.IGNORECASE)
+A_NON_BERT_RE = re.compile(
+    r"\b(transformers?|vision transformer|encoder[- ]only transformer|decoder[- ]only transformer|encoder[- ]decoder transformer|vit\b|gpt\b|roformer|swin transformer|llms?\b|large language models?)\b",
     flags=re.IGNORECASE,
 )
 
@@ -201,6 +207,9 @@ def scan_transformer_hits(ocr_path: Path) -> Dict[str, List[Hit]]:
 
         for key, rex in (("A", A_RE), ("B", B_RE), ("C", C_RE), ("D", D_RE)):
             if rex.search(line):
+                # Avoid Atari Q*Bert game-table false positives being treated as BERT mentions.
+                if key == "A" and QBERT_RE.search(line) and not A_NON_BERT_RE.search(line):
+                    continue
                 out[key].append(
                     Hit(
                         line_no=ctx.line_no,
@@ -758,11 +767,11 @@ PE_PATTERNS = {
         re.IGNORECASE,
     ),
     "learned_absolute": re.compile(
-        r"\b(learned (absolute )?(position|positional) embedding|absolute position embedding|\bAPE\b)\b",
+        r"\b(learned (absolute )?(position|positional) embeddings?|learnable (absolute )?(position|positional) embeddings?|trainable (absolute )?(position|positional) embeddings?|absolute (position|positional) embeddings?|\bAPE\b)\b",
         re.IGNORECASE,
     ),
     "sinusoidal_absolute": re.compile(
-        r"\b(sinusoidal (position|positional) (encoding|embedding)|sinusoidal embeddings?)\b",
+        r"\b(sinusoidal (position|positional) (encoding|embedding)|sinusoidal embeddings?|sin[- ]?cos (position|positional) embeddings?|2d sin[- ]?cos)\b",
         re.IGNORECASE,
     ),
     "relative_position": re.compile(
@@ -807,7 +816,7 @@ PE_FALLBACK_PATTERNS = {
     ),
     "rope": re.compile(r"\b(rope|rotary)\b", re.IGNORECASE),
     "learned_absolute": re.compile(
-        r"\b(learnable|learned|trainable)\b.{0,45}\b(position|positional)\b.{0,45}\b(embedding|encoding)\b|\b(position|positional)\b.{0,30}\b(embedding|encoding)\b.{0,30}\b(learnable|learned|trainable)\b|\bAPE\b",
+        r"\b(learnable|learned|trainable)\b.{0,45}\b(position|positional)\b.{0,45}\b(embedding|encoding)\b|\b(position|positional)\b.{0,30}\b(embedding|encoding)\b.{0,30}\b(learnable|learned|trainable)\b|\b((word|token|patch)\s+embeddings?.{0,25}(and|\+).{0,25}(position|positional)\s+embeddings?|position(al)?\s+embeddings?\s+(are\s+)?(added|summed|sum)|absolute\s+(position|positional)\s+embeddings?)\b|\bAPE\b",
         re.IGNORECASE,
     ),
     "sinusoidal_absolute": re.compile(
@@ -831,6 +840,11 @@ PE_FALLBACK_PATTERNS = {
 
 PE_FALLBACK_SUPPORT_RE = re.compile(
     r"\b(position|positional|embedding|encoding|bias|coordinate|spatial|temporal|sinusoidal|fourier|rope|rotary|alibi|relative)\b",
+    re.IGNORECASE,
+)
+
+PE_NON_ABSOLUTE_HINT_RE = re.compile(
+    r"\b(relative|rotary|rope|alibi|sinusoidal|sin[- ]?cos|fourier|xpos|axial)\b",
     re.IGNORECASE,
 )
 
@@ -935,6 +949,8 @@ def fallback_pe_scores(
         for fam, rex in PE_FALLBACK_PATTERNS.items():
             if not rex.search(line):
                 continue
+            if fam == "learned_absolute" and PE_NON_ABSOLUTE_HINT_RE.search(line):
+                continue
 
             # Require some method context for broad matches.
             if baseline_like and not (contextful or method_heading):
@@ -1033,6 +1049,8 @@ def run_step3_positional_encoding() -> None:
 
             for fam, rex in PE_PATTERNS.items():
                 if rex.search(line):
+                    if fam == "learned_absolute" and PE_NON_ABSOLUTE_HINT_RE.search(line):
+                        continue
                     # Weighting: strong in context, weak in baseline context
                     if contextful and not baseline_like:
                         weight = 2

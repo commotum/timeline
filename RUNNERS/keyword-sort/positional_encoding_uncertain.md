@@ -1,6 +1,6 @@
 # Positional Encoding: Uncertain / Low Confidence
 
-Count: 93
+Count: 89
 
 - `BIBLIOTHEQUE/03_COMP-REAS/A Neurosymbolic Approach to Abstraction and Reasoning` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/03_COMP-REAS/Adaptive Patch Selection for ViTs via Reinforcement Learning` | pe_label=unclear | confidence=low | evidence=
@@ -20,7 +20,6 @@ Count: 93
 - `BIBLIOTHEQUE/03_COMP-REAS/Hierarchical Reasoning Model (HRM)` | pe_label=rope | confidence=low | evidence=180:Both the low-level and high-level recurrent modules $f_L$ and $f_H$ are implemented using encoderonly Transformer <sup>52</sup> blocks with identical archite...
 - `BIBLIOTHEQUE/03_COMP-REAS/Improving MoE Compute Efficiency by Composing Weight and Data Sparsity` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/03_COMP-REAS/Learning Explanatory Rules from Noisy Data` | pe_label=unclear | confidence=low | evidence=
-- `BIBLIOTHEQUE/03_COMP-REAS/MaskGIT- Masked Generative Image Transformer` | pe_label=learned_absolute | confidence=low | evidence=128:All models in this work have the same configuration: 24 layers, 8 attention heads, 768 embedding dimensions and 3072 hidden dimensions. Our models use learna...
 - `BIBLIOTHEQUE/03_COMP-REAS/PonderNet- Learning to Ponder` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/03_COMP-REAS/Product of Experts with LLMs- Boosting Performance on ARC Is a Matter of Perspective` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/03_COMP-REAS/Reflection System for the Abstraction and Reasoning Corpus` | pe_label=unclear | confidence=low | evidence=
@@ -37,13 +36,12 @@ Count: 93
 - `BIBLIOTHEQUE/03_COMP-REAS/Vector Symbolic Algebras for the Abstraction and Reasoning Corpus` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/A Generalist Agent (Gato)` | pe_label=learned_absolute | confidence=low | evidence=62:- Tokens belonging to image patches for any time-step are embedded using a single ResNet (He et al., 2016a) block to obtain a vector per patch. For image pat...
 - `BIBLIOTHEQUE/05_ML-FNDTNS/ALBEF- Align Before Fuse` | pe_label=unclear | confidence=low | evidence=
-- `BIBLIOTHEQUE/05_ML-FNDTNS/Asynchronous Methods for Deep Reinforcement Learning (A3C)` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/BEiT- BERT Pre-Training of Image Transformers` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/BLIP- Bootstrapping Language-Image Pre-training` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/BLIP-2- Bootstrapping Language-Image Pre-training with Frozen Models` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/CamPoint- Boosting Point Cloud Segmentation with Virtual Camera` | pe_label=other_variant | confidence=low | evidence=15:Local features aggregation and global information perception are the fundamental to point cloud segmentation. However, existing works often fall short in eff...
+- `BIBLIOTHEQUE/05_ML-FNDTNS/CausalEmbed- Auto-Regressive Multi-Vector Generation in Latent Space for Visual Document Embedding` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/CoCa- Contrastive Captioners` | pe_label=other_variant | confidence=low | evidence=98:CoCa for Video Action Recognition. We use a simple approach to enable a learned CoCa model for video action recognition tasks. We first take multiple frames ...
-- `BIBLIOTHEQUE/05_ML-FNDTNS/Deep Reinforcement Learning with Double Q-learning (Double DQN)` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/Density Adaptive Attention is All You Need- Robust Parameter-Efficient Fine-Tuning Across Multiple Modalities` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/DiffusionDet- Diffusion Model for Object Detection` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/FlashAttention-2- Faster Attention with Better Parallelism and Work Partitioning` | pe_label=unclear | confidence=low | evidence=
@@ -55,19 +53,17 @@ Count: 93
 - `BIBLIOTHEQUE/05_ML-FNDTNS/GPT-4o System Card` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/Hierarchical Text-Conditional Image Generation with CLIP Latents` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/High-Resolution Image Synthesis with Latent Diffusion Models` | pe_label=unclear | confidence=low | evidence=
-- `BIBLIOTHEQUE/05_ML-FNDTNS/Human-level Control through Deep Reinforcement Learning (DQN)` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/Image as a Foreign Language- BEiT Pretraining for All Vision and Vision-Language Tasks` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/Improving Image Generation with Better Captions` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/Jacobian-Free Backpropagation for Implicit Networks (JFB)` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/Learning Transferable Visual Models From Natural Language Supervision` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/LoRA- Low-Rank Adaptation of Large Language Models` | pe_label=unclear | confidence=low | evidence=
-- `BIBLIOTHEQUE/05_ML-FNDTNS/Masked Autoencoders Are Scalable Vision Learners (MAE)` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/Masked Autoencoders Are Scalable Vision Learners (MAE)` | pe_label=learned_absolute | confidence=low | evidence=82:**Simple implementation.** Our MAE pre-training can be implemented efficiently, and importantly, does not require any specialized sparse operations. First we...
 - `BIBLIOTHEQUE/05_ML-FNDTNS/Mastering diverse control tasks through world models (DreamerV3)` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/Mini-ARC- Solving Abstraction and Reasoning Puzzles with Small Transformer Models` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/Multi-Game Decision Transformers` | pe_label=learned_absolute | confidence=low | evidence=75:Inspired by the simplicity and effectiveness of transformer architectures for processing images [19], we divide each observation image into a collection of M...
 - `BIBLIOTHEQUE/05_ML-FNDTNS/Open3DIS- Open-Vocabulary 3D Instance Segmentation with 2D Mask Guidance` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/OSCAR- Object-Semantics Aligned Pre-training for Vision-Language Tasks` | pe_label=unclear | confidence=low | evidence=
-- `BIBLIOTHEQUE/05_ML-FNDTNS/Policy Distillation` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/Predictability and Surprise in Large Generative Models` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/Rethinking Visual Intelligence- Insights from Video Pretraining` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/Scaling Instructable Agents Across Many Simulated Worlds (SIMA)` | pe_label=unclear | confidence=low | evidence=
@@ -78,6 +74,7 @@ Count: 93
 - `BIBLIOTHEQUE/05_ML-FNDTNS/SegPoint- Segment Any Point Cloud via Large Language Model` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/Sharpness-Aware Minimization for Efficiently Improving Generalization (SAM)` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/Sigmoid Loss for Language Image Pre-Training` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/SIMA 2- A Generalist Embodied Agent for Virtual Worlds` | pe_label=relative_position | confidence=low | evidence=77:The input to the agent consists of a stream of RGB video frames at a resolution of 720p. Periodically, the agent receives the latest frame from the environme...
 - `BIBLIOTHEQUE/05_ML-FNDTNS/Simultaneous Instance Pooling & Bag Selection for MIL using ViTs` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/Spherical Mask- Coarse-to-Fine 3D Point Cloud Instance Segmentation with Spherical Representation` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/Stabilizing Equilibrium Models by Jacobian Regularization` | pe_label=unclear | confidence=low | evidence=
@@ -86,9 +83,8 @@ Count: 93
 - `BIBLIOTHEQUE/05_ML-FNDTNS/TableLoRA- Low-rank Adaptation on Table Structure Understanding for Large Language Models` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/Test-time Adaptation of Tiny Recursive Models` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/The Hyperfitting Phenomenon- Sharpening and Stabilizing LLMs for Open-Ended Text Generation` | pe_label=unclear | confidence=low | evidence=
+- `BIBLIOTHEQUE/05_ML-FNDTNS/The LLM ARChitect- Solving ARC-AGI Is a Matter of Perspective` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/Training data-efficient image transformers & distillation through attention` | pe_label=unclear | confidence=low | evidence=
-- `BIBLIOTHEQUE/05_ML-FNDTNS/Trust Region Policy Optimization (TRPO)` | pe_label=unclear | confidence=low | evidence=
-- `BIBLIOTHEQUE/05_ML-FNDTNS/UNITER- Universal Image-Text Representation Learning` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/Value-Based Pre-Training with Downstream Feedback` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/VideoCLIP- Contrastive Pretraining for Zero-Shot Video-Text Understanding` | pe_label=unclear | confidence=low | evidence=
 - `BIBLIOTHEQUE/05_ML-FNDTNS/Visual Instruction Tuning` | pe_label=unclear | confidence=low | evidence=

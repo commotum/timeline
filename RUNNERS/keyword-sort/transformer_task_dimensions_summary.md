@@ -1,16 +1,16 @@
 # Transformer Task Dimensions Summary
 
-Transformer papers from step 1: 216
+Transformer papers from step 1: 229
 
 Final labels:
-- 1D_only: 99
-- 2D_only: 27
-- 3D_only: 4
-- multi-D: 86
+- 1D_only: 114
+- 2D_only: 26
+- 3D_only: 2
+- multi-D: 87
 
 Dimension source usage:
 - ocr_fallback: 1
-- task_csv_primary: 214
+- task_csv_primary: 227
 - task_md_fallback: 1
 
 Files generated:
