@@ -372,22 +372,26 @@ def run_step1_transformer_screen(paper_dirs: List[Path]) -> None:
 
 
 DIM_1D_RE = re.compile(
-    r"\b(1d|one[- ]dimensional|language model(ing)?|machine translation|text generation|autoregressive text|speech recognition|time series)\b",
+    r"\b(1d|one[- ]dimensional|language model(ing)?|machine translation|text generation|autoregressive text|speech recognition|time series|token sequence)\b",
     flags=re.IGNORECASE,
 )
 DIM_2D_RE = re.compile(
-    r"\b(2d|two[- ]dimensional|image|pixel|patch|grid|table|board|maze|sudoku|\(x,\s*y\))\b",
+    r"\b(2d|two[- ]dimensional|image|pixel|patch|grid|board|maze|sudoku|\(x,\s*y\))\b",
     flags=re.IGNORECASE,
 )
 DIM_3D_RE = re.compile(
-    r"\b(3d|three[- ]dimensional|point cloud|voxel|volume|mesh|video|\(x,\s*y,\s*z\)|\(x,\s*y,\s*t\))\b",
+    r"\b(3d|three[- ]dimensional|point cloud|voxel|video|\(x,\s*y,\s*z\)|\(x,\s*y,\s*t\))\b",
     flags=re.IGNORECASE,
 )
 DIM_4D_RE = re.compile(
     r"\b(4d|four[- ]dimensional|\(x,\s*y,\s*z,\s*t\)|spatiotemporal volume|space[- ]time volume)\b",
     flags=re.IGNORECASE,
 )
-TASK_DIM_RE = re.compile(r"\b([1-4]D)\b")
+TASK_DIM_RE = re.compile(r"\b([1-4])\s*D\b", flags=re.IGNORECASE)
+COORD_4D_RE = re.compile(r"\(\s*x\s*,\s*y\s*,\s*z\s*,\s*t\s*\)", flags=re.IGNORECASE)
+COORD_3D_XYZ_RE = re.compile(r"\(\s*x\s*,\s*y\s*,\s*z\s*\)", flags=re.IGNORECASE)
+COORD_3D_XYT_RE = re.compile(r"\(\s*x\s*,\s*y\s*,\s*t\s*\)", flags=re.IGNORECASE)
+COORD_2D_RE = re.compile(r"\(\s*x\s*,\s*y\s*\)", flags=re.IGNORECASE)
 
 
 def scan_dims_in_ocr(ocr_path: Path) -> Tuple[Set[str], Dict[str, List[Tuple[int, str]]]]:
@@ -415,24 +419,116 @@ def scan_dims_in_ocr(ocr_path: Path) -> Tuple[Set[str], Dict[str, List[Tuple[int
     return dims, evid
 
 
-def scan_dims_in_task_files(task_csv: Path, task_md: Path) -> Tuple[Set[str], List[str]]:
+def normalize_header(name: str) -> str:
+    norm = re.sub(r"[^a-z0-9]+", "_", (name or "").strip().lower()).strip("_")
+    return norm
+
+
+def extract_dims_from_text(text: str) -> Set[str]:
+    dims: Set[str] = set()
+    if not text:
+        return dims
+
+    for m in TASK_DIM_RE.finditer(text):
+        dims.add(f"{m.group(1)}D")
+
+    # Coordinate cues supplement explicit nD markers.
+    if COORD_4D_RE.search(text):
+        dims.add("4D")
+    if COORD_3D_XYZ_RE.search(text) or COORD_3D_XYT_RE.search(text):
+        dims.add("3D")
+    # Only add 2D if 3D/4D coordinate pattern not matched in same span.
+    if COORD_2D_RE.search(text) and "3D" not in dims and "4D" not in dims:
+        dims.add("2D")
+
+    return {d for d in dims if d in {"1D", "2D", "3D", "4D"}}
+
+
+def parse_task_domains_csv(task_csv: Path) -> Tuple[Set[str], List[str], bool]:
     dims: Set[str] = set()
     evidence: List[str] = []
+    if not task_csv.is_file():
+        return dims, evidence, False
 
-    for p in (task_csv, task_md):
-        if not p.is_file():
-            continue
-        txt = read_text(p)
-        for m in TASK_DIM_RE.finditer(txt):
-            dims.add(m.group(1).upper())
-        # Keep up to a few lines that mention D labels
-        for line_no, line in enumerate(txt.splitlines(), start=1):
-            if TASK_DIM_RE.search(line):
-                evidence.append(f"{p.name}:{line_no}:{clip(line, 160)}")
-                if len(evidence) >= 5:
-                    break
+    try:
+        with task_csv.open("r", encoding="utf-8-sig", newline="") as f:
+            reader = csv.DictReader(f)
+            fieldnames = reader.fieldnames or []
+            if not fieldnames:
+                return dims, evidence, False
 
-    return dims, evidence
+            norm_to_raw = {normalize_header(h): h for h in fieldnames}
+            in_candidates = {
+                "in_dimension",
+                "input_dimension",
+                "in_dim",
+                "input_dim",
+            }
+            out_candidates = {
+                "out_dimension",
+                "output_dimension",
+                "out_dim",
+                "output_dim",
+            }
+
+            selected_cols: List[str] = []
+            for c in in_candidates | out_candidates:
+                if c in norm_to_raw:
+                    selected_cols.append(norm_to_raw[c])
+
+            # Fallback: any column containing "dimension"
+            if not selected_cols:
+                for norm, raw in norm_to_raw.items():
+                    if "dimension" in norm:
+                        selected_cols.append(raw)
+
+            if not selected_cols:
+                return dims, evidence, False
+
+            for row_idx, row in enumerate(reader, start=2):
+                for col in selected_cols:
+                    val = (row.get(col) or "").strip()
+                    if not val:
+                        continue
+                    lower = val.lower()
+                    if "not specified in the paper" in lower:
+                        continue
+
+                    cell_dims = extract_dims_from_text(val)
+                    if not cell_dims:
+                        continue
+                    for d in sorted(cell_dims):
+                        dims.add(d)
+                    if len(evidence) < 8:
+                        evidence.append(
+                            f"{task_csv.name}:{row_idx}:{col}={clip(val, 170)}"
+                        )
+    except Exception:
+        return set(), [], False
+
+    return dims, evidence, True
+
+
+def parse_task_domains_md(task_md: Path) -> Tuple[Set[str], List[str], bool]:
+    dims: Set[str] = set()
+    evidence: List[str] = []
+    if not task_md.is_file():
+        return dims, evidence, False
+
+    try:
+        for line_no, line in enumerate(read_lines(task_md), start=1):
+            if "task table" not in line.lower() and "|" not in line:
+                # Prioritize markdown table lines.
+                continue
+            cell_dims = extract_dims_from_text(line)
+            if cell_dims:
+                dims |= cell_dims
+                if len(evidence) < 6:
+                    evidence.append(f"{task_md.name}:{line_no}:{clip(line, 170)}")
+    except Exception:
+        return set(), [], False
+
+    return dims, evidence, True
 
 
 def run_step2_task_dimensions() -> None:
@@ -482,47 +578,39 @@ def run_step2_task_dimensions() -> None:
         if task_md.is_file():
             task_md_lines.append(str(task_md.relative_to(REPO_ROOT)))
 
-        if not ocr.is_file():
-            missing_ocr_lines.append(rel_dir)
-            rows.append(
-                {
-                    "paper_dir": rel_dir,
-                    "step1_label": row["label"],
-                    "final_label": "uncertain",
-                    "final_dims": "",
-                    "ocr_dims": "",
-                    "task_dims": "",
-                    "confidence": "low",
-                    "ocr_evidence": "missing OCR markdown",
-                    "task_evidence": "",
-                }
-            )
-            continue
+        task_csv_dims, task_csv_evid, task_csv_ok = parse_task_domains_csv(task_csv)
+        task_md_dims, task_md_evid, task_md_ok = parse_task_domains_md(task_md)
+        task_dims = set(task_csv_dims) | set(task_md_dims)
+        task_evid = task_csv_evid + task_md_evid
 
-        ocr_lines.append(str(ocr.relative_to(REPO_ROOT)))
-        ocr_dims, ocr_evid = scan_dims_in_ocr(ocr)
-        task_dims, task_evid = scan_dims_in_task_files(task_csv, task_md)
-
-        # Promote non-1D task dims from confirmation files when OCR already indicates 2D+
-        final_dims: Set[str] = set()
-        if ocr_dims:
-            final_dims |= ocr_dims
-            if final_dims.intersection({"2D", "3D", "4D"}):
-                final_dims |= {d for d in task_dims if d in {"2D", "3D", "4D"}}
-                if "1D" in task_dims and "1D" in ocr_dims:
-                    final_dims.add("1D")
-            else:
-                final_dims |= task_dims
+        ocr_dims: Set[str] = set()
+        ocr_evid: Dict[str, List[Tuple[int, str]]] = defaultdict(list)
+        ocr_scanned = False
+        if ocr.is_file():
+            ocr_lines.append(str(ocr.relative_to(REPO_ROOT)))
         else:
-            final_dims |= task_dims
+            missing_ocr_lines.append(rel_dir)
 
-        # Guardrail: avoid OCR-only 1D contamination when the paper is clearly 2D+.
-        if (
-            "1D" in final_dims
-            and final_dims.intersection({"2D", "3D", "4D"})
-            and "1D" not in task_dims
-        ):
-            final_dims.discard("1D")
+        # Primary source hierarchy:
+        #   1) TASK-DOMAINS.csv
+        #   2) TASK-DOMAINS.md
+        #   3) OCR markdown fallback
+        final_dims: Set[str] = set()
+        dimension_source = "none"
+        if task_csv_dims:
+            final_dims = set(task_csv_dims)
+            dimension_source = "task_csv_primary"
+        elif task_md_dims:
+            final_dims = set(task_md_dims)
+            dimension_source = "task_md_fallback"
+        elif ocr.is_file():
+            ocr_scanned = True
+            ocr_dims, ocr_evid = scan_dims_in_ocr(ocr)
+            final_dims = set(ocr_dims)
+            dimension_source = "ocr_fallback"
+        else:
+            final_dims = set()
+            dimension_source = "none"
 
         if not final_dims:
             final_label = "uncertain"
@@ -532,11 +620,11 @@ def run_step2_task_dimensions() -> None:
         else:
             final_label = "multi-D"
 
-        if ocr_dims and task_dims:
-            confidence = "high" if (ocr_dims & task_dims) else "medium"
-        elif ocr_dims and not task_dims:
+        if dimension_source == "task_csv_primary":
+            confidence = "high"
+        elif dimension_source == "task_md_fallback":
             confidence = "medium"
-        elif task_dims and not ocr_dims:
+        elif dimension_source == "ocr_fallback":
             confidence = "low"
         else:
             confidence = "low"
@@ -551,6 +639,13 @@ def run_step2_task_dimensions() -> None:
 
         ocr_evidence = top_evidence(ocr_evid)
         task_evidence = " | ".join(task_evid[:3])
+        notes_parts = []
+        if task_csv_ok and not task_csv_dims:
+            notes_parts.append("task_csv_present_but_no_dims_parsed")
+        if task_md_ok and not task_md_dims:
+            notes_parts.append("task_md_present_but_no_dims_parsed")
+        if ocr_scanned and not ocr_dims:
+            notes_parts.append("ocr_fallback_no_dims_parsed")
 
         rows.append(
             {
@@ -560,17 +655,22 @@ def run_step2_task_dimensions() -> None:
                 "final_dims": ";".join(sorted(final_dims)),
                 "ocr_dims": ";".join(sorted(ocr_dims)),
                 "task_dims": ";".join(sorted(task_dims)),
+                "task_csv_dims": ";".join(sorted(task_csv_dims)),
+                "task_md_dims": ";".join(sorted(task_md_dims)),
+                "dimension_source": dimension_source,
                 "confidence": confidence,
                 "ocr_evidence": ocr_evidence,
                 "task_evidence": task_evidence,
+                "notes": ";".join(notes_parts),
             }
         )
 
         # Write hit summaries for traceability
-        rel_ocr = str(ocr.relative_to(REPO_ROOT))
-        for dim, evids in ocr_evid.items():
-            for ln, tx in evids[:30]:
-                hits_rows[dim].append((rel_ocr, str(ln), tx))
+        if ocr.is_file():
+            rel_ocr = str(ocr.relative_to(REPO_ROOT))
+            for dim, evids in ocr_evid.items():
+                for ln, tx in evids[:30]:
+                    hits_rows[dim].append((rel_ocr, str(ln), tx))
         for ev in task_evid[:30]:
             parts = ev.split(":", 2)
             if len(parts) == 3:
@@ -588,9 +688,13 @@ def run_step2_task_dimensions() -> None:
             "final_dims",
             "ocr_dims",
             "task_dims",
+            "task_csv_dims",
+            "task_md_dims",
+            "dimension_source",
             "confidence",
             "ocr_evidence",
             "task_evidence",
+            "notes",
         ],
     )
 
@@ -607,6 +711,7 @@ def run_step2_task_dimensions() -> None:
     write_tsv(hits_taskdims, hits_rows["TASK"])
 
     cnt = Counter(r["final_label"] for r in rows)
+    source_cnt = Counter(r["dimension_source"] for r in rows)
     summary = [
         "# Transformer Task Dimensions Summary",
         "",
@@ -616,6 +721,12 @@ def run_step2_task_dimensions() -> None:
     ]
     for k in sorted(cnt):
         summary.append(f"- {k}: {cnt[k]}")
+    summary += [
+        "",
+        "Dimension source usage:",
+    ]
+    for k in sorted(source_cnt):
+        summary.append(f"- {k}: {source_cnt[k]}")
     summary += [
         "",
         "Files generated:",
