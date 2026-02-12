@@ -8,6 +8,10 @@ Target scope (default):
 - `BIBLIOTHEQUE/03_COMP-REAS`
 - `BIBLIOTHEQUE/05_ML-FNDTNS`
 
+Hard exclusions (always skipped, even if passed via `--folders`):
+- `BIBLIOTHEQUE/01_POS-ENCDR`
+- `BIBLIOTHEQUE/02_XFORM-DIM`
+
 ## Files examined per paper folder
 
 Primary (expensive fallback):

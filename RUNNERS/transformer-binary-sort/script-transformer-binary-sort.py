@@ -2,6 +2,10 @@ TARGET_FOLDERS = [
     "BIBLIOTHEQUE/03_COMP-REAS",
     "BIBLIOTHEQUE/05_ML-FNDTNS",
 ]
+EXCLUDED_CLASS_FOLDERS = {
+    "01_POS-ENCDR",
+    "02_XFORM-DIM",
+}
 PROMPT_PATH = "prompt-transformer-binary-sort.md"
 YES_FILENAME = "TRANSFORMER-YES.md"
 NO_FILENAME = "TRANSFORMER-NO.md"
@@ -180,10 +184,10 @@ def build_prompt(
         "[MD_ABS_PATH]": quote_path(md_abs_path),
         "[FILE_STEM]": file_stem,
         "[OUTPUT_FOLDER]": quote_path(output_folder),
-        "[HINT_TASK_DOMAINS_MD_ABS_PATH]": maybe_path(task_domains_md),
-        "[HINT_TASK_DOMAINS_CSV_ABS_PATH]": maybe_path(task_domains_csv),
-        "[HINT_TASK_MODEL_RATIO_MD_ABS_PATH]": maybe_path(task_model_ratio_md),
-        "[HINT_EXTENDING_DIMENSIONS_MD_ABS_PATH]": maybe_path(extending_dimensions_md),
+        "[TASK_DOMAINS_MD_ABS_PATH]": maybe_path(task_domains_md),
+        "[TASK_DOMAINS_CSV_ABS_PATH]": maybe_path(task_domains_csv),
+        "[TASK_MODEL_RATIO_MD_ABS_PATH]": maybe_path(task_model_ratio_md),
+        "[EXTENDING_DIMENSIONS_MD_ABS_PATH]": maybe_path(extending_dimensions_md),
     }
     for key, value in replacements.items():
         prompt = prompt.replace(key, value)
@@ -224,6 +228,12 @@ def make_paper_entry(paper_folder, yes_name, no_name):
 def list_paper_entries(target_folders, yes_name, no_name, log_path):
     entries = []
     for folder in target_folders:
+        folder_abs = os.path.abspath(folder)
+        parts = [part for part in os.path.normpath(folder_abs).split(os.sep) if part]
+        if any(part in EXCLUDED_CLASS_FOLDERS for part in parts):
+            log_event(log_path, f"skipped_excluded_folder path={folder_abs}")
+            continue
+
         if not os.path.isdir(folder):
             log_event(log_path, f"missing_target_folder path={folder}")
             continue
