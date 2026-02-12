@@ -7,7 +7,7 @@ Confidence: high
 Basis: abstract-aux-only
 
 ## Why
-- The auxiliary task/domain analysis explicitly states that UNITER’s core training objectives are learned as outputs of a Transformer, indicating Transformer blocks are central rather than peripheral.
+- The auxiliary task/domain analysis explicitly states that UNITER's core training objectives are learned as outputs of a Transformer, indicating Transformer blocks are central rather than peripheral.
 - The abstract frames UNITER as a joint multimodal representation model for its main results, and the auxiliary files tie that central model directly to Transformer-based processing.
 - The Extending-dimensions analysis markdown input was unavailable (`MISSING`), but the abstract plus available auxiliary files were sufficient for a high-confidence decision.
 
