@@ -1,5 +1,5 @@
 # Between MDPs and semi-MDPs: A framework for temporal abstraction in reinforcement learning (1999)
-Source: A Framework for Temporal Abstraction in Reinforcement Learning.md
+Source: Between MDPs and semi-MDPs- A framework for temporal abstraction in reinforcement learning.md
 
 ## Task Table
 | Task | Input | In Dimension | In Dynamics | Attention Dynamic | State Dynamic | Output | Out Dimension | Out Dynamics |

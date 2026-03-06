@@ -1,4 +1,4 @@
-# A Framework for Temporal Abstraction in Reinforcement Learning (1999)
+# Between MDPs and semi-MDPs: A framework for temporal abstraction in reinforcement learning (1999)
 Source: TASK-DOMAINS.md
 
 ## Binary decision
